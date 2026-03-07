@@ -1288,15 +1288,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.patch("/api/admin/customers/:id/suspend", adminAuthMiddleware, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { suspended, reason } = req.body;
-      await storage.updateCustomer(id, { suspended: !!suspended });
+      const newSuspended = req.body.suspended === true;
+      const reason = typeof req.body.reason === "string" ? req.body.reason.trim() : undefined;
       const customer = await storage.getCustomerById(id);
-      if (customer) {
-        if (suspended) {
-          sendSuspensionEmail(customer.email, customer.name || undefined, reason).catch(() => {});
-        } else {
-          sendUnsuspensionEmail(customer.email, customer.name || undefined).catch(() => {});
-        }
+      if (!customer) return res.status(404).json({ success: false, error: "Customer not found" });
+      if (customer.suspended === newSuspended) return res.json({ success: true, unchanged: true });
+      await storage.updateCustomer(id, { suspended: newSuspended });
+      if (newSuspended) {
+        sendSuspensionEmail(customer.email, customer.name || undefined, reason).catch(() => {});
+      } else {
+        sendUnsuspensionEmail(customer.email, customer.name || undefined).catch(() => {});
       }
       res.json({ success: true });
     } catch (err: any) {
@@ -1326,14 +1327,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       if (emailList.length === 0) return res.status(400).json({ success: false, error: "No recipients found" });
+      if (emailList.length > 500) return res.status(400).json({ success: false, error: "Maximum 500 recipients per blast" });
+
+      const uniqueEmails = [...new Set(emailList.map((e: string) => e.toLowerCase().trim()))].filter(Boolean);
 
       const htmlContent = content
         .replace(/\n/g, "<br>")
         .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 
-      const result = await sendBulkEmail(emailList, subject, htmlContent);
+      const result = await sendBulkEmail(uniqueEmails, subject, htmlContent);
       logAdminAction({ action: "Bulk email sent", category: "email", details: `Subject: "${subject}" — Sent: ${result.sent}, Failed: ${result.failed}`, status: result.failed > 0 ? "warning" : "success" });
-      res.json({ success: true, sent: result.sent, failed: result.failed, total: emailList.length, errors: result.errors.slice(0, 5) });
+      const success = result.sent > 0;
+      res.json({ success, sent: result.sent, failed: result.failed, total: uniqueEmails.length, errors: result.errors.slice(0, 5) });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
