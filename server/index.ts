@@ -70,6 +70,15 @@ app.use((req, res, next) => {
     storage.deleteExpiredSessions().catch(() => {});
   }, 60 * 60 * 1000);
 
+  storage.cancelExpiredTransactions(10).then((count) => {
+    if (count > 0) log(`[startup] Cancelled ${count} expired pending transaction(s)`);
+  }).catch(() => {});
+  setInterval(() => {
+    storage.cancelExpiredTransactions(10).then((count) => {
+      if (count > 0) log(`Cancelled ${count} expired pending transaction(s)`);
+    }).catch(() => {});
+  }, 2 * 60 * 1000);
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

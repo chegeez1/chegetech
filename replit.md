@@ -95,7 +95,7 @@ All of these can also be set directly from the admin panel Settings tab without 
 - `shared/schema.ts` - Drizzle ORM schema (SQLite dialect)
 
 ## GitHub
-- Repository: https://github.com/Mwasdaym/chege-tech
+- Repository: https://github.com/Mwasdaym/chegetech
 
 ## Deployment (Render)
 - Build command: `npm install && npm run build`

@@ -1,4 +1,5 @@
-import { Switch, Route, useLocation } from "wouter";
+import { useState, useEffect, useCallback } from "react";
+import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -14,10 +15,33 @@ import NotFound from "@/pages/not-found";
 import ChatWidget from "@/components/ChatWidget";
 
 const NO_CHAT_PATHS = ["/admin"];
+const PUBLIC_PATHS = ["/auth", "/admin", "/payment/callback", "/payment/success"];
 
 function Router() {
   const [location] = useLocation();
   const showChat = !NO_CHAT_PATHS.some((p) => location.startsWith(p));
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem("customer_token"));
+
+  const checkAuth = useCallback(() => {
+    setIsAuthenticated(!!localStorage.getItem("customer_token"));
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("storage", checkAuth);
+    const interval = setInterval(checkAuth, 500);
+    return () => {
+      window.removeEventListener("storage", checkAuth);
+      clearInterval(interval);
+    };
+  }, [checkAuth]);
+
+  const isPublic = PUBLIC_PATHS.some((p) => location.startsWith(p));
+
+  if (!isAuthenticated && !isPublic) {
+    return <Redirect to="/auth" />;
+  }
+
   return (
     <>
       <Switch>

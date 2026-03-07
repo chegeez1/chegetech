@@ -505,6 +505,35 @@ export default function Dashboard() {
                 })}
               </div>
             )}
+
+            {apiKeys.length > 0 && (
+              <div className="rounded-xl p-4 border border-white/10 mt-4" style={{ background: "rgba(255,255,255,.04)" }}>
+                <p className="text-sm font-semibold text-white mb-3" data-testid="text-api-docs-title">API Documentation</p>
+                <p className="text-xs text-white/40 mb-3">Use your API key with the <code className="bg-white/10 px-1 rounded">X-API-Key</code> header to access these endpoints:</p>
+                <div className="space-y-3">
+                  <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">GET</span>
+                      <code className="text-xs text-white/70 font-mono">/api/v1/my-profile</code>
+                    </div>
+                    <p className="text-xs text-white/35 mb-2">Get your account profile information</p>
+                    <code className="text-[10px] text-white/30 bg-black/30 rounded px-2 py-1 block break-all" data-testid="text-curl-profile">
+                      curl -H "X-API-Key: YOUR_KEY" {window.location.origin}/api/v1/my-profile
+                    </code>
+                  </div>
+                  <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">GET</span>
+                      <code className="text-xs text-white/70 font-mono">/api/v1/my-orders</code>
+                    </div>
+                    <p className="text-xs text-white/35 mb-2">Get all your orders and their statuses</p>
+                    <code className="text-[10px] text-white/30 bg-black/30 rounded px-2 py-1 block break-all" data-testid="text-curl-orders">
+                      curl -H "X-API-Key: YOUR_KEY" {window.location.origin}/api/v1/my-orders
+                    </code>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

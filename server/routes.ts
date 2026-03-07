@@ -1454,5 +1454,76 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // API KEY AUTHENTICATED ENDPOINTS (v1)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async function apiKeyAuthMiddleware(req: any, res: any, next: any) {
+    const key = req.headers["x-api-key"];
+    if (!key) return res.status(401).json({ error: "Missing X-API-Key header" });
+    const apiKey = await storage.getApiKeyByKey(key);
+    if (!apiKey) return res.status(401).json({ error: "Invalid API key" });
+    if (!apiKey.active) return res.status(403).json({ error: "API key has been revoked" });
+    req.apiKey = apiKey;
+    if (apiKey.customerId) {
+      const customer = await storage.getCustomerById(apiKey.customerId);
+      if (customer) req.customer = customer;
+    }
+    next();
+  }
+
+  // ─── Customer API: My Profile ──────────────────────────────────────────
+  app.get("/api/v1/my-profile", apiKeyAuthMiddleware, async (req: any, res) => {
+    if (!req.customer) return res.status(403).json({ error: "This API key is not linked to a customer" });
+    const c = req.customer;
+    res.json({ id: c.id, email: c.email, name: c.name, emailVerified: c.emailVerified, createdAt: c.createdAt });
+  });
+
+  // ─── Customer API: My Orders ──────────────────────────────────────────
+  app.get("/api/v1/my-orders", apiKeyAuthMiddleware, async (req: any, res) => {
+    if (!req.customer) return res.status(403).json({ error: "This API key is not linked to a customer" });
+    const orders = await storage.getTransactionsByEmail(req.customer.email);
+    res.json({
+      count: orders.length,
+      orders: orders.map((o: any) => ({
+        reference: o.reference, plan: o.planName, amount: o.amount, status: o.status,
+        accountAssigned: o.accountAssigned, emailSent: o.emailSent, createdAt: o.createdAt,
+      })),
+    });
+  });
+
+  // ─── Admin API: Transactions ──────────────────────────────────────────
+  app.get("/api/v1/admin/transactions", apiKeyAuthMiddleware, async (req: any, res) => {
+    if (req.apiKey.customerId) return res.status(403).json({ error: "Admin API key required (no customer linked)" });
+    const all = await storage.getAllTransactions();
+    res.json({
+      count: all.length,
+      transactions: all.map((t: any) => ({
+        reference: t.reference, customerEmail: t.customerEmail, plan: t.planName,
+        amount: t.amount, status: t.status, accountAssigned: t.accountAssigned,
+        emailSent: t.emailSent, createdAt: t.createdAt,
+      })),
+    });
+  });
+
+  // ─── Admin API: Stats ─────────────────────────────────────────────────
+  app.get("/api/v1/admin/stats", apiKeyAuthMiddleware, async (req: any, res) => {
+    if (req.apiKey.customerId) return res.status(403).json({ error: "Admin API key required (no customer linked)" });
+    const stats = await storage.getStats();
+    res.json(stats);
+  });
+
+  // ─── Admin API: Customers ─────────────────────────────────────────────
+  app.get("/api/v1/admin/customers", apiKeyAuthMiddleware, async (req: any, res) => {
+    if (req.apiKey.customerId) return res.status(403).json({ error: "Admin API key required (no customer linked)" });
+    const customers = await storage.getAllCustomers();
+    res.json({
+      count: customers.length,
+      customers: customers.map((c: any) => ({
+        id: c.id, email: c.email, name: c.name, emailVerified: c.emailVerified, createdAt: c.createdAt,
+      })),
+    });
+  });
+
   return httpServer;
 }

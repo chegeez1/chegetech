@@ -107,7 +107,7 @@ export default function Auth() {
         setCustomerToken(data.token);
         setCustomerData(data.customer);
         toast({ title: "Welcome back!", description: `Logged in as ${data.customer.email}` });
-        setLocation("/dashboard");
+        setLocation("/");
       } else if (data.needsVerification) {
         setMode("verify");
         toast({ title: "Verify your email", description: "Enter the code sent to your email" });
@@ -160,7 +160,7 @@ export default function Auth() {
         setCustomerToken(data.token);
         setCustomerData(data.customer);
         toast({ title: "Email verified!", description: "Your account is now active" });
-        setLocation("/dashboard");
+        setLocation("/");
       } else {
         toast({ title: "Verification failed", description: data.error, variant: "destructive" });
       }

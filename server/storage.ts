@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and, lt } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 import {
@@ -280,6 +280,9 @@ export interface IStorage {
 
   getAllCustomers(): Promise<Customer[]>;
 
+  cancelExpiredTransactions(minutesOld?: number): Promise<number>;
+  getApiKeyByKey(key: string): Promise<ApiKey | undefined>;
+
   createApiKey(data: { customerId?: number; key: string; label: string }): Promise<ApiKey>;
   getApiKeysByCustomer(customerId: number): Promise<ApiKey[]>;
   getAllApiKeys(): Promise<ApiKey[]>;
@@ -389,6 +392,21 @@ export class DbStorage implements IStorage {
 
   async getAllCustomers(): Promise<Customer[]> {
     return getDb().select().from(customers).orderBy(desc(customers.createdAt));
+  }
+
+  async cancelExpiredTransactions(minutesOld: number = 10): Promise<number> {
+    const cutoff = new Date(Date.now() - minutesOld * 60 * 1000).toISOString();
+    const expired = await getDb()
+      .update(transactions)
+      .set({ status: "cancelled", updatedAt: new Date().toISOString() })
+      .where(and(eq(transactions.status, "pending"), lt(transactions.createdAt, cutoff)))
+      .returning();
+    return expired.length;
+  }
+
+  async getApiKeyByKey(key: string): Promise<ApiKey | undefined> {
+    const [result] = await getDb().select().from(apiKeys).where(eq(apiKeys.key, key));
+    return result;
   }
 
   async createApiKey(data: { customerId?: number; key: string; label: string }): Promise<ApiKey> {

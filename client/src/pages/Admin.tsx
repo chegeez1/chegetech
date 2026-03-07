@@ -1776,6 +1776,62 @@ function ApiKeysTab() {
           ))}
         </div>
       )}
+
+      {keys.length > 0 && (
+        <div className="glass-card rounded-2xl p-5 mt-6">
+          <p className="text-sm font-semibold text-white mb-3" data-testid="text-admin-api-docs-title">API Documentation</p>
+          <p className="text-xs text-white/40 mb-1">Admin keys (no customer linked) can access admin endpoints. Customer-linked keys access customer endpoints.</p>
+          <p className="text-xs text-white/40 mb-3">Authenticate using the <code className="bg-white/10 px-1 rounded">X-API-Key</code> header.</p>
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Admin Endpoints</p>
+            <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">GET</span>
+                <code className="text-xs text-white/70 font-mono">/api/v1/admin/transactions</code>
+              </div>
+              <p className="text-xs text-white/35 mb-2">List all transactions</p>
+              <code className="text-[10px] text-white/30 bg-black/30 rounded px-2 py-1 block break-all" data-testid="text-curl-admin-transactions">
+                curl -H "X-API-Key: YOUR_ADMIN_KEY" {window.location.origin}/api/v1/admin/transactions
+              </code>
+            </div>
+            <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">GET</span>
+                <code className="text-xs text-white/70 font-mono">/api/v1/admin/stats</code>
+              </div>
+              <p className="text-xs text-white/35 mb-2">Get revenue & order statistics</p>
+              <code className="text-[10px] text-white/30 bg-black/30 rounded px-2 py-1 block break-all" data-testid="text-curl-admin-stats">
+                curl -H "X-API-Key: YOUR_ADMIN_KEY" {window.location.origin}/api/v1/admin/stats
+              </code>
+            </div>
+            <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">GET</span>
+                <code className="text-xs text-white/70 font-mono">/api/v1/admin/customers</code>
+              </div>
+              <p className="text-xs text-white/35 mb-2">List all registered customers</p>
+              <code className="text-[10px] text-white/30 bg-black/30 rounded px-2 py-1 block break-all" data-testid="text-curl-admin-customers">
+                curl -H "X-API-Key: YOUR_ADMIN_KEY" {window.location.origin}/api/v1/admin/customers
+              </code>
+            </div>
+            <p className="text-xs font-bold text-blue-400 uppercase tracking-wider mt-4">Customer Endpoints</p>
+            <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">GET</span>
+                <code className="text-xs text-white/70 font-mono">/api/v1/my-profile</code>
+              </div>
+              <p className="text-xs text-white/35">Get the linked customer's profile</p>
+            </div>
+            <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">GET</span>
+                <code className="text-xs text-white/70 font-mono">/api/v1/my-orders</code>
+              </div>
+              <p className="text-xs text-white/35">Get the linked customer's orders</p>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
