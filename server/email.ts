@@ -92,6 +92,149 @@ export async function sendAccountEmail(
   }
 }
 
+export async function sendSuspensionEmail(
+  customerEmail: string,
+  name?: string,
+  reason?: string
+): Promise<{ success: boolean; error?: string }> {
+  const transporter = createTransporter();
+  if (!transporter) return { success: false, error: "Email service not configured" };
+  const senderEmail = getEmailUser();
+  try {
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="max-width:500px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10);">
+    <div style="background:linear-gradient(135deg,#dc2626 0%,#991b1b 100%);padding:32px;text-align:center;">
+      <h1 style="color:#fff;margin:0 0 6px;font-size:24px;font-weight:700;">Account Suspended</h1>
+      <p style="color:rgba(255,255,255,.85);margin:0;font-size:14px;">Chege Tech</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="font-size:15px;color:#333;margin:0 0 8px;">Hello <strong>${name || "there"}</strong>,</p>
+      <p style="font-size:14px;color:#555;margin:0 0 20px;">Your Chege Tech account (<strong>${customerEmail}</strong>) has been <strong style="color:#dc2626;">suspended</strong>.</p>
+      ${reason ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 18px;margin-bottom:20px;"><p style="font-size:13px;color:#991b1b;margin:0;"><strong>Reason:</strong> ${reason}</p></div>` : ""}
+      <p style="font-size:14px;color:#555;margin:0 0 8px;">While suspended, you will not be able to:</p>
+      <ul style="margin:0 0 20px;padding-left:18px;color:#555;font-size:13px;line-height:1.8;">
+        <li>Access your dashboard or purchased accounts</li>
+        <li>Make new purchases</li>
+        <li>Use your API keys</li>
+      </ul>
+      <p style="font-size:13px;color:#888;margin:0;">If you believe this is a mistake, please contact our support team by replying to this email.</p>
+    </div>
+    <div style="background:#f8faff;padding:16px;text-align:center;border-top:1px solid #eee;">
+      <p style="font-size:12px;color:#aaa;margin:0;">&copy; ${new Date().getFullYear()} Chege Tech. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+    await transporter.sendMail({
+      from: `"Chege Tech" <${senderEmail}>`,
+      to: customerEmail,
+      subject: `Your Account Has Been Suspended`,
+      html,
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.error("Suspension email error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function sendUnsuspensionEmail(
+  customerEmail: string,
+  name?: string
+): Promise<{ success: boolean; error?: string }> {
+  const transporter = createTransporter();
+  if (!transporter) return { success: false, error: "Email service not configured" };
+  const senderEmail = getEmailUser();
+  try {
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="max-width:500px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10);">
+    <div style="background:linear-gradient(135deg,#059669 0%,#047857 100%);padding:32px;text-align:center;">
+      <h1 style="color:#fff;margin:0 0 6px;font-size:24px;font-weight:700;">Account Restored</h1>
+      <p style="color:rgba(255,255,255,.85);margin:0;font-size:14px;">Chege Tech</p>
+    </div>
+    <div style="padding:32px;text-align:center;">
+      <p style="font-size:15px;color:#333;margin:0 0 8px;">Hello <strong>${name || "there"}</strong>,</p>
+      <p style="font-size:14px;color:#555;margin:0 0 20px;">Great news! Your account (<strong>${customerEmail}</strong>) has been <strong style="color:#059669;">unsuspended</strong> and is now fully active again.</p>
+      <p style="font-size:14px;color:#555;margin:0 0 8px;">You can now access all your purchases, dashboard, and API keys as before.</p>
+      <p style="font-size:13px;color:#888;margin:20px 0 0;">Welcome back!</p>
+    </div>
+    <div style="background:#f8faff;padding:16px;text-align:center;border-top:1px solid #eee;">
+      <p style="font-size:12px;color:#aaa;margin:0;">&copy; ${new Date().getFullYear()} Chege Tech. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+    await transporter.sendMail({
+      from: `"Chege Tech" <${senderEmail}>`,
+      to: customerEmail,
+      subject: `Your Account Has Been Restored`,
+      html,
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.error("Unsuspension email error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function sendBulkEmail(
+  recipients: string[],
+  subject: string,
+  htmlContent: string
+): Promise<{ sent: number; failed: number; errors: string[] }> {
+  const transporter = createTransporter();
+  if (!transporter) return { sent: 0, failed: recipients.length, errors: ["Email service not configured"] };
+  const senderEmail = getEmailUser();
+  let sent = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="max-width:600px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10);">
+    <div style="background:linear-gradient(135deg,#4169E1 0%,#7C3AED 100%);padding:36px 32px;text-align:center;">
+      <h1 style="color:#fff;margin:0 0 6px;font-size:26px;font-weight:700;">Chege Tech</h1>
+      <p style="color:rgba(255,255,255,.85);margin:0;font-size:15px;">Premium Subscriptions</p>
+    </div>
+    <div style="padding:32px;font-size:14px;color:#333;line-height:1.7;">
+      ${htmlContent}
+    </div>
+    <div style="background:#f8faff;padding:16px;text-align:center;border-top:1px solid #eee;">
+      <p style="font-size:12px;color:#aaa;margin:0;">&copy; ${new Date().getFullYear()} Chege Tech. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  for (const email of recipients) {
+    try {
+      await transporter.sendMail({
+        from: `"Chege Tech" <${senderEmail}>`,
+        to: email,
+        subject,
+        html,
+      });
+      sent++;
+    } catch (err: any) {
+      failed++;
+      errors.push(`${email}: ${err.message}`);
+    }
+  }
+
+  return { sent, failed, errors };
+}
+
 export async function sendPasswordResetEmail(
   customerEmail: string,
   code: string,

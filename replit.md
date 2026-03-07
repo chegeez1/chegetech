@@ -31,10 +31,18 @@ For PostgreSQL mode, settings are cached in-memory on startup and written back a
 - **Profile Tab** - Edit display name, change password with current-password verification
 - Neon portal-style glassmorphism auth page
 
+### Auth Gate
+- Users must sign up / log in before accessing the store or any page
+- Unauthenticated users are redirected to `/auth`
+- `/admin` and payment callback routes are exempt (admin has its own auth)
+- After login/signup, users land on the store (`/`) instead of dashboard
+
 ### Payment & Delivery
 - Paystack payment popup (inline JS) with reference tracking
 - Auto email delivery of account credentials after payment
 - Paystack webhook (`/api/paystack/webhook`) for reliable server-to-server delivery
+- **Auto-cancel**: Pending transactions older than 10 minutes are automatically cancelled (checked every 2 minutes)
+- If a cancelled transaction receives a valid Paystack payment, it's automatically reinstated and delivered
 - Promo codes (% or fixed KES off) with expiry and usage limits
 
 ### Admin Panel (/admin)

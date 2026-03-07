@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { storage } from "./storage";
 import { accountManager } from "./accounts";
-import { sendAccountEmail, sendPasswordResetEmail } from "./email";
+import { sendAccountEmail, sendPasswordResetEmail, sendSuspensionEmail, sendUnsuspensionEmail, sendBulkEmail } from "./email";
 import { sendTelegramMessage, notifyNewOrder, notifyNewCustomer, notifyPaymentFailed, isTelegramConfigured } from "./telegram";
 import { getWhatsAppStatus, connectWhatsApp, disconnectWhatsApp, isWhatsAppWebConnected, broadcastNewOrder, sendWhatsAppNotification } from "./whatsapp-web";
 import { subscriptionPlans } from "./plans";
@@ -1288,9 +1288,52 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.patch("/api/admin/customers/:id/suspend", adminAuthMiddleware, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { suspended } = req.body;
+      const { suspended, reason } = req.body;
       await storage.updateCustomer(id, { suspended: !!suspended });
+      const customer = await storage.getCustomerById(id);
+      if (customer) {
+        if (suspended) {
+          sendSuspensionEmail(customer.email, customer.name || undefined, reason).catch(() => {});
+        } else {
+          sendUnsuspensionEmail(customer.email, customer.name || undefined).catch(() => {});
+        }
+      }
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Admin: Send bulk email ──────────────────────────────────────────────
+  app.post("/api/admin/email-blast", adminAuthMiddleware, async (req, res) => {
+    try {
+      const { subject, content, recipients, filter } = req.body;
+      if (!subject || !content) return res.status(400).json({ success: false, error: "Subject and content are required" });
+
+      let emailList: string[] = [];
+
+      if (recipients && Array.isArray(recipients) && recipients.length > 0) {
+        emailList = recipients;
+      } else {
+        const allCustomers = await storage.getAllCustomers();
+        if (filter === "verified") {
+          emailList = allCustomers.filter((c: any) => c.emailVerified && !c.suspended).map((c: any) => c.email);
+        } else if (filter === "suspended") {
+          emailList = allCustomers.filter((c: any) => c.suspended).map((c: any) => c.email);
+        } else {
+          emailList = allCustomers.filter((c: any) => c.emailVerified).map((c: any) => c.email);
+        }
+      }
+
+      if (emailList.length === 0) return res.status(400).json({ success: false, error: "No recipients found" });
+
+      const htmlContent = content
+        .replace(/\n/g, "<br>")
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+      const result = await sendBulkEmail(emailList, subject, htmlContent);
+      logAdminAction({ action: "Bulk email sent", category: "email", details: `Subject: "${subject}" — Sent: ${result.sent}, Failed: ${result.failed}`, status: result.failed > 0 ? "warning" : "success" });
+      res.json({ success: true, sent: result.sent, failed: result.failed, total: emailList.length, errors: result.errors.slice(0, 5) });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

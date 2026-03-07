@@ -10,7 +10,7 @@ import {
   Save, X, BadgePercent, Star, RotateCcw, Zap, Settings,
   CreditCard, AlertTriangle, Lock, Unlock, Copy, Activity,
   Terminal, Info, TriangleAlert, Filter, Upload, Download,
-  Search, BarChart2, Loader2, FileCheck, ClipboardCheck
+  Search, BarChart2, Loader2, FileCheck, ClipboardCheck, Send
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 
-type Tab = "dashboard" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "logs" | "settings";
+type Tab = "dashboard" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "emailblast" | "logs" | "settings";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
   success: { label: "Completed", icon: CheckCircle, color: "text-emerald-400" },
@@ -98,6 +98,7 @@ export default function Admin() {
             { id: "transactions", label: "Transactions", icon: ArrowLeftRight },
             { id: "apikeys", label: "API Keys", icon: Key },
             { id: "customers", label: "Customers", icon: Users },
+            { id: "emailblast", label: "Email Blast", icon: Send },
             { id: "logs", label: "Activity Logs", icon: Activity },
             { id: "settings", label: "Settings", icon: Settings },
           ] as { id: Tab; label: string; icon: any }[]).map(({ id, label, icon: Icon }) => (
@@ -145,6 +146,7 @@ export default function Admin() {
           {activeTab === "transactions" && <TransactionsTab />}
           {activeTab === "apikeys" && <ApiKeysTab />}
           {activeTab === "customers" && <CustomersTab />}
+          {activeTab === "emailblast" && <EmailBlastTab />}
           {activeTab === "logs" && <LogsTab />}
           {activeTab === "settings" && <SettingsTab />}
         </div>
@@ -1832,6 +1834,226 @@ function ApiKeysTab() {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+// ─── Email Blast Tab ──────────────────────────────────────────
+function EmailBlastTab() {
+  const { toast } = useToast();
+  const [subject, setSubject] = useState("");
+  const [content, setContent] = useState("");
+  const [filter, setFilter] = useState<"all" | "verified" | "suspended">("all");
+  const [customEmails, setCustomEmails] = useState("");
+  const [useCustom, setUseCustom] = useState(false);
+  const [result, setResult] = useState<{ sent: number; failed: number; total: number } | null>(null);
+
+  const { data: custData } = useQuery<any>({
+    queryKey: ["/api/admin/customers"],
+    queryFn: () => authFetch("/api/admin/customers"),
+  });
+
+  const allCustomers = custData?.customers ?? [];
+  const recipientCount = useCustom
+    ? customEmails.split(/[,\n]/).filter((e: string) => e.trim()).length
+    : filter === "verified"
+      ? allCustomers.filter((c: any) => c.emailVerified && !c.suspended).length
+      : filter === "suspended"
+        ? allCustomers.filter((c: any) => c.suspended).length
+        : allCustomers.filter((c: any) => c.emailVerified).length;
+
+  const sendMutation = useMutation({
+    mutationFn: () => {
+      const body: any = { subject: subject.trim(), content: content.trim() };
+      if (useCustom) {
+        body.recipients = customEmails.split(/[,\n]/).map((e: string) => e.trim()).filter(Boolean);
+      } else {
+        body.filter = filter;
+      }
+      return authFetch("/api/admin/email-blast", { method: "POST", body: JSON.stringify(body) });
+    },
+    onSuccess: (d) => {
+      if (d.success) {
+        setResult({ sent: d.sent, failed: d.failed, total: d.total });
+        toast({ title: `Email sent to ${d.sent} recipient(s)`, description: d.failed > 0 ? `${d.failed} failed` : undefined });
+      } else {
+        toast({ title: "Failed", description: d.error, variant: "destructive" });
+      }
+    },
+    onError: () => toast({ title: "Error", description: "Failed to send emails", variant: "destructive" }),
+  });
+
+  const templates = [
+    { label: "New Promo Code", subject: "Exclusive Discount Just for You!", content: "Hey there!\n\nWe have a special promo code just for you: **SAVE20**\n\nUse it at checkout to get 20% off any plan. Hurry — this offer expires soon!\n\nVisit our store to grab your deal." },
+    { label: "New Plan Available", subject: "New Premium Plan Just Launched!", content: "We're excited to announce a brand new plan is now available in our store!\n\nCheck out the latest additions and grab your subscription before stock runs out.\n\nHead over to the store now to see what's new." },
+    { label: "General Update", subject: "Important Update from Chege Tech", content: "Hi there!\n\nWe have some important updates to share with you.\n\n[Write your update here]\n\nThank you for being a valued customer!" },
+    { label: "Special Offer", subject: "Limited Time Offer - Don't Miss Out!", content: "Great news!\n\nFor a limited time, we're running a special offer on selected plans.\n\n[Describe the offer]\n\nThis offer won't last forever — visit the store now!" },
+  ];
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-white">Email Blast</h1>
+          <p className="text-xs text-white/40 mt-0.5">Send bulk emails to your customers — promos, offers, updates</p>
+        </div>
+        <Badge className="glass border-white/10 text-white/50">{allCustomers.length} total customers</Badge>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="glass-card rounded-2xl p-5">
+            <p className="text-sm font-semibold text-white mb-3">Compose Email</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-white/50 mb-1 block">Subject</label>
+                <Input
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Email subject line..."
+                  className="glass border-white/10 bg-white/5 text-white placeholder:text-white/25"
+                  data-testid="input-blast-subject"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-white/50 mb-1 block">Content <span className="text-white/30">(Use **bold** for emphasis, new lines become line breaks)</span></label>
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="Write your email content here..."
+                  rows={8}
+                  className="w-full rounded-xl px-4 py-3 text-sm glass border border-white/10 bg-white/5 text-white placeholder:text-white/25 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  data-testid="input-blast-content"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-card rounded-2xl p-5">
+            <p className="text-sm font-semibold text-white mb-3">Recipients</p>
+            <div className="flex items-center gap-3 mb-3">
+              <button
+                onClick={() => setUseCustom(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${!useCustom ? "bg-indigo-600 text-white" : "bg-white/5 text-white/40 hover:text-white/70"}`}
+                data-testid="button-filter-mode"
+              >
+                By Filter
+              </button>
+              <button
+                onClick={() => setUseCustom(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${useCustom ? "bg-indigo-600 text-white" : "bg-white/5 text-white/40 hover:text-white/70"}`}
+                data-testid="button-custom-mode"
+              >
+                Custom List
+              </button>
+            </div>
+
+            {!useCustom ? (
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: "all", label: "All Verified", desc: "Active + verified customers" },
+                  { value: "verified", label: "Active Only", desc: "Verified & not suspended" },
+                  { value: "suspended", label: "Suspended", desc: "Suspended accounts only" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setFilter(opt.value)}
+                    data-testid={`button-filter-${opt.value}`}
+                    className={`px-3 py-2 rounded-xl text-xs transition-all border ${
+                      filter === opt.value
+                        ? "bg-indigo-600/20 border-indigo-500/40 text-indigo-300"
+                        : "bg-white/5 border-white/8 text-white/40 hover:text-white/70"
+                    }`}
+                  >
+                    <span className="font-medium">{opt.label}</span>
+                    <span className="block text-[10px] opacity-60 mt-0.5">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs text-white/50 mb-1 block">Email addresses (comma or newline separated)</label>
+                <textarea
+                  value={customEmails}
+                  onChange={(e) => setCustomEmails(e.target.value)}
+                  placeholder="user1@email.com, user2@email.com..."
+                  rows={4}
+                  className="w-full rounded-xl px-4 py-3 text-sm glass border border-white/10 bg-white/5 text-white placeholder:text-white/25 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono"
+                  data-testid="input-custom-emails"
+                />
+              </div>
+            )}
+            <p className="text-xs text-white/30 mt-2">
+              {recipientCount} recipient{recipientCount !== 1 ? "s" : ""} will receive this email
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => sendMutation.mutate()}
+              disabled={!subject.trim() || !content.trim() || recipientCount === 0 || sendMutation.isPending}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-6"
+              data-testid="button-send-blast"
+            >
+              {sendMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Sending...</>
+              ) : (
+                <><Send className="w-4 h-4 mr-2" />Send to {recipientCount} recipient{recipientCount !== 1 ? "s" : ""}</>
+              )}
+            </Button>
+          </div>
+
+          {result && (
+            <div className={`glass-card rounded-2xl p-4 border ${result.failed > 0 ? "border-amber-500/30" : "border-emerald-500/30"}`}>
+              <div className="flex items-center gap-3">
+                {result.failed === 0 ? (
+                  <CheckCircle className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-amber-400" />
+                )}
+                <div>
+                  <p className="text-sm font-semibold text-white" data-testid="text-blast-result">
+                    {result.sent} of {result.total} email{result.total !== 1 ? "s" : ""} sent successfully
+                  </p>
+                  {result.failed > 0 && (
+                    <p className="text-xs text-amber-400/70">{result.failed} failed to send</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <div className="glass-card rounded-2xl p-5">
+            <p className="text-sm font-semibold text-white mb-3">Quick Templates</p>
+            <div className="space-y-2">
+              {templates.map((t, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setSubject(t.subject); setContent(t.content); }}
+                  data-testid={`button-template-${i}`}
+                  className="w-full text-left px-3 py-2.5 rounded-xl bg-white/5 border border-white/8 text-white/60 hover:text-white hover:bg-white/10 transition-all text-xs"
+                >
+                  <span className="font-medium block">{t.label}</span>
+                  <span className="text-[10px] text-white/30 block mt-0.5 truncate">{t.subject}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="glass-card rounded-2xl p-5">
+            <p className="text-sm font-semibold text-white mb-2">Tips</p>
+            <ul className="text-xs text-white/40 space-y-1.5 list-disc list-inside">
+              <li>Use **double asterisks** for bold text</li>
+              <li>Each new line becomes a line break</li>
+              <li>Emails are sent with Chege Tech branding</li>
+              <li>Large batches may take a few moments</li>
+              <li>Check Activity Logs for delivery status</li>
+            </ul>
+          </div>
+        </div>
+      </div>
     </>
   );
 }
