@@ -395,13 +395,23 @@ export class DbStorage implements IStorage {
   }
 
   async cancelExpiredTransactions(minutesOld: number = 10): Promise<number> {
-    const cutoff = new Date(Date.now() - minutesOld * 60 * 1000).toISOString();
-    const expired = await getDb()
-      .update(transactions)
-      .set({ status: "cancelled", updatedAt: new Date().toISOString() })
-      .where(and(eq(transactions.status, "pending"), lt(transactions.createdAt, cutoff)))
-      .returning();
-    return expired.length;
+    const all = await getDb().select().from(transactions).where(eq(transactions.status, "pending"));
+    const now = Date.now();
+    const cutoffMs = minutesOld * 60 * 1000;
+    const expiredRefs: string[] = [];
+    for (const t of all) {
+      if (!t.createdAt) continue;
+      const created = new Date(t.createdAt.replace(" ", "T") + (t.createdAt.includes("Z") ? "" : "Z")).getTime();
+      if (isNaN(created)) continue;
+      if (now - created > cutoffMs) expiredRefs.push(t.reference);
+    }
+    if (expiredRefs.length === 0) return 0;
+    let count = 0;
+    for (const ref of expiredRefs) {
+      await getDb().update(transactions).set({ status: "cancelled", updatedAt: new Date().toISOString() }).where(eq(transactions.reference, ref));
+      count++;
+    }
+    return count;
   }
 
   async getApiKeyByKey(key: string): Promise<ApiKey | undefined> {

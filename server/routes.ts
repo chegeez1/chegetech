@@ -397,6 +397,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (transaction.status === "failed") {
         return res.json({ success: false, status: "failed", error: "This transaction has already failed" });
       }
+      if (transaction.status === "cancelled") {
+        const recheck = await verifyPaystackPayment(reference);
+        if (recheck.configured && recheck.success) {
+          await storage.updateTransaction(reference, { status: "pending" });
+          transaction.status = "pending";
+        } else {
+          return res.json({ success: false, status: "cancelled", error: "This transaction was cancelled due to timeout" });
+        }
+      }
 
       const verify = await verifyPaystackPayment(reference);
       if (!verify.configured) {
@@ -501,6 +510,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!transaction || transaction.status === "success") {
         return res.redirect(`/payment/success?ref=${ref}&plan=${encodeURIComponent(transaction?.planName || "")}`);
       }
+      if (transaction.status === "cancelled") {
+        const recheck = await verifyPaystackPayment(ref);
+        if (recheck.configured && recheck.success) {
+          await storage.updateTransaction(ref, { status: "pending" });
+          transaction.status = "pending";
+        } else {
+          return res.redirect(`/checkout?planId=${transaction.planId}&error=payment_cancelled`);
+        }
+      }
       const verify = await verifyPaystackPayment(ref);
       if (verify.success && verify.configured) {
         const delivery = await deliverAccount(transaction);
@@ -541,13 +559,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       if (reference.startsWith("ct-cart-")) {
         const allTx = await storage.getAllTransactions();
-        const cartTxs = allTx.filter((t) => t.paystackReference === reference && t.status === "pending");
+        const cartTxs = allTx.filter((t) => t.paystackReference === reference && (t.status === "pending" || t.status === "cancelled"));
         for (const tx of cartTxs) {
+          if (tx.status === "cancelled") {
+            await storage.updateTransaction(tx.reference, { status: "pending" });
+            tx.status = "pending";
+          }
           await deliverAccount(tx);
         }
       } else {
         const transaction = await storage.getTransaction(reference);
-        if (transaction && transaction.status === "pending") {
+        if (transaction && (transaction.status === "pending" || transaction.status === "cancelled")) {
+          if (transaction.status === "cancelled") {
+            await storage.updateTransaction(reference, { status: "pending" });
+            transaction.status = "pending";
+          }
           await deliverAccount(transaction);
         }
       }
@@ -1467,7 +1493,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     req.apiKey = apiKey;
     if (apiKey.customerId) {
       const customer = await storage.getCustomerById(apiKey.customerId);
-      if (customer) req.customer = customer;
+      if (!customer) return res.status(403).json({ error: "Linked customer account not found" });
+      if (customer.suspended) return res.status(403).json({ error: "Account suspended. Contact support." });
+      req.customer = customer;
     }
     next();
   }
