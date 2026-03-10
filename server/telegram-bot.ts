@@ -243,6 +243,9 @@ async function handleAdminStart(chatId: string, token: string) {
     `/addaccount — Add account to a plan\n` +
     `/stock — View stock levels\n` +
     `/stats — Revenue & order stats\n` +
+    `/tickets — View open support tickets\n` +
+    `/reply &lt;id&gt; &lt;msg&gt; — Reply to a ticket\n` +
+    `/close &lt;id&gt; — Close a ticket\n` +
     `/cancel — Cancel current action\n\n` +
     `<b>Customer commands also work here:</b>\n` +
     `/buy /myorders`
@@ -298,6 +301,71 @@ async function handleAddAccount(chatId: string, token: string) {
   await sendMsg(chatId, token, lines.join("\n"));
 }
 
+// ─── Support ticket commands (admin only) ──────────────────────────────────
+
+async function handleTickets(chatId: string, token: string) {
+  try {
+    const tickets = await storage.getOpenTickets();
+    if (!tickets.length) {
+      await sendMsg(chatId, token, "✅ No open or escalated support tickets.");
+      return;
+    }
+    const lines = [`🎫 <b>Open/Escalated Tickets</b>\n`];
+    for (const t of tickets) {
+      const statusIcon = t.status === "escalated" ? "🆘" : "📩";
+      lines.push(
+        `${statusIcon} <b>#${t.id}</b> [${t.status}] — ${t.customerEmail}\n` +
+        `   📋 ${t.subject || "No subject"}\n`
+      );
+    }
+    lines.push(`\nUse /reply &lt;id&gt; &lt;message&gt; to respond\nUse /close &lt;id&gt; to close a ticket`);
+    await sendMsg(chatId, token, lines.join("\n"));
+  } catch {
+    await sendMsg(chatId, token, "❌ Could not fetch tickets.");
+  }
+}
+
+async function handleReply(chatId: string, token: string, text: string) {
+  const match = text.match(/^\/reply\s+(\d+)\s+([\s\S]+)$/);
+  if (!match) {
+    await sendMsg(chatId, token, "❌ Usage: /reply &lt;ticketId&gt; &lt;message&gt;\n\nExample: /reply 5 We're looking into it!");
+    return;
+  }
+  const ticketId = parseInt(match[1]);
+  const message = match[2].trim();
+  try {
+    const ticket = await storage.getTicketById(ticketId);
+    if (!ticket) {
+      await sendMsg(chatId, token, `❌ Ticket #${ticketId} not found.`);
+      return;
+    }
+    await storage.addMessage({ ticketId, sender: "admin", message });
+    await sendMsg(chatId, token, `✅ Reply sent to ticket #${ticketId}.`);
+  } catch {
+    await sendMsg(chatId, token, `❌ Failed to reply to ticket #${ticketId}.`);
+  }
+}
+
+async function handleClose(chatId: string, token: string, text: string) {
+  const match = text.match(/^\/close\s+(\d+)$/);
+  if (!match) {
+    await sendMsg(chatId, token, "❌ Usage: /close &lt;ticketId&gt;\n\nExample: /close 5");
+    return;
+  }
+  const ticketId = parseInt(match[1]);
+  try {
+    const ticket = await storage.getTicketById(ticketId);
+    if (!ticket) {
+      await sendMsg(chatId, token, `❌ Ticket #${ticketId} not found.`);
+      return;
+    }
+    await storage.updateTicket(ticketId, { status: "closed" });
+    await sendMsg(chatId, token, `✅ Ticket #${ticketId} closed.`);
+  } catch {
+    await sendMsg(chatId, token, `❌ Failed to close ticket #${ticketId}.`);
+  }
+}
+
 // ─── Master message dispatcher ────────────────────────────────────────────
 
 async function handleMessage(msg: any, botToken: string, adminChatId: string) {
@@ -327,6 +395,9 @@ async function handleMessage(msg: any, botToken: string, adminChatId: string) {
     if (text === "/addaccount" || text === "/add") { return handleAddAccount(chatId, botToken); }
     if (text === "/stock")  { return handleStock(chatId, botToken); }
     if (text === "/stats")  { return handleStats(chatId, botToken); }
+    if (text === "/tickets") { return handleTickets(chatId, botToken); }
+    if (text.startsWith("/reply ")) { return handleReply(chatId, botToken, text); }
+    if (text.startsWith("/close ")) { return handleClose(chatId, botToken, text); }
   }
 
   // ── Conversation flows ────────────────────────────────────────────────────

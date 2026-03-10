@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
@@ -10,7 +10,8 @@ import {
   Save, X, BadgePercent, Star, RotateCcw, Zap, Settings,
   CreditCard, AlertTriangle, Lock, Unlock, Copy, Activity,
   Terminal, Info, TriangleAlert, Filter, Upload, Download,
-  Search, BarChart2, Loader2, FileCheck, ClipboardCheck, Send
+  Search, BarChart2, Loader2, FileCheck, ClipboardCheck, Send,
+  MessageCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 
-type Tab = "dashboard" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "emailblast" | "logs" | "settings";
+type Tab = "dashboard" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "emailblast" | "logs" | "settings" | "support";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
   success: { label: "Completed", icon: CheckCircle, color: "text-emerald-400" },
@@ -99,6 +100,7 @@ export default function Admin() {
             { id: "apikeys", label: "API Keys", icon: Key },
             { id: "customers", label: "Customers", icon: Users },
             { id: "emailblast", label: "Email Blast", icon: Send },
+            { id: "support", label: "Support", icon: MessageCircle },
             { id: "logs", label: "Activity Logs", icon: Activity },
             { id: "settings", label: "Settings", icon: Settings },
           ] as { id: Tab; label: string; icon: any }[]).map(({ id, label, icon: Icon }) => (
@@ -114,6 +116,7 @@ export default function Admin() {
             >
               <Icon className="w-4 h-4" />
               {label}
+              {id === "support" && <SupportBadgeCount />}
             </button>
           ))}
         </nav>
@@ -147,6 +150,7 @@ export default function Admin() {
           {activeTab === "apikeys" && <ApiKeysTab />}
           {activeTab === "customers" && <CustomersTab />}
           {activeTab === "emailblast" && <EmailBlastTab />}
+          {activeTab === "support" && <SupportTab />}
           {activeTab === "logs" && <LogsTab />}
           {activeTab === "settings" && <SettingsTab />}
         </div>
@@ -2058,6 +2062,261 @@ function EmailBlastTab() {
   );
 }
 
+// ─── Support Badge Count ──────────────────────────────────────
+function SupportBadgeCount() {
+  const { data } = useQuery<any>({
+    queryKey: ["/api/admin/support/tickets"],
+    queryFn: () => authFetch("/api/admin/support/tickets"),
+    refetchInterval: 10000,
+  });
+  const count = (data?.tickets ?? []).filter((t: any) => t.status === "open" || t.status === "escalated").length;
+  if (count === 0) return null;
+  return (
+    <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+      {count > 9 ? "9+" : count}
+    </span>
+  );
+}
+
+// ─── Support Tab ──────────────────────────────────────────────
+function SupportTab() {
+  const { toast } = useToast();
+  const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const { data: ticketsData, refetch: refetchTickets } = useQuery<any>({
+    queryKey: ["/api/admin/support/tickets"],
+    queryFn: () => authFetch("/api/admin/support/tickets"),
+    refetchInterval: 5000,
+  });
+
+  const tickets: any[] = ticketsData?.tickets ?? [];
+
+  const { data: messagesData, refetch: refetchMessages } = useQuery<any>({
+    queryKey: ["/api/admin/support/messages", selectedTicketId],
+    queryFn: () => authFetch(`/api/support/ticket/${selectedTicketId}/messages`),
+    enabled: !!selectedTicketId,
+    refetchInterval: selectedTicketId ? 3000 : false,
+  });
+
+  const messages: any[] = messagesData?.messages ?? [];
+
+  const selectedTicket = tickets.find((t: any) => t.id === selectedTicketId);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]);
+
+  const sendMutation = useMutation({
+    mutationFn: (message: string) =>
+      authFetch(`/api/admin/support/ticket/${selectedTicketId}/message`, {
+        method: "POST",
+        body: JSON.stringify({ message }),
+      }),
+    onSuccess: (d) => {
+      if (d.success) {
+        setReplyText("");
+        refetchMessages();
+      } else {
+        toast({ title: "Failed to send", description: d.error, variant: "destructive" });
+      }
+    },
+  });
+
+  const closeMutation = useMutation({
+    mutationFn: (ticketId: number) =>
+      authFetch(`/api/admin/support/ticket/${ticketId}/close`, { method: "PATCH" }),
+    onSuccess: (d) => {
+      if (d.success) {
+        toast({ title: "Ticket closed" });
+        setSelectedTicketId(null);
+        refetchTickets();
+      } else {
+        toast({ title: "Failed", description: d.error, variant: "destructive" });
+      }
+    },
+  });
+
+  function handleSend() {
+    const msg = replyText.trim();
+    if (!msg || !selectedTicketId) return;
+    sendMutation.mutate(msg);
+  }
+
+  const statusBadge = (status: string) => {
+    switch (status) {
+      case "escalated":
+        return <Badge className="bg-red-500/20 text-red-400 border-0 text-xs">Escalated</Badge>;
+      case "open":
+        return <Badge className="bg-amber-500/20 text-amber-400 border-0 text-xs">Open</Badge>;
+      case "closed":
+        return <Badge className="bg-white/10 text-white/40 border-0 text-xs">Closed</Badge>;
+      default:
+        return <Badge className="glass border-white/10 text-white/50 text-xs">{status}</Badge>;
+    }
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-white">Support Tickets</h1>
+          <p className="text-xs text-white/40 mt-0.5">Manage customer support conversations</p>
+        </div>
+        <Badge className="glass border-white/10 text-white/50">
+          {tickets.filter((t: any) => t.status !== "closed").length} active
+        </Badge>
+      </div>
+
+      <div className="flex gap-4 h-[calc(100vh-160px)]">
+        <div className="w-80 shrink-0 glass-card rounded-2xl overflow-hidden flex flex-col">
+          <div className="p-3 border-b border-white/8">
+            <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">Tickets</p>
+          </div>
+          <div className="flex-1 overflow-y-auto divide-y divide-white/5">
+            {tickets.length === 0 ? (
+              <div className="p-6 text-center">
+                <MessageCircle className="w-8 h-8 text-white/15 mx-auto mb-2" />
+                <p className="text-sm text-white/30">No support tickets</p>
+              </div>
+            ) : (
+              tickets.map((ticket: any) => (
+                <button
+                  key={ticket.id}
+                  onClick={() => setSelectedTicketId(ticket.id)}
+                  data-testid={`ticket-${ticket.id}`}
+                  className={`w-full text-left p-3 transition-all ${
+                    selectedTicketId === ticket.id
+                      ? "bg-indigo-600/20 border-l-2 border-indigo-500"
+                      : "hover:bg-white/5 border-l-2 border-transparent"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-white truncate">
+                        {ticket.customerName || ticket.customerEmail}
+                      </p>
+                      <p className="text-xs text-white/40 truncate mt-0.5">
+                        {ticket.subject || "Support Request"}
+                      </p>
+                      <p className="text-[10px] text-white/25 mt-1">
+                        {ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "—"}
+                      </p>
+                    </div>
+                    {statusBadge(ticket.status)}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 glass-card rounded-2xl overflow-hidden flex flex-col">
+          {selectedTicket ? (
+            <>
+              <div className="p-4 border-b border-white/8 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-indigo-600/20 flex items-center justify-center shrink-0">
+                    <span className="text-indigo-400 font-bold text-xs">
+                      {(selectedTicket.customerEmail || "?")[0].toUpperCase()}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      {selectedTicket.customerName || selectedTicket.customerEmail}
+                    </p>
+                    <p className="text-xs text-white/40">
+                      {selectedTicket.subject || "Support Request"} · #{selectedTicket.id}
+                    </p>
+                  </div>
+                  <div className="ml-2">{statusBadge(selectedTicket.status)}</div>
+                </div>
+                {selectedTicket.status !== "closed" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => closeMutation.mutate(selectedTicket.id)}
+                    disabled={closeMutation.isPending}
+                    className="glass border-white/10 text-white/60 hover:text-white h-8"
+                    data-testid="button-close-ticket"
+                  >
+                    <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                    {closeMutation.isPending ? "Closing..." : "Close Ticket"}
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {messages.map((msg: any) => (
+                  <div
+                    key={msg.id}
+                    className={`flex ${msg.sender === "admin" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
+                        msg.sender === "admin"
+                          ? "bg-gradient-to-r from-indigo-600/80 to-violet-600/80 text-white"
+                          : msg.sender === "ai"
+                          ? "bg-white/5 border border-white/10 text-white/80"
+                          : "bg-white/10 text-white/90"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                          msg.sender === "admin" ? "text-white/60" : msg.sender === "ai" ? "text-indigo-400/70" : "text-white/40"
+                        }`}>
+                          {msg.sender === "admin" ? "You" : msg.sender === "ai" ? "AI Bot" : "Customer"}
+                        </span>
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                      <p className={`text-[10px] mt-1 ${msg.sender === "admin" ? "text-white/40" : "text-white/25"}`}>
+                        {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : ""}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {selectedTicket.status !== "closed" && (
+                <div className="p-4 border-t border-white/8">
+                  <div className="flex gap-2">
+                    <Input
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                      placeholder="Type your reply..."
+                      className="glass border-white/10 bg-white/5 text-white placeholder:text-white/25 flex-1"
+                      data-testid="input-admin-reply"
+                    />
+                    <Button
+                      onClick={handleSend}
+                      disabled={!replyText.trim() || sendMutation.isPending}
+                      className="bg-gradient-to-r from-indigo-600 to-violet-600 border-0 text-white shadow-lg hover:opacity-90"
+                      data-testid="button-send-reply"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <MessageCircle className="w-12 h-12 text-white/10 mx-auto mb-3" />
+                <p className="text-white/30 font-medium">Select a ticket to view</p>
+                <p className="text-xs text-white/20 mt-1">Choose a conversation from the left panel</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Customers Tab ────────────────────────────────────────────
 function CustomersTab() {
   const { toast } = useToast();
@@ -2075,6 +2334,17 @@ function CustomersTab() {
     onSuccess: (d, vars) => {
       if (d.success) {
         toast({ title: vars.suspended ? "Account suspended" : "Account unsuspended" });
+        refetch();
+      } else toast({ title: "Failed", description: d.error, variant: "destructive" });
+    },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: (id: number) =>
+      authFetch(`/api/admin/customers/${id}/verify`, { method: "PATCH" }),
+    onSuccess: (d) => {
+      if (d.success) {
+        toast({ title: "Customer verified successfully" });
         refetch();
       } else toast({ title: "Failed", description: d.error, variant: "destructive" });
     },
@@ -2158,19 +2428,32 @@ function CustomersTab() {
                     <span className="text-xs text-white/40">{c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "—"}</span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <button
-                      onClick={() => suspendMutation.mutate({ id: c.id, suspended: !c.suspended })}
-                      disabled={suspendMutation.isPending}
-                      data-testid={`button-suspend-${c.id}`}
-                      title={c.suspended ? "Unsuspend account" : "Suspend account"}
-                      className={`p-1.5 rounded-lg transition-all text-xs font-medium px-3 py-1 ${
-                        c.suspended
-                          ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
-                          : "bg-red-500/15 text-red-400 hover:bg-red-500/25"
-                      }`}
-                    >
-                      {c.suspended ? "Unsuspend" : "Suspend"}
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      {!c.emailVerified && !c.suspended && (
+                        <button
+                          onClick={() => verifyMutation.mutate(c.id)}
+                          disabled={verifyMutation.isPending}
+                          data-testid={`button-verify-${c.id}`}
+                          title="Manually verify customer"
+                          className="p-1.5 rounded-lg transition-all text-xs font-medium px-3 py-1 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 flex items-center gap-1"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />Verify
+                        </button>
+                      )}
+                      <button
+                        onClick={() => suspendMutation.mutate({ id: c.id, suspended: !c.suspended })}
+                        disabled={suspendMutation.isPending}
+                        data-testid={`button-suspend-${c.id}`}
+                        title={c.suspended ? "Unsuspend account" : "Suspend account"}
+                        className={`p-1.5 rounded-lg transition-all text-xs font-medium px-3 py-1 ${
+                          c.suspended
+                            ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                            : "bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                        }`}
+                      >
+                        {c.suspended ? "Unsuspend" : "Suspend"}
+                      </button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

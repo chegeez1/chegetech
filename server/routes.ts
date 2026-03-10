@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import { storage } from "./storage";
 import { accountManager } from "./accounts";
 import { sendAccountEmail, sendPasswordResetEmail, sendSuspensionEmail, sendUnsuspensionEmail, sendBulkEmail } from "./email";
-import { sendTelegramMessage, notifyNewOrder, notifyNewCustomer, notifyPaymentFailed, isTelegramConfigured } from "./telegram";
+import { sendTelegramMessage, notifyNewOrder, notifyNewCustomer, notifyPaymentFailed, isTelegramConfigured, notifySupportEscalation } from "./telegram";
 import { getWhatsAppStatus, connectWhatsApp, disconnectWhatsApp, isWhatsAppWebConnected, broadcastNewOrder, sendWhatsAppNotification } from "./whatsapp-web";
 import { subscriptionPlans } from "./plans";
 import { promoManager } from "./promo";
@@ -30,6 +30,7 @@ import { getAppConfig, saveAppConfig } from "./app-config";
 import { getCredentialsOverride, saveCredentialsOverride } from "./credentials-store";
 import { logAdminAction, getAdminLogs } from "./admin-logger";
 import { logDelivery, getDeliveryProof, getDeliveryLogs } from "./delivery-log";
+import { getAIChatResponse } from "./openai-chat";
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
 
@@ -1305,6 +1306,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // ─── Admin: Manually verify customer email ──────────────────────────────
+  app.patch("/api/admin/customers/:id/verify", adminAuthMiddleware, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const customer = await storage.getCustomerById(id);
+      if (!customer) return res.status(404).json({ success: false, error: "Customer not found" });
+      await storage.updateCustomer(id, {
+        emailVerified: true,
+        verificationCode: null,
+        verificationExpires: null,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // ─── Admin: Send bulk email ──────────────────────────────────────────────
   app.post("/api/admin/email-blast", adminAuthMiddleware, async (req, res) => {
     try {
@@ -1529,6 +1547,112 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // SUPPORT TICKET ROUTES (Customer-facing)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.post("/api/support/ticket", async (req, res) => {
+    try {
+      const { customerEmail, customerName, subject } = req.body;
+      if (!customerEmail) return res.status(400).json({ success: false, error: "Customer email is required" });
+      const ticket = await storage.createTicket({ customerEmail, customerName, subject });
+      res.json({ success: true, ticket });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/support/ticket/:id/message", async (req, res) => {
+    try {
+      const ticketId = parseInt(req.params.id);
+      const { message, token, sender: senderHint } = req.body;
+      if (!message) return res.status(400).json({ success: false, error: "Message is required" });
+      if (!token) return res.status(401).json({ success: false, error: "Ticket token is required" });
+      const ticket = await storage.getTicketById(ticketId);
+      if (!ticket || ticket.token !== token) return res.status(403).json({ success: false, error: "Invalid ticket token" });
+      const sender = senderHint === "ai" ? "ai" : "customer";
+      const msg = await storage.addMessage({ ticketId, sender, message });
+      res.json({ success: true, message: msg });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/support/ticket/:id/messages", async (req, res) => {
+    try {
+      const ticketId = parseInt(req.params.id);
+      const token = req.query.token as string;
+      if (!token) return res.status(401).json({ success: false, error: "Ticket token is required" });
+      const ticket = await storage.getTicketById(ticketId);
+      if (!ticket || ticket.token !== token) return res.status(403).json({ success: false, error: "Invalid ticket token" });
+      const messages = await storage.getMessages(ticketId);
+      res.json({ success: true, messages });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/support/ticket/:id/escalate", async (req, res) => {
+    try {
+      const ticketId = parseInt(req.params.id);
+      const { token } = req.body;
+      if (!token) return res.status(401).json({ success: false, error: "Ticket token is required" });
+      const ticket = await storage.getTicketById(ticketId);
+      if (!ticket || ticket.token !== token) return res.status(403).json({ success: false, error: "Invalid ticket token" });
+      await storage.updateTicket(ticketId, { status: "escalated" });
+      const messages = await storage.getMessages(ticketId);
+      notifySupportEscalation({
+        ticketId,
+        customerName: ticket.customerName || "Unknown",
+        customerEmail: ticket.customerEmail,
+        subject: ticket.subject || "Support Request",
+        recentMessages: messages.map((m) => ({ sender: m.sender, message: m.message })),
+      }).catch(() => {});
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ADMIN SUPPORT TICKET ROUTES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get("/api/admin/support/tickets", adminAuthMiddleware, async (_req, res) => {
+    try {
+      const tickets = await storage.getOpenTickets();
+      res.json({ success: true, tickets });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/admin/support/ticket/:id/message", adminAuthMiddleware, async (req, res) => {
+    try {
+      const ticketId = parseInt(req.params.id);
+      const { message } = req.body;
+      if (!message) return res.status(400).json({ success: false, error: "Message is required" });
+      const ticket = await storage.getTicketById(ticketId);
+      if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found" });
+      const msg = await storage.addMessage({ ticketId, sender: "admin", message });
+      res.json({ success: true, message: msg });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/support/ticket/:id/close", adminAuthMiddleware, async (req, res) => {
+    try {
+      const ticketId = parseInt(req.params.id);
+      const ticket = await storage.getTicketById(ticketId);
+      if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found" });
+      await storage.updateTicket(ticketId, { status: "closed" });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // API KEY AUTHENTICATED ENDPOINTS (v1)
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1599,6 +1723,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         id: c.id, email: c.email, name: c.name, emailVerified: c.emailVerified, createdAt: c.createdAt,
       })),
     });
+  });
+
+  // ─── Public: AI Support Chat ─────────────────────────────────────────
+  app.post("/api/support/chat", async (req, res) => {
+    try {
+      const { message, sessionId } = req.body;
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({ success: false, error: "Message is required" });
+      }
+      const sid = sessionId || `chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const result = await getAIChatResponse(sid, message);
+      res.json({ success: true, response: result.response, sessionId: result.sessionId });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   return httpServer;

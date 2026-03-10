@@ -91,6 +91,32 @@ export async function notifyPaymentFailed(opts: {
   await sendTelegramMessage(text).catch(() => {});
 }
 
+export async function notifySupportEscalation(opts: {
+  ticketId: number;
+  customerName: string;
+  customerEmail: string;
+  subject: string;
+  recentMessages: Array<{ sender: string; message: string }>;
+}): Promise<void> {
+  const msgPreview = opts.recentMessages
+    .slice(-5)
+    .map((m) => `[${m.sender}] ${m.message}`)
+    .join("\n");
+  const text = [
+    `🆘 <b>Support Escalation — Ticket #${opts.ticketId}</b>`,
+    ``,
+    `👤 Customer: ${opts.customerName || "Unknown"}`,
+    `📧 Email: ${opts.customerEmail}`,
+    `📋 Subject: ${opts.subject || "N/A"}`,
+    ``,
+    `💬 Recent messages:`,
+    msgPreview,
+    ``,
+    `Reply from the Admin Dashboard or use /reply ${opts.ticketId} &lt;message&gt;`,
+  ].join("\n");
+  await sendTelegramMessage(text).catch(() => {});
+}
+
 export async function notifyCustomerSupport(opts: {
   name: string;
   email: string;

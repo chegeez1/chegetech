@@ -85,6 +85,25 @@ export async function initializeDatabase() {
           value TEXT NOT NULL,
           updated_at TEXT DEFAULT (NOW()::text)
         );
+
+        CREATE TABLE IF NOT EXISTS support_tickets (
+          id SERIAL PRIMARY KEY,
+          token TEXT UNIQUE NOT NULL,
+          customer_email TEXT NOT NULL,
+          customer_name TEXT,
+          subject TEXT,
+          status TEXT DEFAULT 'open',
+          created_at TEXT DEFAULT (NOW()::text),
+          updated_at TEXT DEFAULT (NOW()::text)
+        );
+
+        CREATE TABLE IF NOT EXISTS support_messages (
+          id SERIAL PRIMARY KEY,
+          ticket_id INTEGER NOT NULL,
+          sender TEXT NOT NULL,
+          message TEXT NOT NULL,
+          created_at TEXT DEFAULT (NOW()::text)
+        );
       `);
 
       const drizzlePgModule = await import("drizzle-orm/node-postgres");
@@ -182,6 +201,25 @@ function initSqlite() {
       value TEXT NOT NULL,
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT UNIQUE NOT NULL,
+      customer_email TEXT NOT NULL,
+      customer_name TEXT,
+      subject TEXT,
+      status TEXT DEFAULT 'open',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS support_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id INTEGER NOT NULL,
+      sender TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
   console.log("[db] Connected to SQLite");
 }
@@ -260,6 +298,25 @@ export function dbSettingsSet(key: string, value: string): void {
   }
 }
 
+export interface SupportTicket {
+  id: number;
+  token: string;
+  customerEmail: string;
+  customerName: string | null;
+  subject: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupportMessage {
+  id: number;
+  ticketId: number;
+  sender: string;
+  message: string;
+  createdAt: string;
+}
+
 export interface IStorage {
   createTransaction(data: InsertTransaction): Promise<Transaction>;
   getTransaction(reference: string): Promise<Transaction | undefined>;
@@ -288,6 +345,14 @@ export interface IStorage {
   getAllApiKeys(): Promise<ApiKey[]>;
   revokeApiKey(id: number): Promise<void>;
   deleteApiKey(id: number): Promise<void>;
+
+  createTicket(data: { customerEmail: string; customerName?: string; subject?: string }): Promise<SupportTicket>;
+  getTicketById(id: number): Promise<SupportTicket | undefined>;
+  getTicketByToken(token: string): Promise<SupportTicket | undefined>;
+  updateTicket(id: number, data: Partial<SupportTicket>): Promise<SupportTicket | undefined>;
+  getOpenTickets(): Promise<SupportTicket[]>;
+  addMessage(data: { ticketId: number; sender: string; message: string }): Promise<SupportMessage>;
+  getMessages(ticketId: number): Promise<SupportMessage[]>;
 }
 
 export class DbStorage implements IStorage {
@@ -443,6 +508,110 @@ export class DbStorage implements IStorage {
 
   async deleteApiKey(id: number): Promise<void> {
     await getDb().delete(apiKeys).where(eq(apiKeys.id, id));
+  }
+
+  async createTicket(data: { customerEmail: string; customerName?: string; subject?: string }): Promise<SupportTicket> {
+    const token = crypto.randomUUID();
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query(
+        "INSERT INTO support_tickets (token, customer_email, customer_name, subject, status, created_at, updated_at) VALUES ($1, $2, $3, $4, 'open', NOW()::text, NOW()::text) RETURNING *",
+        [token, data.customerEmail, data.customerName || null, data.subject || null]
+      );
+      const row = result.rows[0];
+      return { id: row.id, token: row.token, customerEmail: row.customer_email, customerName: row.customer_name, subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at };
+    }
+    const stmt = sqliteInstance!.prepare(
+      "INSERT INTO support_tickets (token, customer_email, customer_name, subject) VALUES (?, ?, ?, ?)"
+    );
+    const info = stmt.run(token, data.customerEmail, data.customerName || null, data.subject || null);
+    const row = sqliteInstance!.prepare("SELECT * FROM support_tickets WHERE id = ?").get(info.lastInsertRowid) as any;
+    return { id: row.id, token: row.token, customerEmail: row.customer_email, customerName: row.customer_name, subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at };
+  }
+
+  async getTicketById(id: number): Promise<SupportTicket | undefined> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query("SELECT * FROM support_tickets WHERE id = $1", [id]);
+      if (result.rows.length === 0) return undefined;
+      const row = result.rows[0];
+      return { id: row.id, token: row.token, customerEmail: row.customer_email, customerName: row.customer_name, subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at };
+    }
+    const row = sqliteInstance!.prepare("SELECT * FROM support_tickets WHERE id = ?").get(id) as any;
+    if (!row) return undefined;
+    return { id: row.id, token: row.token, customerEmail: row.customer_email, customerName: row.customer_name, subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at };
+  }
+
+  async getTicketByToken(token: string): Promise<SupportTicket | undefined> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query("SELECT * FROM support_tickets WHERE token = $1", [token]);
+      if (result.rows.length === 0) return undefined;
+      const row = result.rows[0];
+      return { id: row.id, token: row.token, customerEmail: row.customer_email, customerName: row.customer_name, subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at };
+    }
+    const row = sqliteInstance!.prepare("SELECT * FROM support_tickets WHERE token = ?").get(token) as any;
+    if (!row) return undefined;
+    return { id: row.id, token: row.token, customerEmail: row.customer_email, customerName: row.customer_name, subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at };
+  }
+
+  async updateTicket(id: number, data: Partial<SupportTicket>): Promise<SupportTicket | undefined> {
+    const sets: string[] = [];
+    const values: any[] = [];
+    if (data.status !== undefined) { sets.push("status"); values.push(data.status); }
+    if (data.subject !== undefined) { sets.push("subject"); values.push(data.subject); }
+    if (sets.length === 0) return this.getTicketById(id);
+
+    if (dbType === "pg" && pgPool) {
+      const setClauses = sets.map((s, i) => `${s} = $${i + 1}`).join(", ");
+      values.push(id);
+      await pgPool.query(`UPDATE support_tickets SET ${setClauses}, updated_at = NOW()::text WHERE id = $${values.length}`, values);
+    } else {
+      const setClauses = sets.map((s) => `${s} = ?`).join(", ");
+      values.push(id);
+      sqliteInstance!.prepare(`UPDATE support_tickets SET ${setClauses}, updated_at = datetime('now') WHERE id = ?`).run(...values);
+    }
+    return this.getTicketById(id);
+  }
+
+  async getOpenTickets(): Promise<SupportTicket[]> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query("SELECT * FROM support_tickets WHERE status IN ('open', 'escalated') ORDER BY updated_at DESC");
+      return result.rows.map((row: any) => ({
+        id: row.id, token: row.token, customerEmail: row.customer_email, customerName: row.customer_name, subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at,
+      }));
+    }
+    const rows = sqliteInstance!.prepare("SELECT * FROM support_tickets WHERE status IN ('open', 'escalated') ORDER BY updated_at DESC").all() as any[];
+    return rows.map((row: any) => ({
+      id: row.id, token: row.token, customerEmail: row.customer_email, customerName: row.customer_name, subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at,
+    }));
+  }
+
+  async addMessage(data: { ticketId: number; sender: string; message: string }): Promise<SupportMessage> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query(
+        "INSERT INTO support_messages (ticket_id, sender, message, created_at) VALUES ($1, $2, $3, NOW()::text) RETURNING *",
+        [data.ticketId, data.sender, data.message]
+      );
+      const row = result.rows[0];
+      await pgPool.query("UPDATE support_tickets SET updated_at = NOW()::text WHERE id = $1", [data.ticketId]);
+      return { id: row.id, ticketId: row.ticket_id, sender: row.sender, message: row.message, createdAt: row.created_at };
+    }
+    const stmt = sqliteInstance!.prepare("INSERT INTO support_messages (ticket_id, sender, message) VALUES (?, ?, ?)");
+    const info = stmt.run(data.ticketId, data.sender, data.message);
+    sqliteInstance!.prepare("UPDATE support_tickets SET updated_at = datetime('now') WHERE id = ?").run(data.ticketId);
+    const row = sqliteInstance!.prepare("SELECT * FROM support_messages WHERE id = ?").get(info.lastInsertRowid) as any;
+    return { id: row.id, ticketId: row.ticket_id, sender: row.sender, message: row.message, createdAt: row.created_at };
+  }
+
+  async getMessages(ticketId: number): Promise<SupportMessage[]> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query("SELECT * FROM support_messages WHERE ticket_id = $1 ORDER BY created_at ASC", [ticketId]);
+      return result.rows.map((row: any) => ({
+        id: row.id, ticketId: row.ticket_id, sender: row.sender, message: row.message, createdAt: row.created_at,
+      }));
+    }
+    const rows = sqliteInstance!.prepare("SELECT * FROM support_messages WHERE ticket_id = ? ORDER BY created_at ASC").all(ticketId) as any[];
+    return rows.map((row: any) => ({
+      id: row.id, ticketId: row.ticket_id, sender: row.sender, message: row.message, createdAt: row.created_at,
+    }));
   }
 }
 
