@@ -777,6 +777,44 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // ─── Admin: Manual Transaction Verification ─────────────────────────────
+  app.post("/api/admin/transactions/:reference/verify", adminAuthMiddleware, async (req, res) => {
+    try {
+      const tx = await storage.getTransaction(req.params.reference);
+      if (!tx) return res.status(404).json({ success: false, error: "Transaction not found" });
+      if (tx.status === "success") return res.status(400).json({ success: false, error: "Transaction already verified and delivered" });
+
+      const freshTx = await storage.getTransaction(req.params.reference);
+      if (freshTx?.status === "success") return res.status(400).json({ success: false, error: "Transaction was already delivered (concurrent action)" });
+
+      let verificationMethod = "admin_force_override";
+      const paystackCheck = await verifyPaystackPayment(tx.reference);
+      if (paystackCheck.configured && paystackCheck.success) {
+        verificationMethod = "admin_paystack_confirmed";
+      }
+
+      const delivery = await deliverAccount(tx);
+      if (delivery.success) {
+        logAdminAction({
+          action: `Manually verified transaction ${tx.reference} for ${tx.customerEmail}`,
+          category: "transactions",
+          status: "success",
+          details: `Method: ${verificationMethod}. Account delivered to ${tx.customerEmail}`,
+        });
+        res.json({
+          success: true,
+          message: "Transaction verified and credentials delivered",
+          method: verificationMethod,
+        });
+      } else {
+        logAdminAction({ action: `Manual verification attempted for ${tx.reference}`, category: "transactions", status: "failed", details: delivery.error });
+        res.json({ success: false, error: delivery.error || "Failed to deliver account" });
+      }
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // ─── Admin: Delivery Proof ──────────────────────────────────────────────
   app.get("/api/admin/delivery-proof/:reference", adminAuthMiddleware, (req, res) => {
     try {
@@ -1401,6 +1439,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         whatsappPhoneId: override.whatsappPhoneId || "",
         whatsappVerifyToken: override.whatsappVerifyToken || "",
         whatsappAdminPhone: override.whatsappAdminPhone || "",
+        openaiApiKey: override.openaiApiKey ? "••••••••••••••••" : "",
+        openaiApiKeySet: !!override.openaiApiKey,
       },
       effective: {
         paystackPublicKey: status.paystackPublicKey,
@@ -1409,6 +1449,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         emailConfigured: status.emailConfigured,
         telegramConfigured: isTelegramConfigured(),
         whatsappConfigured: isWhatsAppWebConnected(),
+        openaiApiKeySet: !!(override.openaiApiKey || process.env.OPENAI_API_KEY),
       },
       sourceOverride: {
         ...status.sourceOverride,
@@ -1416,6 +1457,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         telegramChatId: !!override.telegramChatId,
         whatsappAccessToken: !!override.whatsappAccessToken,
         whatsappPhoneId: !!override.whatsappPhoneId,
+        openaiApiKey: !!override.openaiApiKey,
       },
       envVarSet: {
         paystackPublicKey: !!process.env.PAYSTACK_PUBLIC_KEY,
@@ -1428,6 +1470,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         telegramChatId: !!process.env.TELEGRAM_CHAT_ID,
         whatsappAccessToken: !!process.env.WHATSAPP_ACCESS_TOKEN,
         whatsappPhoneId: !!process.env.WHATSAPP_PHONE_ID,
+        openaiApiKey: !!process.env.OPENAI_API_KEY,
       },
     });
   });
@@ -1436,7 +1479,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.put("/api/admin/credentials", adminAuthMiddleware, (req, res) => {
     try {
       const { paystackPublicKey, paystackSecretKey, emailUser, emailPass, adminEmail, adminPassword, telegramBotToken, telegramChatId,
-        whatsappAccessToken, whatsappPhoneId, whatsappVerifyToken, whatsappAdminPhone } = req.body;
+        whatsappAccessToken, whatsappPhoneId, whatsappVerifyToken, whatsappAdminPhone, openaiApiKey } = req.body;
       const toSave: Record<string, string | undefined> = {};
       if (paystackPublicKey !== undefined) toSave.paystackPublicKey = paystackPublicKey || undefined;
       if (paystackSecretKey !== undefined && paystackSecretKey !== "••••••••••••••••") toSave.paystackSecretKey = paystackSecretKey || undefined;
@@ -1450,6 +1493,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (whatsappPhoneId !== undefined) toSave.whatsappPhoneId = whatsappPhoneId || undefined;
       if (whatsappVerifyToken !== undefined) toSave.whatsappVerifyToken = whatsappVerifyToken || undefined;
       if (whatsappAdminPhone !== undefined) toSave.whatsappAdminPhone = whatsappAdminPhone || undefined;
+      if (openaiApiKey !== undefined && openaiApiKey !== "••••••••••••••••") toSave.openaiApiKey = openaiApiKey || undefined;
 
       saveCredentialsOverride(toSave);
       logAdminAction({ action: "Credentials updated", category: "settings", details: `Updated: ${Object.keys(toSave).join(", ")}`, status: "success" });

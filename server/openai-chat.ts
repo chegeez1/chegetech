@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { subscriptionPlans } from "./plans";
 import { planOverridesManager } from "./plan-overrides";
+import { getCredentialsOverride } from "./credentials-store";
 
 const conversationHistory: Map<string, Array<{ role: "system" | "user" | "assistant"; content: string }>> = new Map();
 
@@ -46,7 +47,15 @@ Guidelines:
 export function getAIChatResponse(sessionId: string, userMessage: string): Promise<{ response: string; sessionId: string }> {
   return new Promise(async (resolve, reject) => {
     try {
-      const openai = new OpenAI();
+      const override = getCredentialsOverride();
+      const apiKey = override.openaiApiKey || process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        return resolve({
+          response: "AI support is currently unavailable. Please try talking to a human agent instead.",
+          sessionId,
+        });
+      }
+      const openai = new OpenAI({ apiKey });
 
       if (!conversationHistory.has(sessionId)) {
         conversationHistory.set(sessionId, [

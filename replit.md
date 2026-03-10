@@ -18,9 +18,10 @@ A full-stack subscription management platform built with Express (backend) + Rea
 - Customer accounts with email verification and TOTP 2FA
 - Admin dashboard with transaction/delivery logs
 - Admin manual email verification for customers
-- AI-powered customer support chatbot (OpenAI gpt-4o-mini)
+- AI-powered customer support chatbot (OpenAI gpt-4o-mini) — key configurable via admin Settings panel or env var
 - Live admin-customer chat via Support tab in admin panel
 - Support ticket system with escalation workflow
+- Manual transaction verification in admin Transactions tab (for payment failures)
 - Telegram bot integration (including support ticket management: /tickets, /reply, /close)
 - WhatsApp integration (via @whiskeysockets/baileys)
 - Email notifications via Nodemailer

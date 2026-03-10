@@ -1362,6 +1362,7 @@ function TransactionsTab() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "pending" | "failed">("all");
   const [resendingRef, setResendingRef] = useState<string | null>(null);
+  const [verifyingRef, setVerifyingRef] = useState<string | null>(null);
   const [proofRef, setProofRef] = useState<string | null>(null);
   const [proofData, setProofData] = useState<any>(null);
   const [proofLoading, setProofLoading] = useState(false);
@@ -1395,6 +1396,26 @@ function TransactionsTab() {
       toast({ title: "Resend failed", variant: "destructive" });
     } finally {
       setResendingRef(null);
+    }
+  }
+
+  const queryClient = useQueryClient();
+
+  async function manualVerify(reference: string) {
+    if (!window.confirm(`Are you sure you want to manually verify this transaction and deliver account credentials?\n\nReference: ${reference}\n\nThis will assign an account and send credentials to the customer even if the payment was not confirmed by Paystack.`)) return;
+    setVerifyingRef(reference);
+    try {
+      const res = await authFetch(`/api/admin/transactions/${reference}/verify`, { method: "POST" });
+      if (res.success) {
+        toast({ title: "Transaction verified", description: "Account credentials have been delivered to the customer" });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/transactions"] });
+      } else {
+        toast({ title: "Verification failed", description: res.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Verification failed", variant: "destructive" });
+    } finally {
+      setVerifyingRef(null);
     }
   }
 
@@ -1514,6 +1535,18 @@ function TransactionsTab() {
                               {resendingRef === tx.reference
                                 ? <div className="w-3.5 h-3.5 border border-white/40 border-t-transparent rounded-full animate-spin" />
                                 : <RotateCcw className="w-3.5 h-3.5" />}
+                            </Button>
+                          )}
+                          {(tx.status === "pending" || tx.status === "failed") && (
+                            <Button size="sm" variant="ghost"
+                              className="h-7 px-2 text-white/40 hover:text-emerald-400 hover:bg-emerald-500/10"
+                              onClick={() => manualVerify(tx.reference)}
+                              disabled={verifyingRef === tx.reference}
+                              title="Manually verify and deliver credentials"
+                              data-testid={`button-verify-${tx.id}`}>
+                              {verifyingRef === tx.reference
+                                ? <div className="w-3.5 h-3.5 border border-white/40 border-t-transparent rounded-full animate-spin" />
+                                : <CheckCircle className="w-3.5 h-3.5" />}
                             </Button>
                           )}
                         </div>
@@ -2878,6 +2911,21 @@ function CredentialsEditor({ inputCls }: { inputCls: string }) {
           <CredRow label="Chat ID" field="telegramChatId" placeholder="-1001234567890"
             hint="Your Telegram user/group/channel ID. Send a message to @userinfobot to find yours." />
           <TelegramTestButton telegramConfigured={!!effective.telegramConfigured} dirty={dirty} />
+        </div>
+
+        {/* OpenAI */}
+        <div className="glass rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded flex items-center justify-center bg-emerald-500/20">
+                <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              </div>
+              <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">OpenAI (AI Chat Support)</p>
+            </div>
+            {(creds.openaiApiKeySet || !!effective.openaiApiKeySet) && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border-0 px-1.5">Active</Badge>}
+          </div>
+          <CredRow label="API Key" field="openaiApiKey" type="password" placeholder="sk-..."
+            hint="Powers the AI chat assistant. Get one from platform.openai.com/api-keys" />
         </div>
 
         {/* WhatsApp Bot */}
