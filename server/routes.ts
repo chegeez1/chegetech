@@ -22,6 +22,9 @@ import {
   createAdminToken,
   validateAdminToken,
   adminAuthMiddleware,
+  superAdminOnly,
+  requirePermission,
+  setStorageRef,
 } from "./auth";
 import { getPaystackSecretKey, getPaystackPublicKey, getSecretsStatus } from "./secrets";
 import nodemailer from "nodemailer";
@@ -264,6 +267,7 @@ async function deliverAccount(transaction: any): Promise<{ success: boolean; err
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+  setStorageRef(storage);
 
   // ─── Public: Config ───────────────────────────────────────────────────────
   app.get("/api/config", (_req, res) => {
@@ -625,30 +629,52 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Login ─────────────────────────────────────────────────────────
-  app.post("/api/admin/login", (req, res) => {
+  app.post("/api/admin/login", async (req, res) => {
     const { email, password, totpCode } = req.body;
     const ip = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || "unknown";
     const creds = getAdminCredentials();
-    if (email !== creds.email || password !== creds.password) {
-      logAdminAction({ action: "Login failed — wrong credentials", category: "auth", details: `Email: ${email}`, ip, status: "error" });
-      return res.status(401).json({ success: false, error: "Invalid email or password" });
-    }
-    if (isSetupComplete()) {
-      if (!totpCode) {
-        return res.status(403).json({ success: false, error: "2FA code required", requiresTotp: true });
+
+    if (email === creds.email && password === creds.password) {
+      if (isSetupComplete()) {
+        if (!totpCode) {
+          return res.status(403).json({ success: false, error: "2FA code required", requiresTotp: true });
+        }
+        if (!verifyTotp(totpCode)) {
+          logAdminAction({ action: "Login failed — wrong 2FA code", category: "auth", details: `Email: ${email}`, ip, status: "error" });
+          return res.status(401).json({ success: false, error: "Invalid 2FA code" });
+        }
       }
-      if (!verifyTotp(totpCode)) {
-        logAdminAction({ action: "Login failed — wrong 2FA code", category: "auth", details: `Email: ${email}`, ip, status: "error" });
-        return res.status(401).json({ success: false, error: "Invalid 2FA code" });
+      const token = createAdminToken({ role: "super" });
+      logAdminAction({ action: "Super admin logged in", category: "auth", details: `Email: ${email}`, ip, status: "success" });
+      return res.json({ success: true, token, role: "super" });
+    }
+
+    const subAdmin = await storage.getSubAdminByEmail(email);
+    if (subAdmin && subAdmin.active) {
+      const valid = await bcrypt.compare(password, subAdmin.passwordHash);
+      if (valid) {
+        const token = createAdminToken({ role: "subadmin", subAdminId: subAdmin.id, permissions: subAdmin.permissions });
+        logAdminAction({ action: "Sub-admin logged in", category: "auth", details: `Email: ${email}`, ip, status: "success" });
+        return res.json({ success: true, token, role: "subadmin" });
       }
     }
-    const token = createAdminToken();
-    logAdminAction({ action: "Admin logged in", category: "auth", details: `Email: ${email}`, ip, status: "success" });
-    res.json({ success: true, token });
+
+    logAdminAction({ action: "Login failed — wrong credentials", category: "auth", details: `Email: ${email}`, ip, status: "error" });
+    return res.status(401).json({ success: false, error: "Invalid email or password" });
+  });
+
+  // ─── Admin: Current user info ────────────────────────────────────────────
+  app.get("/api/admin/me", adminAuthMiddleware, async (req: any, res) => {
+    if (req.adminRole === "super") {
+      return res.json({ success: true, role: "super", permissions: "all" });
+    }
+    const subAdmin = await storage.getSubAdminById(req.subAdminId);
+    if (!subAdmin || !subAdmin.active) return res.status(401).json({ success: false, error: "Account deactivated" });
+    res.json({ success: true, role: "subadmin", permissions: subAdmin.permissions, name: subAdmin.name, email: subAdmin.email });
   });
 
   // ─── Admin: Get secrets status ────────────────────────────────────────────
-  app.get("/api/admin/secrets", adminAuthMiddleware, (_req, res) => {
+  app.get("/api/admin/secrets", adminAuthMiddleware, superAdminOnly, (_req, res) => {
     res.json({ success: true, secrets: getSecretsStatus() });
   });
 
@@ -666,7 +692,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Transactions ──────────────────────────────────────────────────
-  app.get("/api/admin/transactions", adminAuthMiddleware, async (_req, res) => {
+  app.get("/api/admin/transactions", adminAuthMiddleware, requirePermission("dashboard", "transactions"), async (_req, res) => {
     try {
       const txs = await storage.getAllTransactions();
       res.json({ success: true, transactions: txs });
@@ -676,12 +702,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Get all accounts ──────────────────────────────────────────────
-  app.get("/api/admin/accounts", adminAuthMiddleware, (_req, res) => {
+  app.get("/api/admin/accounts", adminAuthMiddleware, requirePermission("accounts"), (_req, res) => {
     res.json({ success: true, accounts: accountManager.getAllAccounts() });
   });
 
   // ─── Admin: Add account ───────────────────────────────────────────────────
-  app.post("/api/admin/accounts", adminAuthMiddleware, (req, res) => {
+  app.post("/api/admin/accounts", adminAuthMiddleware, requirePermission("accounts"), (req, res) => {
     try {
       const { planId, email, username, password, activationCode, redeemLink, instructions, maxUsers } = req.body;
       if (!planId) return res.status(400).json({ success: false, error: "planId is required" });
@@ -696,28 +722,28 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Update account ────────────────────────────────────────────────
-  app.put("/api/admin/accounts/:id", adminAuthMiddleware, (req, res) => {
+  app.put("/api/admin/accounts/:id", adminAuthMiddleware, requirePermission("accounts"), (req, res) => {
     const updated = accountManager.updateAccount(req.params.id, req.body);
     if (!updated) return res.status(404).json({ success: false, error: "Account not found" });
     res.json({ success: true, account: updated });
   });
 
   // ─── Admin: Toggle account disabled ──────────────────────────────────────
-  app.patch("/api/admin/accounts/:id/toggle", adminAuthMiddleware, (req, res) => {
+  app.patch("/api/admin/accounts/:id/toggle", adminAuthMiddleware, requirePermission("accounts"), (req, res) => {
     const acc = accountManager.toggleAccountDisabled(req.params.id);
     if (!acc) return res.status(404).json({ success: false, error: "Account not found" });
     res.json({ success: true, account: acc });
   });
 
   // ─── Admin: Delete account ────────────────────────────────────────────────
-  app.delete("/api/admin/accounts/:id", adminAuthMiddleware, (req, res) => {
+  app.delete("/api/admin/accounts/:id", adminAuthMiddleware, requirePermission("accounts"), (req, res) => {
     const result = accountManager.removeAccount(req.params.id);
     if (result.removed) res.json({ success: true });
     else res.status(404).json({ success: false, error: "Account not found" });
   });
 
   // ─── Admin: Bulk add accounts ─────────────────────────────────────────────
-  app.post("/api/admin/accounts/bulk", adminAuthMiddleware, (req, res) => {
+  app.post("/api/admin/accounts/bulk", adminAuthMiddleware, requirePermission("accounts"), (req, res) => {
     try {
       const { planId, accounts: rows } = req.body;
       if (!planId) return res.status(400).json({ success: false, error: "planId is required" });
@@ -749,7 +775,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Resend credentials ────────────────────────────────────────────
-  app.post("/api/admin/transactions/:reference/resend", adminAuthMiddleware, async (req, res) => {
+  app.post("/api/admin/transactions/:reference/resend", adminAuthMiddleware, requirePermission("transactions"), async (req, res) => {
     try {
       const tx = await storage.getTransaction(req.params.reference);
       if (!tx) return res.status(404).json({ success: false, error: "Transaction not found" });
@@ -778,7 +804,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Manual Transaction Verification ─────────────────────────────
-  app.post("/api/admin/transactions/:reference/verify", adminAuthMiddleware, async (req, res) => {
+  app.post("/api/admin/transactions/:reference/verify", adminAuthMiddleware, requirePermission("transactions"), async (req, res) => {
     try {
       const tx = await storage.getTransaction(req.params.reference);
       if (!tx) return res.status(404).json({ success: false, error: "Transaction not found" });
@@ -816,7 +842,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Delivery Proof ──────────────────────────────────────────────
-  app.get("/api/admin/delivery-proof/:reference", adminAuthMiddleware, (req, res) => {
+  app.get("/api/admin/delivery-proof/:reference", adminAuthMiddleware, requirePermission("transactions"), (req, res) => {
     try {
       const proof = getDeliveryProof(req.params.reference);
       res.json({ success: true, proof });
@@ -825,7 +851,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.get("/api/admin/delivery-logs", adminAuthMiddleware, (req, res) => {
+  app.get("/api/admin/delivery-logs", adminAuthMiddleware, requirePermission("transactions"), (req, res) => {
     try {
       const email = req.query.email as string | undefined;
       const reference = req.query.reference as string | undefined;
@@ -837,7 +863,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Analytics ─────────────────────────────────────────────────────
-  app.get("/api/admin/analytics", adminAuthMiddleware, async (_req, res) => {
+  app.get("/api/admin/analytics", adminAuthMiddleware, requirePermission("dashboard"), async (_req, res) => {
     try {
       const all = await storage.getAllTransactions();
       const successful = all.filter((t) => t.status === "success");
@@ -869,29 +895,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Get plan overrides ────────────────────────────────────────────
-  app.get("/api/admin/plan-overrides", adminAuthMiddleware, (_req, res) => {
+  app.get("/api/admin/plan-overrides", adminAuthMiddleware, requirePermission("plans"), (_req, res) => {
     res.json({ success: true, overrides: planOverridesManager.getOverrides() });
   });
 
   // ─── Admin: Update plan override ─────────────────────────────────────────
-  app.put("/api/admin/plans/:planId", adminAuthMiddleware, (req, res) => {
+  app.put("/api/admin/plans/:planId", adminAuthMiddleware, requirePermission("plans"), (req, res) => {
     planOverridesManager.setOverride(req.params.planId, req.body);
     res.json({ success: true });
   });
 
   // ─── Admin: Reset plan override ───────────────────────────────────────────
-  app.delete("/api/admin/plans/:planId/override", adminAuthMiddleware, (req, res) => {
+  app.delete("/api/admin/plans/:planId/override", adminAuthMiddleware, requirePermission("plans"), (req, res) => {
     planOverridesManager.deleteOverride(req.params.planId);
     res.json({ success: true });
   });
 
   // ─── Admin: Get custom plans ──────────────────────────────────────────────
-  app.get("/api/admin/custom-plans", adminAuthMiddleware, (_req, res) => {
+  app.get("/api/admin/custom-plans", adminAuthMiddleware, requirePermission("plans"), (_req, res) => {
     res.json({ success: true, plans: planOverridesManager.getCustomPlans() });
   });
 
   // ─── Admin: Add custom plan ───────────────────────────────────────────────
-  app.post("/api/admin/custom-plans", adminAuthMiddleware, (req, res) => {
+  app.post("/api/admin/custom-plans", adminAuthMiddleware, requirePermission("plans"), (req, res) => {
     try {
       const plan = planOverridesManager.addCustomPlan(req.body);
       res.json({ success: true, plan });
@@ -901,26 +927,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Update custom plan ────────────────────────────────────────────
-  app.put("/api/admin/custom-plans/:id", adminAuthMiddleware, (req, res) => {
+  app.put("/api/admin/custom-plans/:id", adminAuthMiddleware, requirePermission("plans"), (req, res) => {
     const plan = planOverridesManager.updateCustomPlan(req.params.id, req.body);
     if (!plan) return res.status(404).json({ success: false, error: "Custom plan not found" });
     res.json({ success: true, plan });
   });
 
   // ─── Admin: Delete custom plan ────────────────────────────────────────────
-  app.delete("/api/admin/custom-plans/:id", adminAuthMiddleware, (req, res) => {
+  app.delete("/api/admin/custom-plans/:id", adminAuthMiddleware, requirePermission("plans"), (req, res) => {
     const ok = planOverridesManager.deleteCustomPlan(req.params.id);
     if (!ok) return res.status(404).json({ success: false, error: "Custom plan not found" });
     res.json({ success: true });
   });
 
   // ─── Admin: Get promo codes ───────────────────────────────────────────────
-  app.get("/api/admin/promo-codes", adminAuthMiddleware, (_req, res) => {
+  app.get("/api/admin/promo-codes", adminAuthMiddleware, requirePermission("plans"), (_req, res) => {
     res.json({ success: true, codes: promoManager.getAll() });
   });
 
   // ─── Admin: Create promo code ─────────────────────────────────────────────
-  app.post("/api/admin/promo-codes", adminAuthMiddleware, (req, res) => {
+  app.post("/api/admin/promo-codes", adminAuthMiddleware, requirePermission("plans"), (req, res) => {
     try {
       const code = promoManager.create(req.body);
       res.json({ success: true, code });
@@ -930,21 +956,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Update promo code ─────────────────────────────────────────────
-  app.put("/api/admin/promo-codes/:code", adminAuthMiddleware, (req, res) => {
+  app.put("/api/admin/promo-codes/:code", adminAuthMiddleware, requirePermission("plans"), (req, res) => {
     const updated = promoManager.update(req.params.code, req.body);
     if (!updated) return res.status(404).json({ success: false, error: "Promo code not found" });
     res.json({ success: true, code: updated });
   });
 
   // ─── Admin: Delete promo code ─────────────────────────────────────────────
-  app.delete("/api/admin/promo-codes/:code", adminAuthMiddleware, (req, res) => {
+  app.delete("/api/admin/promo-codes/:code", adminAuthMiddleware, requirePermission("plans"), (req, res) => {
     const ok = promoManager.delete(req.params.code);
     if (!ok) return res.status(404).json({ success: false, error: "Promo code not found" });
     res.json({ success: true });
   });
 
   // ─── Admin: Get all API keys ──────────────────────────────────────────────
-  app.get("/api/admin/api-keys", adminAuthMiddleware, async (_req, res) => {
+  app.get("/api/admin/api-keys", adminAuthMiddleware, requirePermission("api-keys"), async (_req, res) => {
     try {
       const keys = await storage.getAllApiKeys();
       res.json({ success: true, keys });
@@ -954,7 +980,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Generate API key ──────────────────────────────────────────────
-  app.post("/api/admin/api-keys", adminAuthMiddleware, async (req, res) => {
+  app.post("/api/admin/api-keys", adminAuthMiddleware, requirePermission("api-keys"), async (req, res) => {
     try {
       const { label, customerId } = req.body;
       if (!label) return res.status(400).json({ success: false, error: "Label is required" });
@@ -967,7 +993,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Delete API key ────────────────────────────────────────────────
-  app.delete("/api/admin/api-keys/:id", adminAuthMiddleware, async (req, res) => {
+  app.delete("/api/admin/api-keys/:id", adminAuthMiddleware, requirePermission("api-keys"), async (req, res) => {
     try {
       await storage.deleteApiKey(parseInt(req.params.id));
       res.json({ success: true });
@@ -977,7 +1003,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Revoke API key ────────────────────────────────────────────────
-  app.patch("/api/admin/api-keys/:id/revoke", adminAuthMiddleware, async (req, res) => {
+  app.patch("/api/admin/api-keys/:id/revoke", adminAuthMiddleware, requirePermission("api-keys"), async (req, res) => {
     try {
       await storage.revokeApiKey(parseInt(req.params.id));
       res.json({ success: true });
@@ -1305,7 +1331,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ─── Admin: Get all customers ─────────────────────────────────────────────
-  app.get("/api/admin/customers", adminAuthMiddleware, async (_req, res) => {
+  app.get("/api/admin/customers", adminAuthMiddleware, requirePermission("customers"), async (_req, res) => {
     try {
       const all = await storage.getAllCustomers();
       const safeList = all.map((c) => ({
@@ -1324,7 +1350,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Suspend / unsuspend customer ──────────────────────────────────
-  app.patch("/api/admin/customers/:id/suspend", adminAuthMiddleware, async (req, res) => {
+  app.patch("/api/admin/customers/:id/suspend", adminAuthMiddleware, requirePermission("customers"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const newSuspended = req.body.suspended === true;
@@ -1345,7 +1371,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Manually verify customer email ──────────────────────────────
-  app.patch("/api/admin/customers/:id/verify", adminAuthMiddleware, async (req, res) => {
+  app.patch("/api/admin/customers/:id/verify", adminAuthMiddleware, requirePermission("customers"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const customer = await storage.getCustomerById(id);
@@ -1362,7 +1388,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Send bulk email ──────────────────────────────────────────────
-  app.post("/api/admin/email-blast", adminAuthMiddleware, async (req, res) => {
+  app.post("/api/admin/email-blast", adminAuthMiddleware, requirePermission("customers"), async (req, res) => {
     try {
       const { subject, content, recipients, filter } = req.body;
       if (!subject || !content) return res.status(400).json({ success: false, error: "Subject and content are required" });
@@ -1401,7 +1427,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Delete customer ───────────────────────────────────────────────
-  app.delete("/api/admin/customers/:id", adminAuthMiddleware, async (req, res) => {
+  app.delete("/api/admin/customers/:id", adminAuthMiddleware, requirePermission("customers"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.updateCustomer(id, { suspended: true });
@@ -1416,7 +1442,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ─── Admin: Get credentials (masked) ─────────────────────────────────────
-  app.get("/api/admin/credentials", adminAuthMiddleware, (_req, res) => {
+  app.get("/api/admin/credentials", adminAuthMiddleware, superAdminOnly, (_req, res) => {
     const override = getCredentialsOverride();
     const status = getSecretsStatus();
     res.json({
@@ -1476,7 +1502,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Save credentials ──────────────────────────────────────────────
-  app.put("/api/admin/credentials", adminAuthMiddleware, (req, res) => {
+  app.put("/api/admin/credentials", adminAuthMiddleware, superAdminOnly, (req, res) => {
     try {
       const { paystackPublicKey, paystackSecretKey, emailUser, emailPass, adminEmail, adminPassword, telegramBotToken, telegramChatId,
         whatsappAccessToken, whatsappPhoneId, whatsappVerifyToken, whatsappAdminPhone, openaiApiKey } = req.body;
@@ -1565,11 +1591,77 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // SUB-ADMIN MANAGEMENT (super admin only)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get("/api/admin/subadmins", adminAuthMiddleware, superAdminOnly, async (_req, res) => {
+    try {
+      const subAdmins = await storage.getAllSubAdmins();
+      res.json({ success: true, subAdmins: subAdmins.map(sa => ({ ...sa, passwordHash: undefined })) });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/admin/subadmins", adminAuthMiddleware, superAdminOnly, async (req, res) => {
+    try {
+      const { email, name, password, permissions } = req.body;
+      if (!email || !password) return res.status(400).json({ success: false, error: "Email and password are required" });
+      if (password.length < 6) return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
+
+      const existing = await storage.getSubAdminByEmail(email);
+      if (existing) return res.status(409).json({ success: false, error: "A sub-admin with this email already exists" });
+
+      const creds = getAdminCredentials();
+      if (email === creds.email) return res.status(400).json({ success: false, error: "Cannot create sub-admin with the super admin email" });
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const subAdmin = await storage.createSubAdmin({ email, name, passwordHash, permissions: permissions || [] });
+      logAdminAction({ action: `Sub-admin created: ${email}`, category: "settings", status: "success" });
+      res.json({ success: true, subAdmin: { ...subAdmin, passwordHash: undefined } });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.put("/api/admin/subadmins/:id", adminAuthMiddleware, superAdminOnly, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { name, password, permissions, active } = req.body;
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (password && password.length >= 6) updateData.passwordHash = await bcrypt.hash(password, 10);
+      if (permissions !== undefined) updateData.permissions = permissions;
+      if (active !== undefined) updateData.active = active;
+
+      const updated = await storage.updateSubAdmin(id, updateData);
+      if (!updated) return res.status(404).json({ success: false, error: "Sub-admin not found" });
+      logAdminAction({ action: `Sub-admin updated: ${updated.email}`, category: "settings", status: "success" });
+      res.json({ success: true, subAdmin: { ...updated, passwordHash: undefined } });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/subadmins/:id", adminAuthMiddleware, superAdminOnly, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const subAdmin = await storage.getSubAdminById(id);
+      if (!subAdmin) return res.status(404).json({ success: false, error: "Sub-admin not found" });
+      await storage.deleteSubAdmin(id);
+      logAdminAction({ action: `Sub-admin deleted: ${subAdmin.email}`, category: "settings", status: "warning" });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // ADMIN LOGS ROUTES
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ─── Admin: Get logs ──────────────────────────────────────────────────────
-  app.get("/api/admin/logs", adminAuthMiddleware, (req, res) => {
+  app.get("/api/admin/logs", adminAuthMiddleware, requirePermission("logs"), (req, res) => {
     const limit = parseInt(req.query.limit as string) || 100;
     const category = req.query.category as string | undefined;
     const logs = getAdminLogs(limit, category);
@@ -1577,7 +1669,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Admin: Clear logs ────────────────────────────────────────────────────
-  app.delete("/api/admin/logs", adminAuthMiddleware, (req, res) => {
+  app.delete("/api/admin/logs", adminAuthMiddleware, requirePermission("logs"), (req, res) => {
     try {
       const fs = require("fs");
       const path = require("path");
@@ -1661,7 +1753,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ADMIN SUPPORT TICKET ROUTES
   // ═══════════════════════════════════════════════════════════════════════════
 
-  app.get("/api/admin/support/tickets", adminAuthMiddleware, async (_req, res) => {
+  app.get("/api/admin/support/tickets", adminAuthMiddleware, requirePermission("support"), async (_req, res) => {
     try {
       const tickets = await storage.getOpenTickets();
       res.json({ success: true, tickets });
@@ -1670,7 +1762,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/admin/support/ticket/:id/message", adminAuthMiddleware, async (req, res) => {
+  app.post("/api/admin/support/ticket/:id/message", adminAuthMiddleware, requirePermission("support"), async (req, res) => {
     try {
       const ticketId = parseInt(req.params.id);
       const { message } = req.body;
@@ -1684,7 +1776,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.patch("/api/admin/support/ticket/:id/close", adminAuthMiddleware, async (req, res) => {
+  app.patch("/api/admin/support/ticket/:id/close", adminAuthMiddleware, requirePermission("support"), async (req, res) => {
     try {
       const ticketId = parseInt(req.params.id);
       const ticket = await storage.getTicketById(ticketId);

@@ -26,6 +26,7 @@ A full-stack subscription management platform built with Express (backend) + Rea
 - WhatsApp integration (via @whiskeysockets/baileys)
 - Email notifications via Nodemailer
 - API key management
+- Sub-admin system with role-based access control (super admin can create sub-admins with limited permissions; sub-admins cannot access Settings, API credentials, or sub-admin management)
 
 ## Support System Architecture
 

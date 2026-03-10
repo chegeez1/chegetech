@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 
-type Tab = "dashboard" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "emailblast" | "logs" | "settings" | "support";
+type Tab = "dashboard" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "emailblast" | "logs" | "settings" | "support" | "subadmins";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
   success: { label: "Completed", icon: CheckCircle, color: "text-emerald-400" },
@@ -60,15 +60,57 @@ async function plainFetch(url: string, body: any) {
 // ═══════════════════════════════════════════════════════════════
 // MAIN ADMIN
 // ═══════════════════════════════════════════════════════════════
+const SENSITIVE_TABS: Tab[] = ["settings", "subadmins"];
+
 export default function Admin() {
   const [token, setTokenState] = useState<string | null>(() => getToken());
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+  const [adminRole, setAdminRole] = useState<"super" | "subadmin" | null>(null);
+  const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
   const [, setLocation] = useLocation();
 
-  function login(t: string) { setToken(t); setTokenState(t); }
-  function logout() { clearToken(); setTokenState(null); }
+  useEffect(() => {
+    if (token) {
+      authFetch("/api/admin/me").then((d) => {
+        if (d.success) {
+          setAdminRole(d.role);
+          if (d.role === "subadmin") setAdminPermissions(d.permissions || []);
+        }
+      }).catch(() => {});
+    }
+  }, [token]);
+
+  function login(t: string, role?: string) {
+    setToken(t);
+    setTokenState(t);
+    if (role === "subadmin") setAdminRole("subadmin");
+    else setAdminRole("super");
+  }
+  function logout() { clearToken(); setTokenState(null); setAdminRole(null); setAdminPermissions([]); }
 
   if (!token) return <LoginFlow onLogin={login} />;
+
+  const allTabs: { id: Tab; label: string; icon: any; superOnly?: boolean }[] = [
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "plans", label: "Plans & Offers", icon: Tags },
+    { id: "accounts", label: "Accounts", icon: Package },
+    { id: "promos", label: "Promo Codes", icon: BadgePercent },
+    { id: "transactions", label: "Transactions", icon: ArrowLeftRight },
+    { id: "apikeys", label: "API Keys", icon: Key },
+    { id: "customers", label: "Customers", icon: Users },
+    { id: "emailblast", label: "Email Blast", icon: Send },
+    { id: "support", label: "Support", icon: MessageCircle },
+    { id: "logs", label: "Activity Logs", icon: Activity },
+    { id: "subadmins", label: "Sub-Admins", icon: Users, superOnly: true },
+    { id: "settings", label: "Settings", icon: Settings, superOnly: true },
+  ];
+
+  const visibleTabs = allTabs.filter(tab => {
+    if (adminRole === "super") return true;
+    if (tab.superOnly) return false;
+    if (adminPermissions.length === 0) return false;
+    return adminPermissions.includes(tab.id);
+  });
 
   return (
     <div className="flex h-screen overflow-hidden bg-background relative">
@@ -85,25 +127,13 @@ export default function Admin() {
             <img src="/favicon.png" alt="Chege Tech" className="w-9 h-9 rounded-xl shadow-lg" style={{ boxShadow: "0 0 14px rgba(99,102,241,0.4)" }} />
             <div>
               <p className="font-bold text-sm text-white">Admin Panel</p>
-              <p className="text-xs text-white/40">Premium Subs</p>
+              <p className="text-xs text-white/40">{adminRole === "subadmin" ? "Sub-Admin" : "Super Admin"}</p>
             </div>
           </div>
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {([
-            { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-            { id: "plans", label: "Plans & Offers", icon: Tags },
-            { id: "accounts", label: "Accounts", icon: Package },
-            { id: "promos", label: "Promo Codes", icon: BadgePercent },
-            { id: "transactions", label: "Transactions", icon: ArrowLeftRight },
-            { id: "apikeys", label: "API Keys", icon: Key },
-            { id: "customers", label: "Customers", icon: Users },
-            { id: "emailblast", label: "Email Blast", icon: Send },
-            { id: "support", label: "Support", icon: MessageCircle },
-            { id: "logs", label: "Activity Logs", icon: Activity },
-            { id: "settings", label: "Settings", icon: Settings },
-          ] as { id: Tab; label: string; icon: any }[]).map(({ id, label, icon: Icon }) => (
+          {visibleTabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               data-testid={`nav-${id}`}
@@ -152,7 +182,8 @@ export default function Admin() {
           {activeTab === "emailblast" && <EmailBlastTab />}
           {activeTab === "support" && <SupportTab />}
           {activeTab === "logs" && <LogsTab />}
-          {activeTab === "settings" && <SettingsTab />}
+          {activeTab === "subadmins" && adminRole === "super" && <SubAdminsTab />}
+          {activeTab === "settings" && adminRole === "super" && <SettingsTab />}
         </div>
       </main>
     </div>
@@ -162,7 +193,7 @@ export default function Admin() {
 // ═══════════════════════════════════════════════════════════════
 // LOGIN FLOW  (pre-auth - uses plainFetch only)
 // ═══════════════════════════════════════════════════════════════
-function LoginFlow({ onLogin }: { onLogin: (token: string) => void }) {
+function LoginFlow({ onLogin }: { onLogin: (token: string, role?: string) => void }) {
   const [showPwd, setShowPwd] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -187,7 +218,7 @@ function LoginFlow({ onLogin }: { onLogin: (token: string) => void }) {
         totpCode: values.totpCode || undefined,
       });
       if (data.success) {
-        onLogin(data.token);
+        onLogin(data.token, data.role);
       } else {
         setLoginError(data.error || "Login failed. Check your credentials.");
       }
@@ -3042,6 +3073,240 @@ function LogsTab() {
               </div>
             );
           })}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Sub-Admins Tab ──────────────────────────────────────────
+const ALL_PERMISSION_TABS = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "plans", label: "Plans & Offers" },
+  { id: "accounts", label: "Accounts" },
+  { id: "promos", label: "Promo Codes" },
+  { id: "transactions", label: "Transactions" },
+  { id: "apikeys", label: "API Keys" },
+  { id: "customers", label: "Customers" },
+  { id: "emailblast", label: "Email Blast" },
+  { id: "support", label: "Support" },
+  { id: "logs", label: "Activity Logs" },
+];
+
+function SubAdminsTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const inputCls = "glass border-white/10 bg-white/5 text-white placeholder:text-white/25 focus:border-indigo-500/50";
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/subadmins"],
+    queryFn: () => authFetch("/api/admin/subadmins"),
+  });
+  const subAdmins = data?.subAdmins ?? [];
+
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [formEmail, setFormEmail] = useState("");
+  const [formName, setFormName] = useState("");
+  const [formPassword, setFormPassword] = useState("");
+  const [formPermissions, setFormPermissions] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  function resetForm() {
+    setShowForm(false); setEditId(null);
+    setFormEmail(""); setFormName(""); setFormPassword(""); setFormPermissions([]);
+  }
+
+  function startEdit(sa: any) {
+    setEditId(sa.id); setFormEmail(sa.email); setFormName(sa.name || "");
+    setFormPassword(""); setFormPermissions(sa.permissions || []);
+    setShowForm(true);
+  }
+
+  function togglePermission(id: string) {
+    setFormPermissions(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
+  }
+
+  async function saveSubAdmin() {
+    if (!formEmail || (!editId && !formPassword)) {
+      toast({ title: "Email and password are required", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const body: any = { email: formEmail, name: formName, permissions: formPermissions };
+      if (formPassword) body.password = formPassword;
+
+      const url = editId ? `/api/admin/subadmins/${editId}` : "/api/admin/subadmins";
+      const method = editId ? "PUT" : "POST";
+      const res = await authFetch(url, { method, body: JSON.stringify(body) });
+
+      if (res.success) {
+        toast({ title: editId ? "Sub-admin updated" : "Sub-admin created" });
+        resetForm(); refetch();
+      } else {
+        toast({ title: "Failed", description: res.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Failed", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleActive(id: number, currentActive: boolean) {
+    const res = await authFetch(`/api/admin/subadmins/${id}`, {
+      method: "PUT", body: JSON.stringify({ active: !currentActive }),
+    });
+    if (res.success) { toast({ title: currentActive ? "Sub-admin deactivated" : "Sub-admin activated" }); refetch(); }
+  }
+
+  async function deleteSubAdmin(id: number, email: string) {
+    if (!window.confirm(`Delete sub-admin ${email}? This cannot be undone.`)) return;
+    const res = await authFetch(`/api/admin/subadmins/${id}`, { method: "DELETE" });
+    if (res.success) { toast({ title: "Sub-admin deleted" }); refetch(); }
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-white">Sub-Admins</h1>
+          <p className="text-xs text-white/40 mt-0.5">Create admin accounts with limited permissions</p>
+        </div>
+        {!showForm && (
+          <Button onClick={() => { resetForm(); setShowForm(true); }}
+            className="bg-gradient-to-r from-indigo-600 to-violet-600 border-0 text-white">
+            <Plus className="w-4 h-4 mr-1.5" />Add Sub-Admin
+          </Button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="glass-card rounded-2xl p-5 mb-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-white">{editId ? "Edit Sub-Admin" : "New Sub-Admin"}</p>
+            <Button size="sm" variant="ghost" onClick={resetForm} className="text-white/40 hover:text-white">
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-white/40 block mb-1.5">Email</label>
+              <Input value={formEmail} onChange={e => setFormEmail(e.target.value)} placeholder="subadmin@example.com"
+                className={inputCls} disabled={!!editId} />
+            </div>
+            <div>
+              <label className="text-xs text-white/40 block mb-1.5">Name</label>
+              <Input value={formName} onChange={e => setFormName(e.target.value)} placeholder="John Doe" className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-white/40 block mb-1.5">{editId ? "New Password (leave blank to keep)" : "Password"}</label>
+            <Input value={formPassword} onChange={e => setFormPassword(e.target.value)} type="password"
+              placeholder={editId ? "Leave blank to keep current" : "Min 6 characters"} className={inputCls} />
+          </div>
+          <div>
+            <label className="text-xs text-white/40 block mb-2">Permissions</label>
+            <div className="grid grid-cols-3 gap-2">
+              {ALL_PERMISSION_TABS.map(tab => (
+                <button key={tab.id} onClick={() => togglePermission(tab.id)}
+                  className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
+                    formPermissions.includes(tab.id)
+                      ? "bg-indigo-600/30 border-indigo-500/50 text-indigo-300"
+                      : "glass border-white/10 text-white/40 hover:text-white/60"
+                  }`}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-white/25 mt-2">Sub-admins cannot access Settings, API Credentials, or Sub-Admin management.</p>
+          </div>
+          <div className="flex gap-3">
+            <Button onClick={saveSubAdmin} disabled={saving}
+              className="bg-gradient-to-r from-indigo-600 to-violet-600 border-0 text-white">
+              <Save className="w-4 h-4 mr-1.5" />{saving ? "Saving..." : editId ? "Update" : "Create"}
+            </Button>
+            <Button variant="outline" onClick={resetForm} className="glass border-white/10 text-white/50">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="text-center py-16 text-white/40">Loading...</div>
+      ) : subAdmins.length === 0 && !showForm ? (
+        <div className="text-center py-16 glass-card rounded-2xl">
+          <Users className="w-10 h-10 text-white/20 mx-auto mb-3" />
+          <p className="text-white/40 font-medium">No sub-admins yet</p>
+          <p className="text-white/25 text-xs mt-1">Create one to delegate admin tasks with limited access</p>
+        </div>
+      ) : (
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-white/8">
+                <TableHead className="text-white/40 text-xs">Sub-Admin</TableHead>
+                <TableHead className="text-white/40 text-xs">Status</TableHead>
+                <TableHead className="text-white/40 text-xs">Permissions</TableHead>
+                <TableHead className="text-white/40 text-xs">Created</TableHead>
+                <TableHead className="text-white/40 text-xs text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {subAdmins.map((sa: any) => (
+                <TableRow key={sa.id} className="border-white/5 hover:bg-white/3">
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-violet-600/20 flex items-center justify-center shrink-0">
+                        <span className="text-violet-400 font-bold text-xs">{(sa.email || "?")[0].toUpperCase()}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-white">{sa.name || sa.email}</p>
+                        <p className="text-xs text-white/40">{sa.email}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {sa.active
+                      ? <Badge className="bg-emerald-500/20 text-emerald-400 border-0 text-xs">Active</Badge>
+                      : <Badge className="bg-red-500/20 text-red-400 border-0 text-xs">Disabled</Badge>}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {(sa.permissions || []).length === 0
+                        ? <span className="text-xs text-white/25">None</span>
+                        : (sa.permissions || []).slice(0, 4).map((p: string) => (
+                          <Badge key={p} className="text-[9px] bg-white/8 text-white/50 border-0 px-1.5">{p}</Badge>
+                        ))}
+                      {(sa.permissions || []).length > 4 && (
+                        <Badge className="text-[9px] bg-white/8 text-white/50 border-0 px-1.5">+{sa.permissions.length - 4}</Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-xs text-white/40">{sa.createdAt ? new Date(sa.createdAt).toLocaleDateString() : "—"}</span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => startEdit(sa)}
+                        className="h-7 px-2 text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10" title="Edit">
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => toggleActive(sa.id, sa.active)}
+                        className={`h-7 px-2 ${sa.active ? "text-white/40 hover:text-amber-400 hover:bg-amber-500/10" : "text-white/40 hover:text-emerald-400 hover:bg-emerald-500/10"}`}
+                        title={sa.active ? "Deactivate" : "Activate"}>
+                        {sa.active ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => deleteSubAdmin(sa.id, sa.email)}
+                        className="h-7 px-2 text-white/40 hover:text-red-400 hover:bg-red-500/10" title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
     </>

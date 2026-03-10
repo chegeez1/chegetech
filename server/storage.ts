@@ -104,6 +104,16 @@ export async function initializeDatabase() {
           message TEXT NOT NULL,
           created_at TEXT DEFAULT (NOW()::text)
         );
+
+        CREATE TABLE IF NOT EXISTS sub_admins (
+          id SERIAL PRIMARY KEY,
+          email TEXT UNIQUE NOT NULL,
+          name TEXT,
+          password_hash TEXT NOT NULL,
+          permissions TEXT NOT NULL DEFAULT '[]',
+          active INTEGER DEFAULT 1,
+          created_at TEXT DEFAULT (NOW()::text)
+        );
       `);
 
       const drizzlePgModule = await import("drizzle-orm/node-postgres");
@@ -220,6 +230,16 @@ function initSqlite() {
       message TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS sub_admins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT,
+      password_hash TEXT NOT NULL,
+      permissions TEXT NOT NULL DEFAULT '[]',
+      active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
   console.log("[db] Connected to SQLite");
 }
@@ -317,6 +337,16 @@ export interface SupportMessage {
   createdAt: string;
 }
 
+export interface SubAdmin {
+  id: number;
+  email: string;
+  name: string | null;
+  passwordHash: string;
+  permissions: string[];
+  active: boolean;
+  createdAt: string;
+}
+
 export interface IStorage {
   createTransaction(data: InsertTransaction): Promise<Transaction>;
   getTransaction(reference: string): Promise<Transaction | undefined>;
@@ -353,6 +383,13 @@ export interface IStorage {
   getOpenTickets(): Promise<SupportTicket[]>;
   addMessage(data: { ticketId: number; sender: string; message: string }): Promise<SupportMessage>;
   getMessages(ticketId: number): Promise<SupportMessage[]>;
+
+  createSubAdmin(data: { email: string; name?: string; passwordHash: string; permissions: string[] }): Promise<SubAdmin>;
+  getSubAdminByEmail(email: string): Promise<SubAdmin | undefined>;
+  getSubAdminById(id: number): Promise<SubAdmin | undefined>;
+  getAllSubAdmins(): Promise<SubAdmin[]>;
+  updateSubAdmin(id: number, data: Partial<{ name: string; passwordHash: string; permissions: string[]; active: boolean }>): Promise<SubAdmin | undefined>;
+  deleteSubAdmin(id: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -612,6 +649,88 @@ export class DbStorage implements IStorage {
     return rows.map((row: any) => ({
       id: row.id, ticketId: row.ticket_id, sender: row.sender, message: row.message, createdAt: row.created_at,
     }));
+  }
+  private mapSubAdmin(row: any): SubAdmin {
+    return {
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      passwordHash: row.password_hash,
+      permissions: JSON.parse(row.permissions || "[]"),
+      active: row.active === 1 || row.active === true,
+      createdAt: row.created_at,
+    };
+  }
+
+  async createSubAdmin(data: { email: string; name?: string; passwordHash: string; permissions: string[] }): Promise<SubAdmin> {
+    const perms = JSON.stringify(data.permissions);
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query(
+        "INSERT INTO sub_admins (email, name, password_hash, permissions, created_at) VALUES ($1, $2, $3, $4, NOW()::text) RETURNING *",
+        [data.email, data.name || null, data.passwordHash, perms]
+      );
+      return this.mapSubAdmin(result.rows[0]);
+    }
+    const stmt = sqliteInstance!.prepare("INSERT INTO sub_admins (email, name, password_hash, permissions) VALUES (?, ?, ?, ?)");
+    const info = stmt.run(data.email, data.name || null, data.passwordHash, perms);
+    const row = sqliteInstance!.prepare("SELECT * FROM sub_admins WHERE id = ?").get(info.lastInsertRowid) as any;
+    return this.mapSubAdmin(row);
+  }
+
+  async getSubAdminByEmail(email: string): Promise<SubAdmin | undefined> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query("SELECT * FROM sub_admins WHERE email = $1", [email]);
+      return result.rows[0] ? this.mapSubAdmin(result.rows[0]) : undefined;
+    }
+    const row = sqliteInstance!.prepare("SELECT * FROM sub_admins WHERE email = ?").get(email) as any;
+    return row ? this.mapSubAdmin(row) : undefined;
+  }
+
+  async getSubAdminById(id: number): Promise<SubAdmin | undefined> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query("SELECT * FROM sub_admins WHERE id = $1", [id]);
+      return result.rows[0] ? this.mapSubAdmin(result.rows[0]) : undefined;
+    }
+    const row = sqliteInstance!.prepare("SELECT * FROM sub_admins WHERE id = ?").get(id) as any;
+    return row ? this.mapSubAdmin(row) : undefined;
+  }
+
+  async getAllSubAdmins(): Promise<SubAdmin[]> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query("SELECT * FROM sub_admins ORDER BY created_at DESC");
+      return result.rows.map((r: any) => this.mapSubAdmin(r));
+    }
+    const rows = sqliteInstance!.prepare("SELECT * FROM sub_admins ORDER BY created_at DESC").all() as any[];
+    return rows.map((r: any) => this.mapSubAdmin(r));
+  }
+
+  async updateSubAdmin(id: number, data: Partial<{ name: string; passwordHash: string; permissions: string[]; active: boolean }>): Promise<SubAdmin | undefined> {
+    const sets: string[] = [];
+    const values: any[] = [];
+    if (data.name !== undefined) { sets.push("name"); values.push(data.name); }
+    if (data.passwordHash !== undefined) { sets.push("password_hash"); values.push(data.passwordHash); }
+    if (data.permissions !== undefined) { sets.push("permissions"); values.push(JSON.stringify(data.permissions)); }
+    if (data.active !== undefined) { sets.push("active"); values.push(data.active ? 1 : 0); }
+    if (sets.length === 0) return this.getSubAdminById(id);
+
+    if (dbType === "pg" && pgPool) {
+      const setClauses = sets.map((s, i) => `${s} = $${i + 1}`).join(", ");
+      values.push(id);
+      await pgPool.query(`UPDATE sub_admins SET ${setClauses} WHERE id = $${values.length}`, values);
+    } else {
+      const setClauses = sets.map((s) => `${s} = ?`).join(", ");
+      values.push(id);
+      sqliteInstance!.prepare(`UPDATE sub_admins SET ${setClauses} WHERE id = ?`).run(...values);
+    }
+    return this.getSubAdminById(id);
+  }
+
+  async deleteSubAdmin(id: number): Promise<void> {
+    if (dbType === "pg" && pgPool) {
+      await pgPool.query("DELETE FROM sub_admins WHERE id = $1", [id]);
+    } else {
+      sqliteInstance!.prepare("DELETE FROM sub_admins WHERE id = ?").run(id);
+    }
   }
 }
 
