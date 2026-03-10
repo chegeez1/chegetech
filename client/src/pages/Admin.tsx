@@ -2159,7 +2159,7 @@ function SupportTab() {
 
   const { data: messagesData, refetch: refetchMessages } = useQuery<any>({
     queryKey: ["/api/admin/support/messages", selectedTicketId],
-    queryFn: () => authFetch(`/api/support/ticket/${selectedTicketId}/messages`),
+    queryFn: () => authFetch(`/api/admin/support/ticket/${selectedTicketId}/messages`),
     enabled: !!selectedTicketId,
     refetchInterval: selectedTicketId ? 3000 : false,
   });

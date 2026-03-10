@@ -1762,6 +1762,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/admin/support/ticket/:id/messages", adminAuthMiddleware, requirePermission("support"), async (req, res) => {
+    try {
+      const ticketId = parseInt(req.params.id);
+      const ticket = await storage.getTicketById(ticketId);
+      if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found" });
+      const messages = await storage.getMessages(ticketId);
+      res.json({ success: true, messages });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   app.post("/api/admin/support/ticket/:id/message", adminAuthMiddleware, requirePermission("support"), async (req, res) => {
     try {
       const ticketId = parseInt(req.params.id);
