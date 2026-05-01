@@ -204,7 +204,11 @@ async function scrapeSmsReceiveNetMessages(digits: string, slug: string): Promis
 export async function getFreeNumbers(): Promise<TempNumber[]> {
   if (numbersCache && Date.now() - numbersCache.ts < CACHE_TTL) return numbersCache.data;
 
+  // Import esimplus scraper lazily (puppeteer loads slowly)
+  const { scrapeEsimplusNumbers } = await import('./esimScraper.js');
+
   const results = await Promise.allSettled([
+    scrapeEsimplusNumbers(),
     scrapeSmsonline(),
     scrapeRSOI(),
     scrapeSmsReceiveNet(),
@@ -230,6 +234,10 @@ export async function getFreeNumbers(): Promise<TempNumber[]> {
 
 export async function getNumberMessages(digits: string, source: string, slug?: string): Promise<SmsMessage[]> {
   try {
+    if (source === 'esimplus') {
+      const { scrapeEsimplusMessages } = await import('./esimScraper.js');
+      return await scrapeEsimplusMessages(slug ?? digits);
+    }
     switch (source) {
       case 'sms-online':   return await scrapeSmsonlineMessages(digits);
       case 'rsoi':         return await scrapeRSOIMessages(digits);
