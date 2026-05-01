@@ -11073,6 +11073,63 @@ function ChegeBotSubsAdminTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PO TOKEN INSTRUCTIONS COMPONENT
+// ═══════════════════════════════════════════════════════════════
+const CONSOLE_SCRIPT = `// Step 1: Open youtube.com, play any video, then paste this in the Console tab:
+(function() {
+  const visitorData = ytcfg.get('VISITOR_DATA') || '';
+  console.log('%c✅ visitorData:', 'color:lime;font-weight:bold', visitorData);
+  if (!visitorData) { console.warn('Not on YouTube or not loaded yet — refresh the page and try again.'); return; }
+  // Step 2: Intercept the next player API call to grab poToken
+  const origFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const res = await origFetch(...args);
+    try {
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+      if (url.includes('youtubei') && url.includes('player')) {
+        const clone = res.clone();
+        const json = await clone.json();
+        const pt = json?.playerConfig?.attestationConfig?.botguardData?.poToken || json?.poToken || '';
+        if (pt) { console.log('%c✅ poToken:', 'color:lime;font-weight:bold', pt); window.fetch = origFetch; }
+      }
+    } catch {}
+    return res;
+  };
+  console.log('%c⏳ Now RELOAD or click a video to capture poToken...', 'color:orange');
+  copy(visitorData);
+  console.log('%c📋 visitorData copied to clipboard!', 'color:cyan');
+})();`;
+
+function PoTokenInstructions({ onSet }: { onSet: (po: string, vd: string) => void }) {
+  const [copied, setCopied] = useState(false);
+
+  function copyScript() {
+    navigator.clipboard.writeText(CONSOLE_SCRIPT).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="text-xs bg-orange-500/10 rounded-xl p-3 space-y-2">
+      <p className="font-semibold text-orange-300 text-sm">3-step guide (you're already on YouTube!)</p>
+      <ol className="list-decimal list-inside space-y-1.5 text-orange-200/90">
+        <li>In Chrome DevTools, click the <strong className="text-white">Console</strong> tab (not Elements)</li>
+        <li>Click <strong>Copy Script</strong> below, paste it in the Console, press Enter</li>
+        <li>Reload YouTube — the Console will print your <code className="bg-black/30 px-1 rounded">visitorData</code> and <code className="bg-black/30 px-1 rounded">poToken</code></li>
+      </ol>
+      <button
+        onClick={copyScript}
+        className={`w-full h-8 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${copied ? "bg-green-600 text-white" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
+      >
+        {copied ? "✓ Copied!" : "Copy Script"}
+      </button>
+      <p className="text-gray-500 text-[10px]">Then click "Set Token" above and paste both values.</p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // DOWNLOADER ADMIN TAB
 // ═══════════════════════════════════════════════════════════════
 function DownloaderAdminTab() {
@@ -11299,16 +11356,7 @@ function DownloaderAdminTab() {
         </div>
 
         {!status?.poTokenReady && !showPoTokenInput && (
-          <div className="text-xs text-orange-200/80 bg-orange-500/10 rounded-xl p-3 space-y-1">
-            <p className="font-semibold text-orange-300">How to get PO Token (no extension needed):</p>
-            <ol className="list-decimal list-inside space-y-0.5">
-              <li>Open Chrome DevTools (F12) → Network tab</li>
-              <li>Go to <strong>youtube.com</strong>, play any video</li>
-              <li>Filter requests by <strong>"player"</strong></li>
-              <li>Click a player request → Payload → find <code>visitorData</code> and <code>poToken</code></li>
-              <li>Or use: <a href="https://github.com/yt-dlp/yt-dlp/wiki/Extractors#po-token-guide" target="_blank" className="underline text-orange-300">yt-dlp PO Token guide</a></li>
-            </ol>
-          </div>
+          <PoTokenInstructions onSet={(po, vd) => { setPoTokenInput(po); setVisitorDataInput(vd); setShowPoTokenInput(true); }} />
         )}
 
         {showPoTokenInput && (
