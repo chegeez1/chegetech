@@ -469,39 +469,40 @@ export function registerDownloadRoutes(app: Express) {
       const subs = await listSubscribers();
       res.json({ ready: true, path: bin, subscribers: subs.length, cookiesReady, poTokenReady: !!poToken });
 
-    // /api/dl/admin/test — run yt-dlp with verbose to diagnose issues
-    app.post("/api/dl/admin/test", async (req: Request, res: Response) => {
-      if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
-      const { url = "https://www.youtube.com/watch?v=jNQXAC9IVRw" } = req.body as { url?: string };
-      const bin = await ensureYtDlp();
-      const args = [
-        url,
-        "--dump-single-json",
-        "--no-playlist",
-        "--no-check-certificates",
-        "--socket-timeout", "30",
-        "--add-header", `User-Agent:${BROWSER_UA}`,
-        "--add-header", "Accept-Language:en-US,en;q=0.9",
-      ];
-      if (cookiesReady) args.push("--cookies", COOKIES_FILE);
-      args.push("--extractor-args", buildYouTubeExtractorArgs());
-      try {
-        const { stdout, stderr } = await execFileAsync(bin, args, { timeout: 45_000, maxBuffer: 4 * 1024 * 1024 });
-        const info = JSON.parse(stdout);
-        res.json({ success: true, title: info.title, extractor: info.extractor_key, stderr: stderr.slice(0, 500) });
-      } catch (err: any) {
-        res.json({
-          success: false,
-          stderr: String(err?.stderr || "").slice(0, 2000),
-          stdout: String(err?.stdout || "").slice(0, 500),
-          message: String(err?.message || "").slice(0, 500),
-          args: args.join(" ").slice(0, 300),
-        });
-      }
-    });
     } catch {
       const subs = await listSubscribers().catch(() => []);
       res.json({ ready: false, path: "", subscribers: subs.length, cookiesReady, poTokenReady: !!poToken });
+    }
+  });
+
+  // /api/dl/admin/test — run yt-dlp with full stderr to diagnose failures
+  app.post("/api/dl/admin/test", async (req: Request, res: Response) => {
+    if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
+    const { url = "https://www.youtube.com/watch?v=jNQXAC9IVRw" } = req.body as { url?: string };
+    const bin = await ensureYtDlp();
+    const args = [
+      url,
+      "--dump-single-json",
+      "--no-playlist",
+      "--no-check-certificates",
+      "--socket-timeout", "30",
+      "--add-header", `User-Agent:${BROWSER_UA}`,
+      "--add-header", "Accept-Language:en-US,en;q=0.9",
+    ];
+    if (cookiesReady) args.push("--cookies", COOKIES_FILE);
+    args.push("--extractor-args", buildYouTubeExtractorArgs());
+    try {
+      const { stdout, stderr } = await execFileAsync(bin, args, { timeout: 45_000, maxBuffer: 4 * 1024 * 1024 });
+      const info = JSON.parse(stdout);
+      res.json({ success: true, title: info.title, extractor: info.extractor_key, stderr: stderr.slice(0, 500) });
+    } catch (err: any) {
+      res.json({
+        success: false,
+        stderr: String(err?.stderr || "").slice(0, 2000),
+        stdout: String(err?.stdout || "").slice(0, 500),
+        message: String(err?.message || "").slice(0, 500),
+        args: args.join(" ").slice(0, 300),
+      });
     }
   });
 
