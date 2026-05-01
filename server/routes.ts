@@ -11,7 +11,7 @@ import path from "path";
 import fs from "fs";
 import { storage, dbSettingsGet, dbSettingsSet, getDb, dbType, runQuery, runMutation } from "./storage";
 import { accountManager } from "./accounts";
-import { sendAccountEmail, sendPasswordResetEmail, sendSuspensionEmail, sendUnsuspensionEmail, sendBulkEmail } from "./email";
+import { sendAccountEmail, sendPasswordResetEmail, sendPasswordResetLinkEmail, sendSuspensionEmail, sendUnsuspensionEmail, sendBulkEmail } from "./email";
 import { sendTelegramMessage, notifyNewOrder, notifyNewCustomer, notifyPaymentFailed, isTelegramConfigured, notifySupportEscalation } from "./telegram";
 import { getWhatsAppStatus, connectWhatsApp, disconnectWhatsApp, isWhatsAppWebConnected, broadcastNewOrder, sendWhatsAppNotification } from "./whatsapp-web";
 import { subscriptionPlans } from "./plans";
