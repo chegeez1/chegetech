@@ -289,6 +289,51 @@ export async function sendRawEmail(
   }
 }
 
+
+export async function sendPasswordResetLinkEmail(
+  customerEmail: string,
+  token: string,
+  name?: string
+): Promise<{ success: boolean; error?: string }> {
+  const resend = getResend();
+  if (!resend) return { success: false, error: "Email service not configured" };
+
+  const siteUrl = process.env.SITE_URL || "https://streamvault-premium.site";
+  const resetUrl = `${siteUrl}/reset-password?token=${token}`;
+  const displayName = name || "Customer";
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="max-width:500px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10);">
+    <div style="background:linear-gradient(135deg,#4169E1 0%,#7C3AED 100%);padding:32px;text-align:center;">
+      <h1 style="color:#fff;margin:0 0 6px;font-size:24px;font-weight:700;">Reset Your Password</h1>
+      <p style="color:rgba(255,255,255,.8);margin:0;font-size:14px;">StreamVault Premium</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="color:#374151;font-size:16px;margin:0 0 20px;">Hi <strong>${displayName}</strong>,</p>
+      <p style="color:#374151;font-size:15px;margin:0 0 24px;">We received a request to reset your password. Click the button below to choose a new password. This link expires in <strong>30 minutes</strong>.</p>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${resetUrl}" style="background:linear-gradient(135deg,#4169E1,#7C3AED);color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:16px;font-weight:600;display:inline-block;">Reset Password</a>
+      </div>
+      <p style="color:#6B7280;font-size:13px;margin:20px 0 0;">If the button doesn't work, copy and paste this link:<br><a href="${resetUrl}" style="color:#4169E1;word-break:break-all;">${resetUrl}</a></p>
+      <p style="color:#9CA3AF;font-size:12px;margin:24px 0 0;">If you didn't request a password reset, you can safely ignore this email.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const senderEmail = process.env.SENDER_EMAIL || process.env.RESEND_FROM || "noreply@streamvault-premium.site";
+    const result = await resend.emails.send({ from: senderEmail, to: customerEmail, subject: "Reset your StreamVault password", html });
+    if (result.error) return { success: false, error: result.error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to send email" };
+  }
+}
+
 export async function sendAdminEmail(subject: string, html: string): Promise<void> {
   const resend = getResend();
   if (!resend) return;
