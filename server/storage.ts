@@ -12,6 +12,7 @@ import {
 let db: any;
 let sqliteInstance: any = null;
 let pgPool: any = null;
+export function getPgPool() { return pgPool; }
 export let dbType: "sqlite" | "pg" = "sqlite";
 
 const settingsCache: Map<string, string> = new Map();

@@ -1909,7 +1909,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   // Admin: list all free proxies
   app.get('/api/admin/free-proxies', async (_req, res) => {
     try {
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows } = await pg.query('SELECT * FROM free_proxies ORDER BY id DESC LIMIT 2000');
       res.json({ success: true, proxies: rows });
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
@@ -1921,7 +1927,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
       const { proxies: raw, type: proxyType } = req.body;
       if (!raw) return res.status(400).json({ success: false, error: 'No proxies provided' });
       const lines = (raw as string).split('\n').map((l: string) => l.trim()).filter((l: string) => l);
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       let added = 0, dupes = 0;
       for (const line of lines) {
         const p = parseProxyLine(line);
@@ -1942,7 +1954,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   app.post('/api/admin/free-proxies/check', async (req, res) => {
     try {
       const { ids } = req.body; // optional: array of ids, else check all unchecked
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       let rows: any[];
       if (ids && ids.length) {
         const { rows: r } = await pg.query('SELECT * FROM free_proxies WHERE id = ANY($1) LIMIT 200', [ids]);
@@ -1975,7 +1993,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   // Admin: delete one
   app.delete('/api/admin/free-proxies/:id', async (req, res) => {
     try {
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       await pg.query('DELETE FROM free_proxies WHERE id=$1', [req.params.id]);
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
@@ -1984,7 +2008,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   // Admin: delete all dead
   app.delete('/api/admin/free-proxies/bulk/dead', async (_req, res) => {
     try {
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rowCount } = await pg.query("DELETE FROM free_proxies WHERE status='dead'");
       res.json({ success: true, deleted: rowCount });
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
@@ -1994,7 +2024,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   let freeProxyCacheGeo: { data: any[]; ts: number } | null = null;
   app.get('/api/proxy/free', async (_req, res) => {
     try {
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows } = await pg.query("SELECT ip,port,type,country,country_code,anonymity,speed_ms FROM free_proxies WHERE status='alive' ORDER BY speed_ms ASC, id DESC LIMIT 300");
       if (rows.length > 0) {
         return res.json({ success: true, proxies: rows.map((r: any) => ({ ip: r.ip, port: r.port, type: r.type || 'HTTP', country: r.country || 'Unknown', countryCode: r.country_code || '', anonymity: r.anonymity || 'anonymous', speed: r.speed_ms || 0, upTime: 100 })) });
@@ -2383,7 +2419,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   async function runProxyScheduler() {
     if (proxyScheduler.running) return;
     proxyScheduler.running = true;
-    const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+    const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
     const stats = { fetched:0, added:0, alive:0, dead:0, deleted:0 };
     try {
       console.log('[ProxyScheduler] Starting fetch run...');
@@ -2504,7 +2546,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   // ── Gift Cards ─────────────────────────────────────────────────────────────
   app.get('/api/giftcards/products', async (_req, res) => {
     try {
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows } = await pg.query(`SELECT p.*, COUNT(s.id) FILTER (WHERE s.is_sold=false) AS stock_count FROM gift_card_products p LEFT JOIN gift_card_stock s ON s.product_id=p.id WHERE p.is_active=true GROUP BY p.id ORDER BY p.sort_order ASC, p.id ASC`);
       res.json({ success: true, products: rows.map((r:any)=>({...r,stock_count:parseInt(r.stock_count)||0})) });
     } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
@@ -2514,7 +2562,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
     try {
       const { productId, email } = req.body;
       if (!productId || !email) return res.status(400).json({ success: false, error: 'Product and email required' });
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows: prods } = await pg.query("SELECT * FROM gift_card_products WHERE id=$1 AND is_active=true", [productId]);
       if (!prods.length) return res.status(404).json({ success: false, error: 'Product not found' });
       const product = prods[0];
@@ -2536,7 +2590,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   app.post('/api/giftcards/verify/:reference', async (req, res) => {
     try {
       const { reference } = req.params;
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows: orders } = await pg.query("SELECT * FROM gift_card_orders WHERE reference=$1", [reference]);
       if (!orders.length) return res.status(404).json({ success: false, error: 'Order not found' });
       const order = orders[0];
@@ -2558,7 +2618,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   // Admin Gift Cards
   app.get('/api/admin/gift-card-products', async (_req, res) => {
     try {
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows } = await pg.query(`SELECT p.*, COUNT(s.id) FILTER (WHERE s.is_sold=false) AS stock_count, COUNT(s.id) AS total_stock FROM gift_card_products p LEFT JOIN gift_card_stock s ON s.product_id=p.id GROUP BY p.id ORDER BY p.sort_order ASC, p.id ASC`);
       res.json({ success: true, products: rows.map((r:any)=>({...r,stock_count:parseInt(r.stock_count)||0,total_stock:parseInt(r.total_stock)||0})) });
     } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
@@ -2566,7 +2632,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   app.post('/api/admin/gift-card-products', async (req, res) => {
     try {
       const { name, brand, denomination, currency, price_kes, description, is_active, sort_order } = req.body;
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows } = await pg.query("INSERT INTO gift_card_products (name,brand,denomination,currency,price_kes,description,is_active,sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
         [name, brand, denomination||'', currency||'USD', price_kes, description||'', is_active!==false, sort_order||0]);
       res.json({ success: true, product: rows[0] });
@@ -2575,7 +2647,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   app.put('/api/admin/gift-card-products/:id', async (req, res) => {
     try {
       const { name, brand, denomination, currency, price_kes, description, is_active, sort_order } = req.body;
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       await pg.query("UPDATE gift_card_products SET name=COALESCE($1,name),brand=COALESCE($2,brand),denomination=COALESCE($3,denomination),currency=COALESCE($4,currency),price_kes=COALESCE($5,price_kes),description=COALESCE($6,description),is_active=COALESCE($7,is_active),sort_order=COALESCE($8,sort_order) WHERE id=$9",
         [name, brand, denomination, currency, price_kes, description, is_active, sort_order, req.params.id]);
       res.json({ success: true });
@@ -2589,7 +2667,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
       const { codes } = req.body;
       const lines = (codes||'').split('\n').map((l:string)=>l.trim()).filter((l:string)=>l.length>0);
       if (!lines.length) return res.status(400).json({ success: false, error: 'No codes provided' });
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       let added=0; for (const code of lines) { try { await pg.query("INSERT INTO gift_card_stock (product_id,code) VALUES ($1,$2)",[req.params.id,code]); added++; } catch {} }
       res.json({ success: true, added });
     } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
@@ -2606,7 +2690,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
     try {
       const { planId, email, senderNote } = req.body;
       if (!planId || !email) return res.status(400).json({ success: false, error: 'Plan and email required' });
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows: plans } = await pg.query("SELECT * FROM sms_plans WHERE id=$1 AND is_active=true",[planId]);
       if (!plans.length) return res.status(404).json({ success: false, error: 'Plan not found' });
       const plan = plans[0];
@@ -2628,7 +2718,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   app.post('/api/admin/sms-plans', async (req, res) => {
     try {
       const { name, sms_count, price_kes, description, features, is_active, sort_order, validity_days } = req.body;
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       const { rows } = await pg.query("INSERT INTO sms_plans (name,sms_count,price_kes,description,features,is_active,sort_order,validity_days) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
         [name, sms_count, price_kes, description||'', features||'', is_active!==false, sort_order||0, validity_days||30]);
       res.json({ success: true, plan: rows[0] });
@@ -2637,7 +2733,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   app.put('/api/admin/sms-plans/:id', async (req, res) => {
     try {
       const { name, sms_count, price_kes, description, features, is_active, sort_order, validity_days } = req.body;
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       await pg.query("UPDATE sms_plans SET name=COALESCE($1,name),sms_count=COALESCE($2,sms_count),price_kes=COALESCE($3,price_kes),description=COALESCE($4,description),features=COALESCE($5,features),is_active=COALESCE($6,is_active),sort_order=COALESCE($7,sort_order),validity_days=COALESCE($8,validity_days) WHERE id=$9",
         [name,sms_count,price_kes,description,features,is_active,sort_order,validity_days,req.params.id]);
       res.json({ success: true });
@@ -2652,7 +2754,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
   app.patch('/api/admin/sms-orders/:id/fulfill', async (req, res) => {
     try {
       const { notes } = req.body;
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       await pg.query("UPDATE sms_orders SET status='fulfilled',notes=$1 WHERE id=$2",[notes||'',req.params.id]);
       res.json({ success: true });
     } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
@@ -2663,7 +2771,13 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
     try {
       const token = (req.headers.authorization||'').replace('Bearer ','');
       if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
-      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const pgMod = await import('./storage');
+    const pg = (pgMod as any).getPgPool?.();
+    if (!pg) {
+      console.log('[ProxyScheduler] PostgreSQL pool not ready — skipping run');
+      proxyScheduler.running = false;
+      return;
+    }
       // Get email from customer token via existing sessions/customer lookup
       const { rows: sessions } = await pg.query("SELECT email FROM customers WHERE session_token=$1 OR id=(SELECT customer_id FROM customer_sessions WHERE token=$1 LIMIT 1) LIMIT 1",[token]).catch(()=>({rows:[]}));
       let email = sessions[0]?.email;
