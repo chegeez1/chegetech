@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import StoreAudioPlayer from "@/components/StoreAudioPlayer";
+import FlashSaleBanner from "@/components/FlashSaleBanner";
 import {
   Play, Music, Briefcase, Shield, Gamepad2, Search, Star,
   CheckCircle, Zap, ShoppingCart, X, ChevronRight, Package, Bell,

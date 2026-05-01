@@ -212,6 +212,19 @@ export const planPreviews = sqliteTable("plan_previews", {
 export type PlanPreview = typeof planPreviews.$inferSelect;
 
 
+
+export const flashSales = sqliteTable("flash_sales", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  label: text("label").notNull(),
+  planId: text("plan_id"),
+  discountPercent: integer("discount_percent").notNull().default(10),
+  startsAt: text("starts_at").notNull(),
+  endsAt: text("ends_at").notNull(),
+  active: integer("active", { mode: "boolean" }).default(true),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+});
+export type FlashSale = typeof flashSales.$inferSelect;
+
 // ── Trading Bot Subscriptions ─────────────────────────────────────────────────
 export const tradingBotSubscriptions = sqliteTable("trading_bot_subscriptions", {
   id: integer("id").primaryKey({ autoIncrement: true }),

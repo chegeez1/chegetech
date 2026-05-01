@@ -1558,6 +1558,57 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+
+  // ─── Flash Sales — Public ────────────────────────────────────────────────────
+  app.get("/api/flash-sales", (_req, res) => {
+    try {
+      const sales = storage.getActiveFlashSales();
+      res.json({ success: true, sales });
+    } catch (err: any) {
+      res.json({ success: true, sales: [] });
+    }
+  });
+
+  // ─── Flash Sales — Admin CRUD ────────────────────────────────────────────────
+  app.get("/api/admin/flash-sales", adminAuthMiddleware, (_req, res) => {
+    try {
+      res.json({ success: true, sales: storage.getAllFlashSales() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/admin/flash-sales", adminAuthMiddleware, (req, res) => {
+    try {
+      const { label, planId, discountPercent, startsAt, endsAt } = req.body;
+      if (!label || !discountPercent || !startsAt || !endsAt)
+        return res.status(400).json({ success: false, error: "label, discountPercent, startsAt, endsAt are required" });
+      const sale = storage.createFlashSale({ label, planId, discountPercent: Number(discountPercent), startsAt, endsAt });
+      res.json({ success: true, sale });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/flash-sales/:id", adminAuthMiddleware, (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const sale = storage.updateFlashSale(id, req.body);
+      res.json({ success: true, sale });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/flash-sales/:id", adminAuthMiddleware, (req, res) => {
+    try {
+      storage.deleteFlashSale(Number(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // ─── Admin: Stats ─────────────────────────────────────────────────────────
   app.get("/api/admin/stats", adminAuthMiddleware, async (_req, res) => {
     try {

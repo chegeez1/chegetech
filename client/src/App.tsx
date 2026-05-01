@@ -31,14 +31,15 @@ import GiftCardsPage from "./pages/GiftCardsPage";
 import TradingBotPage from "./pages/TradingBotPage";
 import SmsPage from "./pages/SmsPage";
 import TempNumbers from "@/pages/TempNumbers";
+import FaqPage from "@/pages/FaqPage";
 import Shell from "@/components/Shell";
 import ChatWidget from "@/components/ChatWidget";
 import CookieConsent from "@/components/CookieConsent";
 
 const NO_CHAT_PATHS = ["/admin", "/docs", "/privacy", "/track", "/bots"];
-const PUBLIC_PATHS = ["/auth", "/admin", "/payment/callback", "/payment/success", "/docs", "/privacy", "/track", "/bots", "/verify-email", "/reset-password", "/smm", "/numbers", "/proxy", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
+const PUBLIC_PATHS = ["/auth", "/faq", "/admin", "/payment/callback", "/payment/success", "/docs", "/privacy", "/track", "/bots", "/verify-email", "/reset-password", "/smm", "/numbers", "/proxy", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
 const NO_COOKIE_PATHS = ["/admin"];
-const SHELL_PATHS = ["/", "/bots", "/vps", "/dashboard", "/numbers", "/smm", "/proxy", "/checkout", "/cart-checkout", "/payment", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
+const SHELL_PATHS = ["/", "/bots", "/faq", "/vps", "/dashboard", "/numbers", "/smm", "/proxy", "/checkout", "/cart-checkout", "/payment", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
 
 function Router() {
   const [location] = useLocation();
@@ -134,6 +135,7 @@ function Router() {
         <Route path="/bots" component={BotStore} />
         <Route path="/bots/checkout/:botId" component={BotCheckout} />
         <Route path="/bots/order/:reference" component={BotOrder} />
+        <Route path="/faq" component={FaqPage} />
         <Route component={NotFound} />
       </Switch>
       {showChat && <ChatWidget />}

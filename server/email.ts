@@ -135,9 +135,10 @@ export async function sendSuspensionEmail(
       </ul>
       <p style="font-size:13px;color:#888;margin:0;">If you believe this is a mistake, please contact our support team by replying to this email.</p>
     </div>
-    <div style="background:#f8faff;padding:16px;text-align:center;border-top:1px solid #eee;">
+    <div style="background:#f8faff;padding:20px 16px;text-align:center;border-top:1px solid #eee;">
+      <a href="${process.env.TELEGRAM_SUPPORT || 'https://t.me/chegetech_support'}" style="display:inline-block;margin-bottom:12px;background:#229ED9;color:#fff;text-decoration:none;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;">💬 Chat Support on Telegram</a>
       <p style="font-size:12px;color:#aaa;margin:0 0 4px;">&copy; ${new Date().getFullYear()} Chege Tech. All rights reserved.</p>
-      <p style="font-size:12px;margin:0;"><a href="${getSiteUrl()}" style="color:#4169E1;text-decoration:none;">streamvault-premium.site</a></p>
+      <p style="font-size:12px;margin:0;"><a href="${getSiteUrl()}" style="color:#4169E1;text-decoration:none;">streamvault-premium.site</a> &nbsp;·&nbsp; <a href="${getSiteUrl()}/faq" style="color:#4169E1;text-decoration:none;">Help & FAQ</a></p>
     </div>
   </div>
 </body>
