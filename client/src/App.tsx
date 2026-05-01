@@ -128,6 +128,7 @@ function Router() {
         <Route path="/tempmail" component={TempMailPage} />
                 <Route path="/giftcards" component={GiftCardsPage} />
                 <Route path="/tradingbot" component={TradingBotPage} />
+                <Route path="/downloader" component={Downloader} />
                 <Route path="/sms" component={SmsPage} />
         <Route path="/admin/plan-previews" component={AdminPlanPreviews} />
         <Route path="/admin" component={Admin} />
