@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Download, Link2, Play, Clock, Loader2, AlertCircle, CheckCircle, Zap } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Download, Link2, Play, Clock, Loader2, AlertCircle, CheckCircle, Zap, Mail } from "lucide-react";
 
 const PAYSTACK_PUBLIC_KEY = (window as any).__PAYSTACK_KEY__ || "";
 const MONTHLY_PRICE_KES   = 100;
@@ -27,23 +27,45 @@ export default function Downloader() {
   const [dlLoading,    setDlLoading]    = useState(false);
   const [dlError,      setDlError]      = useState("");
   const [quota,        setQuota]        = useState<Quota>({ used: 0, limit: 2, remaining: 2 });
-  const [subEmail,     setSubEmail]     = useState(() => localStorage.getItem("dl_email") || "");
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [showSubModal, setShowSubModal] = useState(false);
-  const [payLoading,   setPayLoading]   = useState(false);
+  const [subEmail,      setSubEmail]      = useState(() => localStorage.getItem("dl_email") || "");
+  const [emailInput,    setEmailInput]    = useState("");
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [emailError,    setEmailError]    = useState("");
+  const [isSubscribed,  setIsSubscribed]  = useState(false);
+  const [showSubModal,  setShowSubModal]  = useState(false);
+  const [payLoading,    setPayLoading]    = useState(false);
 
   useEffect(() => {
     fetch("/api/dl/quota").then(r => r.json()).then(setQuota).catch(() => {});
     const saved = localStorage.getItem("dl_email");
-    if (saved) checkSub(saved);
+    if (saved) {
+      setEmailInput(saved);
+      checkSub(saved, true);
+    }
   }, []);
 
-  async function checkSub(email: string) {
+  async function checkSub(email: string, silent = false) {
     try {
       const r = await fetch(`/api/dl/check-sub?email=${encodeURIComponent(email)}`);
       const d = await r.json();
       setIsSubscribed(d.subscribed);
-    } catch {}
+      return d.subscribed as boolean;
+    } catch { return false; }
+  }
+
+  async function activateEmail() {
+    const email = emailInput.trim().toLowerCase();
+    if (!email) return;
+    setEmailChecking(true); setEmailError("");
+    const subscribed = await checkSub(email);
+    setEmailChecking(false);
+    if (subscribed) {
+      setSubEmail(email);
+      localStorage.setItem("dl_email", email);
+      setEmailError("");
+    } else {
+      setEmailError("This email is not in the subscriber list. Subscribe below or contact support.");
+    }
   }
 
   async function fetchInfo() {
@@ -160,6 +182,40 @@ export default function Downloader() {
                 Ksh 100/month — Unlimited
               </button>
             </>
+          )}
+        </div>
+
+        {/* Subscriber email activation */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-4">
+          <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+            <Mail className="w-3 h-3" /> Already subscribed or granted unlimited access? Enter your email:
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={emailInput}
+              onChange={e => { setEmailInput(e.target.value); setEmailError(""); }}
+              onKeyDown={e => e.key === "Enter" && activateEmail()}
+              placeholder="your@email.com"
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500/50"
+            />
+            {isSubscribed ? (
+              <div className="flex items-center gap-1 text-green-400 text-sm px-3">
+                <CheckCircle className="w-4 h-4" /> Active
+              </div>
+            ) : (
+              <button
+                onClick={activateEmail}
+                disabled={emailChecking || !emailInput.trim()}
+                className="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-1 transition-colors">
+                {emailChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : "Activate"}
+              </button>
+            )}
+          </div>
+          {emailError && (
+            <p className="text-red-400 text-xs mt-2 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3 shrink-0" /> {emailError}
+            </p>
           )}
         </div>
 
