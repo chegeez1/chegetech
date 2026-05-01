@@ -119,6 +119,28 @@ let cookiesReady = false;
   }
 })();
 
+// ── PO Token + visitorData (modern YouTube auth — no browser required) ────────
+// Get these from your browser DevTools or the yt-dlp PO token guide:
+// https://github.com/yt-dlp/yt-dlp/wiki/Extractors#po-token-guide
+// Set YOUTUBE_PO_TOKEN and YOUTUBE_VISITOR_DATA env vars on Render.
+let poToken:     string = process.env.YOUTUBE_PO_TOKEN     || "";
+let visitorData: string = process.env.YOUTUBE_VISITOR_DATA || "";
+
+if (poToken)     console.log("[downloader] PO Token loaded from env");
+if (visitorData) console.log("[downloader] visitorData loaded from env");
+
+/** Build the --extractor-args value for YouTube, combining all auth signals */
+function buildYouTubeExtractorArgs(): string {
+  const parts: string[] = [];
+  // po_token must be prefixed with the client name e.g. web+TOKEN
+  if (poToken) parts.push(`po_token=web+${poToken}`);
+  if (visitorData) parts.push(`visitor_data=${visitorData}`);
+  // Use web client when we have po_token (best compatibility), android otherwise
+  const clients = poToken ? "web,web_creator" : "android,ios,mweb";
+  parts.push(`player_client=${clients}`);
+  return `youtube:${parts.join(",")}`;
+}
+
 // ── Run yt-dlp ────────────────────────────────────────────────────────────────
 async function ytdlp(args: string[]): Promise<string> {
   const bin = await ensureYtDlp();
@@ -266,14 +288,11 @@ export function registerDownloadRoutes(app: Express) {
         "--add-header", "Accept-Language:en-US,en;q=0.9",
       ];
 
-      // YouTube bot detection bypass.
-      // Datacenter IPs are flagged — cookies from a real logged-in account are required.
+      // YouTube bot detection — cookies + po_token + client selection
       if (isYouTube) {
-        if (cookiesReady) {
-          args.push("--cookies", COOKIES_FILE);
-        }
+        if (cookiesReady) args.push("--cookies", COOKIES_FILE);
         args.push(
-          "--extractor-args", "youtube:player_client=android,ios,mweb",
+          "--extractor-args", buildYouTubeExtractorArgs(),
           "--socket-timeout", "30",
         );
       }
@@ -358,13 +377,11 @@ export function registerDownloadRoutes(app: Express) {
         "--add-header", "Accept-Language:en-US,en;q=0.9",
         "-o", tmpFile,
       ];
-      // YouTube bot detection bypass — cookies + android/ios clients
+      // YouTube bot detection — cookies + po_token + client selection
       if (isYouTube) {
-        if (cookiesReady) {
-          dlArgs.push("--cookies", COOKIES_FILE);
-        }
+        if (cookiesReady) dlArgs.push("--cookies", COOKIES_FILE);
         dlArgs.push(
-          "--extractor-args", "youtube:player_client=android,ios,mweb",
+          "--extractor-args", buildYouTubeExtractorArgs(),
           "--socket-timeout", "30",
         );
       }
@@ -434,10 +451,10 @@ export function registerDownloadRoutes(app: Express) {
     try {
       const bin = await ensureYtDlp();
       const subs = await listSubscribers();
-      res.json({ ready: true, path: bin, subscribers: subs.length, cookiesReady });
+      res.json({ ready: true, path: bin, subscribers: subs.length, cookiesReady, poTokenReady: !!poToken });
     } catch {
       const subs = await listSubscribers().catch(() => []);
-      res.json({ ready: false, path: "", subscribers: subs.length, cookiesReady });
+      res.json({ ready: false, path: "", subscribers: subs.length, cookiesReady, poTokenReady: !!poToken });
     }
   });
 
@@ -456,5 +473,17 @@ export function registerDownloadRoutes(app: Express) {
     } catch (e: any) {
       res.status(500).json({ error: "Failed to write cookies file: " + e.message });
     }
+  });
+
+  // POST /api/dl/admin/set-po-token — update PO Token + visitorData without redeploy
+  // How to get these: https://github.com/yt-dlp/yt-dlp/wiki/Extractors#po-token-guide
+  app.post("/api/dl/admin/set-po-token", (req: Request, res: Response) => {
+    if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
+    const { poToken: newPo, visitorData: newVd } = req.body as { poToken?: string; visitorData?: string };
+    if (!newPo) return res.status(400).json({ error: "poToken is required" });
+    poToken     = newPo.trim();
+    visitorData = (newVd || "").trim();
+    console.log("[downloader] PO Token updated via admin API");
+    res.json({ success: true, message: "PO Token updated — YouTube requests will use it immediately" });
   });
 }
