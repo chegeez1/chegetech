@@ -15,20 +15,35 @@ import https from "https";
 import http from "http";
 import path from "path";
 import os from "os";
-import {
-  initDlDb,
+import { initDlDb,
   isSubscriber,
   addSubscriber,
   removeSubscriber,
   listSubscribers,
   getDailyUsage,
-  incrementDailyUsage,
-} from "./dl-db";
+  incrementDailyUsage, setConfig, getConfig } from "./dl-db";
 
 const execFileAsync = promisify(execFile);
 
 // ── Initialise DB tables at startup ──────────────────────────────────────────
 initDlDb().catch((err: Error) => console.error("[dl-db] init error:", err.message));
+  // ── Restore persisted credentials from DB on startup ─────────────────────────
+  (async () => {
+    try {
+      const [savedCookies, savedVd, savedPo] = await Promise.all([
+        getConfig("youtube_cookies"),
+        getConfig("youtube_visitor_data"),
+        getConfig("youtube_po_token"),
+      ]);
+      if (savedCookies && savedCookies.length > 20) {
+        writeFileSync(COOKIES_FILE, savedCookies, "utf8");
+        cookiesReady = true;
+        console.log("[downloader] Restored YouTube cookies from DB");
+      }
+      if (savedVd)  { visitorData = savedVd; console.log("[downloader] Restored visitorData from DB"); }
+      if (savedPo)  { poToken     = savedPo; console.log("[downloader] Restored poToken from DB"); }
+    } catch (e) { /* DB not ready yet — skip */ }
+  })();
 
 // ── yt-dlp binary location & auto-download ───────────────────────────────────
 const BIN_DIR  = path.join(process.cwd(), "node_modules", "youtube-dl-exec", "bin");
@@ -136,7 +151,8 @@ function buildYouTubeExtractorArgs(): string {
   if (poToken) parts.push(`po_token=web+${poToken}`);
   if (visitorData) parts.push(`visitor_data=${visitorData}`);
   // Use web client when we have po_token (best compatibility), android otherwise
-  const clients = poToken ? "web,web_creator" : "android,ios,mweb";
+  // tv_embedded works well with cookies but no poToken; web works with poToken
+  const clients = poToken ? "web,web_creator" : "tv_embedded,ios,mweb";
   parts.push(`player_client=${clients}`);
   return `youtube:${parts.join(",")}`;
 }
@@ -459,7 +475,7 @@ export function registerDownloadRoutes(app: Express) {
   });
 
   // POST /api/dl/admin/set-cookies — update YouTube cookies without redeploy
-  app.post("/api/dl/admin/set-cookies", (req: Request, res: Response) => {
+  app.post("/api/dl/admin/set-cookies", async (req: Request, res: Response) => {
     if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
     const { cookies } = req.body as { cookies?: string };
     if (!cookies || cookies.trim().length < 20) {
@@ -468,7 +484,8 @@ export function registerDownloadRoutes(app: Express) {
     try {
       writeFileSync(COOKIES_FILE, cookies.trim(), "utf8");
       cookiesReady = true;
-      console.log("[downloader] YouTube cookies updated via admin API");
+      await setConfig("youtube_cookies", cookies.trim());
+      console.log("[downloader] YouTube cookies updated via admin API (persisted to DB)");
       res.json({ success: true, message: "YouTube cookies updated — downloads will use these immediately" });
     } catch (e: any) {
       res.status(500).json({ error: "Failed to write cookies file: " + e.message });
@@ -477,13 +494,14 @@ export function registerDownloadRoutes(app: Express) {
 
   // POST /api/dl/admin/set-po-token — update PO Token + visitorData without redeploy
   // How to get these: https://github.com/yt-dlp/yt-dlp/wiki/Extractors#po-token-guide
-  app.post("/api/dl/admin/set-po-token", (req: Request, res: Response) => {
+  app.post("/api/dl/admin/set-po-token", async (req: Request, res: Response) => {
     if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
     const { poToken: newPo, visitorData: newVd } = req.body as { poToken?: string; visitorData?: string };
-    if (!newPo) return res.status(400).json({ error: "poToken is required" });
-    poToken     = newPo.trim();
+    poToken     = (newPo || "").trim();
     visitorData = (newVd || "").trim();
-    console.log("[downloader] PO Token updated via admin API");
-    res.json({ success: true, message: "PO Token updated — YouTube requests will use it immediately" });
+    await setConfig("youtube_po_token", poToken);
+    await setConfig("youtube_visitor_data", visitorData);
+    console.log("[downloader] Credentials updated via admin API — poToken:", poToken ? "set" : "not set", "visitorData:", visitorData ? "set" : "not set");
+    res.json({ success: true, message: "Credentials updated — YouTube requests will use them immediately", hasPoToken: !!poToken, hasVisitorData: !!visitorData });
   });
 }
