@@ -67,52 +67,37 @@ export default function Downloader() {
     setDlError(""); setDlLoading(true);
 
     try {
-      // Quick quota check before triggering the long yt-dlp call
+      // Check quota first (fast — no yt-dlp involved)
       if (!isSubscribed) {
         const qRes = await fetch("/api/dl/quota");
         const q    = await qRes.json();
+        setQuota(q);
         if (q.remaining <= 0) {
           setShowSubModal(true);
-          setQuota(q);
           setDlLoading(false);
           return;
         }
       }
 
-      // Build stream URL — server proxies the video with correct headers, no 403s
+      // Build stream URL — the server will proxy the video with correct headers
       const params = new URLSearchParams({ url: url.trim(), title: info.title });
       if (subEmail) params.set("email", subEmail);
       const streamUrl = `/api/dl/stream?${params.toString()}`;
 
-      // HEAD probe to catch quota/error responses before streaming
-      const probe = await fetch(streamUrl, { method: "HEAD" });
+      // Navigate to the stream URL — browser treats it as a file download.
+      // The server sets Content-Disposition: attachment so no page redirect occurs.
+      window.location.href = streamUrl;
 
-      if (probe.status === 402) {
-        setShowSubModal(true);
-        fetch("/api/dl/quota").then(r => r.json()).then(setQuota).catch(() => {});
-        return;
-      }
-
-      if (!probe.ok) {
-        setDlError("Could not start download. Please try again.");
-        return;
-      }
-
-      // Trigger the browser download — file streams from our server, not TikTok/YouTube CDN
-      const a = document.createElement("a");
-      a.href     = streamUrl;
-      a.download = "";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      // Refresh quota after download starts
+      // Refresh quota display after a delay (server will have incremented by then)
       setTimeout(() => {
         fetch("/api/dl/quota").then(r => r.json()).then(setQuota).catch(() => {});
-      }, 3000);
+        setDlLoading(false);
+      }, 4000);
 
-    } catch { setDlError("Network error. Please try again."); }
-    finally { setDlLoading(false); }
+    } catch {
+      setDlError("Network error. Please try again.");
+      setDlLoading(false);
+    }
   }
 
   function paystackPay() {
