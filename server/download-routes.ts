@@ -238,6 +238,8 @@ export function registerDownloadRoutes(app: Express) {
         "--no-check-certificates",
         "--no-warnings",
         "--quiet",
+        "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "--add-header", "Accept-Language:en-US,en;q=0.9",
       ]);
       const info = JSON.parse(raw);
       res.json({
@@ -248,10 +250,9 @@ export function registerDownloadRoutes(app: Express) {
         platform:  info.extractor_key || "",
       });
     } catch (err: any) {
-      const isSetupErr =
-        String(err?.message).includes("download") ||
-        String(err?.message).includes("HTTP") ||
-        String(err?.message).includes("ENOENT");
+      const msg = String(err?.message || "");
+      const isSetupErr = msg.includes("ENOENT") || msg.includes("yt-dlp");
+      console.error("[downloader] info error:", msg.slice(0, 300));
       res.status(500).json({
         error: isSetupErr
           ? "Downloader is still initialising — please wait 30 seconds and try again."
@@ -294,6 +295,8 @@ export function registerDownloadRoutes(app: Express) {
         "--no-warnings",
         "--quiet",
         "-f", "best[ext=mp4][height<=720]/best[ext=mp4]/best",
+        "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "--add-header", "Accept-Language:en-US,en;q=0.9",
       ]);
 
       const cdnUrl = rawUrl.split("\n")[0].trim();
