@@ -1706,10 +1706,989 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
   });
 
-    // ── Background scheduler: auto-deploy pending orders every 5 minutes ────────
+  
+  // ── SMM Boost — smmstone.com scraper ─────────────────────────────────────
+  let smmCache: { services: any[]; ts: number } | null = null;
+
+  function detectPlatform(text: string): string {
+    const t = text.toLowerCase();
+    if (t.includes('instagram')) return 'Instagram';
+    if (t.includes('tiktok')) return 'TikTok';
+    if (t.includes('youtube')) return 'YouTube';
+    if (t.includes('telegram')) return 'Telegram';
+    if (t.includes('facebook')) return 'Facebook';
+    if (t.includes('twitter') || t.includes(' x ')) return 'Twitter';
+    if (t.includes('spotify')) return 'Spotify';
+    if (t.includes('whatsapp')) return 'WhatsApp';
+    if (t.includes('discord')) return 'Discord';
+    return 'Other';
+  }
+
+  async function scrapeSmmServices(): Promise<any[]> {
+    if (smmCache && Date.now() - smmCache.ts < 60 * 60 * 1000) return smmCache.services;
+    console.log('[SMM] Scraping smmstone.com...');
+    const html = await fetchPageHtml('smmstone.com', '/services');
+
+    // Build category-id → category-name map
+    const catMap: Record<string, string> = {};
+    const catRx = /category-id="(\d+)"[^>]*category-name="([^"]+)"/g;
+    let cm: RegExpExecArray | null;
+    while ((cm = catRx.exec(html)) !== null) catMap[cm[1]] = cm[2];
+
+    // Extract services: id, categoryId, name, price, min, max
+    const services: any[] = [];
+    const svcRx = /service-id="(\d+)"[^>]*data-filter-table-category-id="(\d+)"[\s\S]{0,150}<span class="ss-name">([^<]+)<\/span>[\s\S]{0,300}?\$(\d+\.\d+)[\s\S]{0,200}?<\/div>/g;
+    let sm: RegExpExecArray | null;
+    while ((sm = svcRx.exec(html)) !== null && services.length < 3000) {
+      const catName = catMap[sm[2]] || 'Other';
+      const name = sm[3].replace(/[\uD800-\uDFFF]|[\u{1F000}-\u{1FFFF}]/gu, '').replace(/\s+/g, ' ').trim();
+      const rate = parseFloat(sm[4]);
+      const platform = detectPlatform(catName + ' ' + name);
+      services.push({ id: sm[1], name, category: catName, rate, platform });
+    }
+
+    // Fallback: simpler name+price only approach if above yields <100
+    if (services.length < 100) {
+      const rx2 = /<span class="ss-name">([^<]+)<\/span>[\s\S]{0,400}?\$(\d+\.\d+)/g;
+      let m2: RegExpExecArray | null;
+      while ((m2 = rx2.exec(html)) !== null && services.length < 3000) {
+        const name = m2[1].replace(/\s+/g, ' ').trim();
+        const rate = parseFloat(m2[2]);
+        services.push({ id: services.length, name, category: 'General', rate, platform: detectPlatform(name) });
+      }
+    }
+
+    smmCache = { services, ts: Date.now() };
+    console.log(`[SMM] Scraped ${services.length} services`);
+    return services;
+  }
+
+  // Mark: 2.5× markup on wholesale rate
+  const SMM_MARKUP = 2.5;
+
+  app.get('/api/smm/services', async (req, res) => {
+    try {
+      const all = await scrapeSmmServices();
+      const { platform, q } = req.query as Record<string, string>;
+      let filtered = all;
+      if (platform && platform !== 'All') filtered = filtered.filter((s: any) => s.platform === platform);
+      if (q) { const ql = q.toLowerCase(); filtered = filtered.filter((s: any) => s.name.toLowerCase().includes(ql) || s.category.toLowerCase().includes(ql)); }
+      const result = filtered.slice(0, 200).map((s: any) => ({ ...s, ourRate: +(s.rate * SMM_MARKUP).toFixed(4) }));
+      res.json({ success: true, services: result, total: filtered.length });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.get('/api/smm/platforms', async (_req, res) => {
+    try {
+      const all = await scrapeSmmServices();
+      const counts: Record<string, number> = {};
+      all.forEach((s: any) => { counts[s.platform] = (counts[s.platform] || 0) + 1; });
+      const platforms = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+      res.json({ success: true, platforms });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.post('/api/smm/order', customerAuthMiddleware, async (req: any, res) => {
+    try {
+      const { serviceId, serviceName, platform, quantity, link, rate, ourRate } = req.body;
+      if (!serviceId || !quantity || !link || !ourRate) return res.status(400).json({ success: false, error: 'Missing fields' });
+      const totalUSD = (quantity / 1000) * ourRate;
+      const amountKes = Math.round(totalUSD * 130); // ~130 KES per USD
+      const amountKobo = amountKes * 100;
+      const email = req.customer?.email || req.session?.customerEmail || 'customer@chegetech.com';
+      const ref = 'SMM-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+
+      const paystackBody = JSON.stringify({
+        email, amount: amountKobo, reference: ref, currency: 'KES',
+        metadata: { serviceId, serviceName, platform, quantity, link, rate, ourRate, totalUSD: totalUSD.toFixed(4) },
+        callback_url: process.env.BASE_URL ? process.env.BASE_URL + '/payment/callback' : undefined,
+      });
+      const paystackRes = await new Promise<any>((resolve, reject) => {
+        const httpsM = require('https') as typeof import('https');
+        const r = httpsM.request({ hostname: 'api.paystack.co', path: '/transaction/initialize', method: 'POST', headers: { 'Authorization': 'Bearer ' + process.env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(paystackBody) } }, (resp) => { let d = ''; resp.on('data', (c: Buffer) => d += c); resp.on('end', () => resolve(JSON.parse(d))); });
+        r.on('error', reject); r.write(paystackBody); r.end();
+      });
+
+      if (!paystackRes.status) return res.status(500).json({ success: false, error: 'Payment init failed' });
+
+      // Save order to DB
+      try {
+        const pg = require('./storage').pgPool || (await import('./storage')).pgPool;
+        if (pg) {
+          await pg.query(
+            'INSERT INTO smm_orders (reference,customer_email,service_id,service_name,platform,quantity,link,rate,our_rate,total_usd,amount_kes,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (reference) DO NOTHING',
+            [ref, email, serviceId, serviceName, platform, quantity, link, rate || 0, ourRate, totalUSD.toFixed(4), amountKes, 'pending']
+          );
+        }
+      } catch (dbErr: any) { console.error('[SMM] DB save error:', dbErr.message); }
+
+      res.json({ success: true, paymentUrl: paystackRes.data.authorization_url, reference: ref });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+
+
+  // ── SMM Admin Endpoints ───────────────────────────────────────────────────
+  app.get('/api/admin/smm-orders', async (req: any, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      if (!pg) return res.json({ success: true, orders: [] });
+      const { rows } = await pg.query('SELECT * FROM smm_orders ORDER BY id DESC LIMIT 500');
+      res.json({ success: true, orders: rows });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.patch('/api/admin/smm-orders/:id/status', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      const allowed = ['pending','processing','completed','failed'];
+      if (!allowed.includes(status)) return res.status(400).json({ success: false, error: 'Invalid status' });
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      if (!pg) return res.status(500).json({ success: false, error: 'No DB' });
+      await pg.query('UPDATE smm_orders SET status=$1 WHERE id=$2', [status, id]);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+
+  // ── Proxy / Residential IPs ───────────────────────────────────────────────
+
+  // Customer: list active plans
+
+
+
+  // ── Free Proxies Admin — DB-backed with checker ──────────────────────────
+
+  function parseProxyLine(line: string): { ip: string; port: string; user: string; pass: string; raw: string } | null {
+    line = line.trim().replace(/^https?:\/\//, '');
+    if (!line) return null;
+    // user:pass@ip:port
+    const authAt = line.match(/^([^:]+):([^@]+)@([\d.]+):(\d+)$/);
+    if (authAt) return { user: authAt[1], pass: authAt[2], ip: authAt[3], port: authAt[4], raw: line };
+    // ip:port:user:pass
+    const parts = line.split(':');
+    if (parts.length === 4 && /^\d+$/.test(parts[1])) return { ip: parts[0], port: parts[1], user: parts[2], pass: parts[3], raw: line };
+    if (parts.length === 4 && /^\d+$/.test(parts[3])) return { ip: parts[2], port: parts[3], user: parts[0], pass: parts[1], raw: line };
+    // ip:port
+    if (parts.length === 2 && /^\d+$/.test(parts[1])) return { ip: parts[0], port: parts[1], user: '', pass: '', raw: line };
+    return null;
+  }
+
+  async function checkSingleProxy(ip: string, port: string): Promise<{ alive: boolean; speed_ms: number; country: string; country_code: string; anonymity: string }> {
+    return new Promise((resolve) => {
+      const httpM = require('http') as typeof import('http');
+      const start = Date.now();
+      try {
+        const req = httpM.request({
+          host: ip, port: parseInt(port), method: 'GET',
+          path: 'http://ip-api.com/json?fields=country,countryCode,proxy,hosting',
+          headers: { 'Host': 'ip-api.com', 'User-Agent': 'Mozilla/5.0', 'Proxy-Connection': 'Keep-Alive' },
+          timeout: 9000,
+        }, (res) => {
+          let data = '';
+          res.on('data', (d: Buffer) => data += d);
+          res.on('end', () => {
+            const ms = Date.now() - start;
+            try {
+              const j = JSON.parse(data);
+              const anonymity = j.proxy || j.hosting ? 'anonymous' : 'transparent';
+              resolve({ alive: true, speed_ms: ms, country: j.country || 'Unknown', country_code: j.countryCode || '', anonymity });
+            } catch { resolve({ alive: true, speed_ms: ms, country: 'Unknown', country_code: '', anonymity: 'anonymous' }); }
+          });
+        });
+        req.on('timeout', () => { req.destroy(); resolve({ alive: false, speed_ms: 0, country: '', country_code: '', anonymity: '' }); });
+        req.on('error', () => resolve({ alive: false, speed_ms: 0, country: '', country_code: '', anonymity: '' }));
+        req.end();
+      } catch { resolve({ alive: false, speed_ms: 0, country: '', country_code: '', anonymity: '' }); }
+    });
+  }
+
+  // Admin: list all free proxies
+  app.get('/api/admin/free-proxies', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query('SELECT * FROM free_proxies ORDER BY id DESC LIMIT 2000');
+      res.json({ success: true, proxies: rows });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: bulk import
+  app.post('/api/admin/free-proxies/bulk', async (req, res) => {
+    try {
+      const { proxies: raw, type: proxyType } = req.body;
+      if (!raw) return res.status(400).json({ success: false, error: 'No proxies provided' });
+      const lines = (raw as string).split('\n').map((l: string) => l.trim()).filter((l: string) => l);
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      let added = 0, dupes = 0;
+      for (const line of lines) {
+        const p = parseProxyLine(line);
+        if (!p) continue;
+        try {
+          await pg.query(
+            'INSERT INTO free_proxies (raw, ip, port, username, password, type, status) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (raw) DO NOTHING',
+            [p.raw, p.ip, p.port, p.user, p.pass, (proxyType || 'HTTP').toUpperCase(), 'unchecked']
+          );
+          added++;
+        } catch { dupes++; }
+      }
+      res.json({ success: true, added, dupes, total: lines.length });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: check proxies (batch, up to 100 at a time, 8 concurrent)
+  app.post('/api/admin/free-proxies/check', async (req, res) => {
+    try {
+      const { ids } = req.body; // optional: array of ids, else check all unchecked
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      let rows: any[];
+      if (ids && ids.length) {
+        const { rows: r } = await pg.query('SELECT * FROM free_proxies WHERE id = ANY($1) LIMIT 200', [ids]);
+        rows = r;
+      } else {
+        const { rows: r } = await pg.query("SELECT * FROM free_proxies WHERE status='unchecked' OR status='alive' ORDER BY id DESC LIMIT 200");
+        rows = r;
+      }
+      if (!rows.length) return res.json({ success: true, checked: 0, alive: 0 });
+
+      // Run 8 concurrent checks
+      const CONCURRENCY = 8;
+      let alive = 0, dead = 0;
+      for (let i = 0; i < rows.length; i += CONCURRENCY) {
+        const batch = rows.slice(i, i + CONCURRENCY);
+        await Promise.all(batch.map(async (proxy: any) => {
+          const result = await checkSingleProxy(proxy.ip, proxy.port);
+          const status = result.alive ? 'alive' : 'dead';
+          if (result.alive) alive++; else dead++;
+          await pg.query(
+            'UPDATE free_proxies SET status=$1,speed_ms=$2,country=$3,country_code=$4,anonymity=$5,last_checked=NOW()::text WHERE id=$6',
+            [status, result.speed_ms, result.country, result.country_code, result.anonymity, proxy.id]
+          );
+        }));
+      }
+      res.json({ success: true, checked: rows.length, alive, dead });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: delete one
+  app.delete('/api/admin/free-proxies/:id', async (req, res) => {
+    try {
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      await pg.query('DELETE FROM free_proxies WHERE id=$1', [req.params.id]);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: delete all dead
+  app.delete('/api/admin/free-proxies/bulk/dead', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rowCount } = await pg.query("DELETE FROM free_proxies WHERE status='dead'");
+      res.json({ success: true, deleted: rowCount });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Public: free proxies — DB-backed first, fallback to geonode
+  let freeProxyCacheGeo: { data: any[]; ts: number } | null = null;
+  app.get('/api/proxy/free', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query("SELECT ip,port,type,country,country_code,anonymity,speed_ms FROM free_proxies WHERE status='alive' ORDER BY speed_ms ASC, id DESC LIMIT 300");
+      if (rows.length > 0) {
+        return res.json({ success: true, proxies: rows.map((r: any) => ({ ip: r.ip, port: r.port, type: r.type || 'HTTP', country: r.country || 'Unknown', countryCode: r.country_code || '', anonymity: r.anonymity || 'anonymous', speed: r.speed_ms || 0, upTime: 100 })) });
+      }
+    } catch {}
+    // Fallback to geonode cache
+    try {
+      if (freeProxyCacheGeo && Date.now() - freeProxyCacheGeo.ts < 5 * 60 * 1000) {
+        return res.json({ success: true, proxies: freeProxyCacheGeo.data, cached: true });
+      }
+      const axiosM = require('axios');
+      const r = await axiosM.get('https://proxylist.geonode.com/api/proxy-list?limit=200&page=1&sort_by=lastChecked&sort_type=desc&filterUpTime=50', { headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' }, timeout: 12000 });
+      const proxies = (r.data?.data || []).map((p: any) => ({ ip: p.ip, port: p.port, type: (p.protocols?.[0] || 'http').toUpperCase(), country: p.country || 'Unknown', countryCode: p.country_code || p.countryCode || '', anonymity: (p.anonymityLevel || 'transparent').toLowerCase(), speed: p.speed || 0, upTime: p.upTime || 0 }));
+      freeProxyCacheGeo = { data: proxies, ts: Date.now() };
+      res.json({ success: true, proxies });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+
+  app.get('/api/proxy/plans', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      if (!pg) return res.json({ success: true, plans: [] });
+      const { rows } = await pg.query("SELECT * FROM proxy_plans WHERE is_active=true ORDER BY sort_order ASC, price_kes ASC");
+      res.json({ success: true, plans: rows });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Customer: create order + Paystack
+  app.post('/api/proxy/order', async (req: any, res) => {
+    try {
+      const { planId } = req.body;
+      if (!planId) return res.status(400).json({ success: false, error: 'Plan ID required' });
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      if (!pg) return res.status(500).json({ success: false, error: 'DB unavailable' });
+      const { rows } = await pg.query("SELECT * FROM proxy_plans WHERE id=$1 AND is_active=true", [planId]);
+      if (!rows.length) return res.status(404).json({ success: false, error: 'Plan not found' });
+      const plan = rows[0];
+      const email = req.customer?.email || req.session?.customerEmail || 'customer@chegetech.com';
+      const ref = 'PROXY-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();
+      const amountKobo = Math.round(plan.price_kes * 100);
+      const paystackBody = JSON.stringify({
+        email, amount: amountKobo, reference: ref, currency: 'KES',
+        metadata: { type: 'proxy_order', planId: plan.id, planName: plan.name, amountKes: plan.price_kes },
+        callback_url: process.env.BASE_URL ? process.env.BASE_URL + '/payment/callback' : undefined,
+      });
+      const httpsM = require('https') as typeof import('https');
+      const paystackRes = await new Promise<any>((resolve, reject) => {
+        const r = httpsM.request({ hostname:'api.paystack.co', path:'/transaction/initialize', method:'POST', headers:{ 'Authorization':'Bearer '+process.env.PAYSTACK_SECRET_KEY, 'Content-Type':'application/json', 'Content-Length':Buffer.byteLength(paystackBody) } }, (resp) => { let d=''; resp.on('data',(c:Buffer)=>d+=c); resp.on('end',()=>resolve(JSON.parse(d))); });
+        r.on('error',reject); r.write(paystackBody); r.end();
+      });
+      if (!paystackRes.status) return res.status(500).json({ success: false, error: 'Payment init failed' });
+      await pg.query(
+        "INSERT INTO proxy_orders (reference,customer_email,plan_id,plan_name,amount_kes,status) VALUES ($1,$2,$3,$4,$5,'pending') ON CONFLICT DO NOTHING",
+        [ref, email, plan.id, plan.name, plan.price_kes]
+      );
+      res.json({ success: true, paymentUrl: paystackRes.data.authorization_url, reference: ref });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: list all plans
+  app.get('/api/admin/proxy-plans', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      if (!pg) return res.json({ success: true, plans: [] });
+      const { rows } = await pg.query("SELECT * FROM proxy_plans ORDER BY sort_order ASC, id ASC");
+      res.json({ success: true, plans: rows });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: create plan
+  app.post('/api/admin/proxy-plans', async (req, res) => {
+    try {
+      const { name, description, type, gb_amount, country, price_kes, bandwidth, speed, features, is_active, sort_order } = req.body;
+      if (!name || !price_kes) return res.status(400).json({ success: false, error: 'Name and price required' });
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query(
+        "INSERT INTO proxy_plans (name,description,type,gb_amount,country,price_kes,bandwidth,speed,features,is_active,sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *",
+        [name, description||'', type||'residential', gb_amount||null, country||null, price_kes, bandwidth||'Unlimited', speed||'100Mbps', features||'', is_active!==false, sort_order||0]
+      );
+      res.json({ success: true, plan: rows[0] });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: update plan
+  app.put('/api/admin/proxy-plans/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, type, gb_amount, country, price_kes, bandwidth, speed, features, is_active, sort_order } = req.body;
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      await pg.query(
+        "UPDATE proxy_plans SET name=COALESCE($1,name),description=COALESCE($2,description),type=COALESCE($3,type),gb_amount=$4,country=$5,price_kes=COALESCE($6,price_kes),bandwidth=COALESCE($7,bandwidth),speed=COALESCE($8,speed),features=COALESCE($9,features),is_active=COALESCE($10,is_active),sort_order=COALESCE($11,sort_order) WHERE id=$12",
+        [name, description, type, gb_amount||null, country||null, price_kes, bandwidth, speed, features, is_active, sort_order||0, id]
+      );
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: delete plan
+  app.delete('/api/admin/proxy-plans/:id', async (req, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      await pg.query("DELETE FROM proxy_plans WHERE id=$1", [req.params.id]);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: list orders
+  app.get('/api/admin/proxy-orders', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      if (!pg) return res.json({ success: true, orders: [] });
+      const { rows } = await pg.query("SELECT * FROM proxy_orders ORDER BY id DESC LIMIT 500");
+      res.json({ success: true, orders: rows });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: update order status + credentials
+  app.patch('/api/admin/proxy-orders/:id/status', async (req, res) => {
+    try {
+      const { status, credentials } = req.body;
+      const allowed = ['pending','processing','active','completed','failed'];
+      if (!allowed.includes(status)) return res.status(400).json({ success: false, error: 'Invalid status' });
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      await pg.query("UPDATE proxy_orders SET status=$1,credentials=COALESCE($2,credentials) WHERE id=$3", [status, credentials||null, req.params.id]);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+
+
+  // ── Digital Accounts (Social Media + Email) ───────────────────────────────
+
+  // Customer: list products with live stock count
+  app.get('/api/digital/products', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      if (!pg) return res.json({ success: true, products: [] });
+      const { rows } = await pg.query(`
+        SELECT p.*, COUNT(s.id) FILTER (WHERE s.is_sold=false) AS stock_count
+        FROM digital_products p
+        LEFT JOIN digital_accounts_stock s ON s.product_id=p.id
+        WHERE p.is_active=true
+        GROUP BY p.id
+        ORDER BY p.sort_order ASC, p.id ASC
+      `);
+      res.json({ success: true, products: rows.map((r: any) => ({ ...r, stock_count: parseInt(r.stock_count)||0 })) });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Customer: create order + Paystack
+  app.post('/api/digital/order', async (req: any, res) => {
+    try {
+      const { productId } = req.body;
+      if (!productId) return res.status(400).json({ success: false, error: 'Product ID required' });
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      const { rows: prods } = await pg.query("SELECT * FROM digital_products WHERE id=$1 AND is_active=true", [productId]);
+      if (!prods.length) return res.status(404).json({ success: false, error: 'Product not found' });
+      const product = prods[0];
+      const { rows: stock } = await pg.query("SELECT id FROM digital_accounts_stock WHERE product_id=$1 AND is_sold=false LIMIT 1", [productId]);
+      if (!stock.length) return res.status(400).json({ success: false, error: 'Out of stock' });
+      const email = req.customer?.email || req.session?.customerEmail || 'customer@chegetech.com';
+      const ref = 'ACCT-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();
+      const amountKobo = Math.round(product.price_kes * 100);
+      const paystackBody = JSON.stringify({
+        email, amount: amountKobo, reference: ref, currency: 'KES',
+        metadata: { type: 'digital_account', productId: product.id, productName: product.name, platform: product.platform },
+        callback_url: (process.env.BASE_URL || '') + '/accounts?ref=' + ref,
+      });
+      const httpsM = require('https') as typeof import('https');
+      const psRes = await new Promise<any>((resolve, reject) => {
+        const r = httpsM.request({ hostname:'api.paystack.co', path:'/transaction/initialize', method:'POST', headers:{'Authorization':'Bearer '+process.env.PAYSTACK_SECRET_KEY,'Content-Type':'application/json','Content-Length':Buffer.byteLength(paystackBody)} }, (resp) => { let d=''; resp.on('data',(c:Buffer)=>d+=c); resp.on('end',()=>resolve(JSON.parse(d))); }); r.on('error',reject); r.write(paystackBody); r.end();
+      });
+      if (!psRes.status) return res.status(500).json({ success: false, error: 'Payment init failed' });
+      await pg.query("INSERT INTO digital_orders (reference,customer_email,product_id,product_name,platform,amount_kes,status) VALUES ($1,$2,$3,$4,$5,$6,'pending') ON CONFLICT DO NOTHING",
+        [ref, email, product.id, product.name, product.platform, product.price_kes]);
+      res.json({ success: true, paymentUrl: psRes.data.authorization_url, reference: ref });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Customer: verify payment + auto-deliver account
+  app.get('/api/digital/verify/:reference', async (req, res) => {
+    try {
+      const { reference } = req.params;
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      const { rows: orders } = await pg.query("SELECT * FROM digital_orders WHERE reference=$1", [reference]);
+      if (!orders.length) return res.status(404).json({ success: false, error: 'Order not found' });
+      const order = orders[0];
+      if (order.status === 'delivered' && order.credentials) {
+        return res.json({ success: true, credentials: order.credentials, already: true });
+      }
+      // Verify with Paystack
+      const httpsM = require('https') as typeof import('https');
+      const psCheck = await new Promise<any>((resolve) => {
+        const r = httpsM.request({ hostname:'api.paystack.co', path:'/transaction/verify/'+reference, method:'GET', headers:{'Authorization':'Bearer '+process.env.PAYSTACK_SECRET_KEY} }, (resp) => { let d=''; resp.on('data',(c:Buffer)=>d+=c); resp.on('end',()=>{ try{resolve(JSON.parse(d));}catch{resolve({data:{status:'failed'}});} }); }); r.on('error',()=>resolve({data:{status:'failed'}})); r.end();
+      });
+      if (psCheck.data?.status !== 'success') return res.status(402).json({ success: false, error: 'Payment not confirmed yet' });
+      // Assign account from stock
+      const { rows: stock } = await pg.query("SELECT * FROM digital_accounts_stock WHERE product_id=$1 AND is_sold=false LIMIT 1 FOR UPDATE SKIP LOCKED", [order.product_id]);
+      if (!stock.length) return res.status(400).json({ success: false, error: 'Out of stock - contact support' });
+      const acct = stock[0];
+      await pg.query("UPDATE digital_accounts_stock SET is_sold=true,sold_to_email=$1,sold_at=NOW()::text WHERE id=$2", [order.customer_email, acct.id]);
+      await pg.query("UPDATE digital_orders SET status='delivered',credentials=$1,account_stock_id=$2 WHERE reference=$3", [acct.credentials, acct.id, reference]);
+      res.json({ success: true, credentials: acct.credentials });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: list all digital products
+  app.get('/api/admin/digital-products', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query(`SELECT p.*, COUNT(s.id) FILTER (WHERE s.is_sold=false) AS stock_count, COUNT(s.id) AS total_stock FROM digital_products p LEFT JOIN digital_accounts_stock s ON s.product_id=p.id GROUP BY p.id ORDER BY p.sort_order ASC, p.id ASC`);
+      res.json({ success: true, products: rows.map((r: any) => ({ ...r, stock_count: parseInt(r.stock_count)||0, total_stock: parseInt(r.total_stock)||0 })) });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.post('/api/admin/digital-products', async (req, res) => {
+    try {
+      const { name, platform, category, price_kes, description, features, is_active, sort_order } = req.body;
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query("INSERT INTO digital_products (name,platform,category,price_kes,description,features,is_active,sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+        [name, platform, category||'social', price_kes, description||'', features||'', is_active!==false, sort_order||0]);
+      res.json({ success: true, product: rows[0] });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.put('/api/admin/digital-products/:id', async (req, res) => {
+    try {
+      const { name, platform, category, price_kes, description, features, is_active, sort_order } = req.body;
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      await pg.query("UPDATE digital_products SET name=COALESCE($1,name),platform=COALESCE($2,platform),category=COALESCE($3,category),price_kes=COALESCE($4,price_kes),description=COALESCE($5,description),features=COALESCE($6,features),is_active=COALESCE($7,is_active),sort_order=COALESCE($8,sort_order) WHERE id=$9",
+        [name, platform, category, price_kes, description, features, is_active, sort_order||0, req.params.id]);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.delete('/api/admin/digital-products/:id', async (req, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      await pg.query("DELETE FROM digital_products WHERE id=$1", [req.params.id]);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: bulk add accounts to stock
+  app.post('/api/admin/digital-products/:id/stock', async (req, res) => {
+    try {
+      const { credentials } = req.body; // newline-separated
+      if (!credentials) return res.status(400).json({ success: false, error: 'No credentials provided' });
+      const lines = credentials.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+      if (!lines.length) return res.status(400).json({ success: false, error: 'No valid lines found' });
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      let added = 0;
+      for (const line of lines) {
+        try { await pg.query("INSERT INTO digital_accounts_stock (product_id,credentials) VALUES ($1,$2)", [req.params.id, line]); added++; } catch {}
+      }
+      res.json({ success: true, added, total: lines.length });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin: list digital orders
+  app.get('/api/admin/digital-orders', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query("SELECT * FROM digital_orders ORDER BY id DESC LIMIT 500");
+      res.json({ success: true, orders: rows });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.patch('/api/admin/digital-orders/:id/status', async (req, res) => {
+    try {
+      const { status } = req.body;
+      const pgMod = await import('./storage');
+      const pg = (pgMod as any).pgPool;
+      await pg.query("UPDATE digital_orders SET status=$1 WHERE id=$2", [status, req.params.id]);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+
+
+  // ── TempMail (mail.tm proxy) ──────────────────────────────────────────────
+  app.post('/api/tempmail/create', async (_req, res) => {
+    try {
+      const axiosM = require('axios');
+      // Get available domains
+      const domsRes = await axiosM.get('https://api.mail.tm/domains', { headers: { 'Accept': 'application/ld+json' }, timeout: 10000 });
+      const domsData = domsRes.data;
+      const domains: any[] = Array.isArray(domsData) ? domsData : (domsData?.['hydra:member'] || []);
+      if (!domains.length) return res.status(503).json({ success: false, error: 'No domains available' });
+      const domain = domains[0].domain;
+      const user = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+      const address = `${user}@${domain}`;
+      const password = Math.random().toString(36).slice(2, 18);
+      // Create account
+      await axiosM.post('https://api.mail.tm/accounts', { address, password }, { headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, timeout: 10000 });
+      // Get token
+      const tokRes = await axiosM.post('https://api.mail.tm/token', { address, password }, { headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, timeout: 10000 });
+      const token: string = tokRes.data?.token;
+      if (!token) return res.status(500).json({ success: false, error: 'Token generation failed' });
+      res.json({ success: true, address, token });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.get('/api/tempmail/inbox', async (req, res) => {
+    try {
+      const { token } = req.query as { token: string };
+      if (!token) return res.status(400).json({ success: false, error: 'Token required' });
+      const axiosM = require('axios');
+      const r = await axiosM.get('https://api.mail.tm/messages', { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/ld+json' }, timeout: 10000 });
+      const messages = (r.data?.['hydra:member'] || []).map((m: any) => ({
+        id: m.id, from: m.from, subject: m.subject, createdAt: m.createdAt, seen: m.seen,
+      }));
+      res.json({ success: true, messages });
+    } catch (e: any) {
+      if (e.response?.status === 401) return res.json({ success: false, expired: true });
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.get('/api/tempmail/read/:id', async (req, res) => {
+    try {
+      const { token } = req.query as { token: string };
+      if (!token) return res.status(400).json({ success: false, error: 'Token required' });
+      const axiosM = require('axios');
+      const r = await axiosM.get(`https://api.mail.tm/messages/${req.params.id}`, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }, timeout: 10000 });
+      res.json({ success: true, message: { id: r.data.id, from: r.data.from, subject: r.data.subject, createdAt: r.data.createdAt, seen: r.data.seen, html: r.data.html, text: r.data.text } });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+
+
+  // ── Proxy Auto-Scheduler ──────────────────────────────────────────────────
+  const proxyScheduler = {
+    enabled: true,
+    running: false,
+    lastRun: null as string|null,
+    nextRun: null as string|null,
+    lastStats: { fetched:0, added:0, alive:0, dead:0, deleted:0 } as Record<string,number>,
+    intervalMs: 6 * 60 * 60 * 1000, // 6 hours
+    timer: null as any,
+  };
+
+  async function fetchProxyScrape(protocol: string): Promise<string[]> {
+    return new Promise((resolve) => {
+      const httpsM = require('https') as typeof import('https');
+      const url = `/v2/?request=displayproxies&protocol=${protocol}&timeout=10000&country=all&ssl=all&anonymity=all&simplified=true`;
+      const r = httpsM.get({ hostname:'api.proxyscrape.com', path:url, timeout:15000 }, (res) => {
+        let b=''; res.on('data',(d:Buffer)=>b+=d);
+        res.on('end',()=>resolve(b.split('\n').map((l:string)=>l.trim()).filter((l:string)=>/^\d+\.\d+\.\d+\.\d+:\d+$/.test(l))));
+      }); r.on('error',()=>resolve([])); r.on('timeout',()=>{r.destroy();resolve([]);});
+    });
+  }
+
+  async function fetchGeonode(protocol: string): Promise<string[]> {
+    return new Promise((resolve) => {
+      const httpsM = require('https') as typeof import('https');
+      const path = `/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc&protocols=${protocol}`;
+      const r = httpsM.get({ hostname:'proxylist.geonode.com', path, timeout:15000, headers:{'User-Agent':'Mozilla/5.0'} }, (res) => {
+        let b=''; res.on('data',(d:Buffer)=>b+=d);
+        res.on('end',()=>{
+          try { const j=JSON.parse(b); resolve((j.data||[]).map((p:any)=>`${p.ip}:${p.port}`)); }
+          catch { resolve([]); }
+        });
+      }); r.on('error',()=>resolve([])); r.on('timeout',()=>{r.destroy();resolve([]);});
+    });
+  }
+
+  async function runProxyScheduler() {
+    if (proxyScheduler.running) return;
+    proxyScheduler.running = true;
+    const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+    const stats = { fetched:0, added:0, alive:0, dead:0, deleted:0 };
+    try {
+      console.log('[ProxyScheduler] Starting fetch run...');
+
+      // 1. Fetch from all sources in parallel
+      const [http1, http2, socks4_1, socks5_1, geoHttp, geoSocks4, geoSocks5] = await Promise.all([
+        fetchProxyScrape('http'),
+        fetchProxyScrape('https'),
+        fetchProxyScrape('socks4'),
+        fetchProxyScrape('socks5'),
+        fetchGeonode('http'),
+        fetchGeonode('socks4'),
+        fetchGeonode('socks5'),
+      ]);
+
+      const sources = [
+        { list: http1, type: 'HTTP' }, { list: http2, type: 'HTTPS' },
+        { list: socks4_1, type: 'SOCKS4' }, { list: socks5_1, type: 'SOCKS5' },
+        { list: geoHttp, type: 'HTTP' }, { list: geoSocks4, type: 'SOCKS4' },
+        { list: geoSocks5, type: 'SOCKS5' },
+      ];
+
+      // 2. Insert into DB, skip duplicates
+      for (const { list, type } of sources) {
+        stats.fetched += list.length;
+        for (const raw of list) {
+          const parts = raw.split(':');
+          if (parts.length !== 2) continue;
+          const [ip, port] = parts;
+          try {
+            const res = await pg.query(
+              'INSERT INTO free_proxies (raw,ip,port,username,password,type,status) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (raw) DO NOTHING',
+              [raw, ip, port, '', '', type, 'unchecked']
+            );
+            if ((res.rowCount||0) > 0) stats.added++;
+          } catch {}
+        }
+      }
+      console.log(`[ProxyScheduler] Fetched ${stats.fetched}, added ${stats.added} new proxies`);
+
+      // 3. Check up to 300 unchecked proxies (12 concurrent for scheduler)
+      const { rows: unchecked } = await pg.query("SELECT * FROM free_proxies WHERE status='unchecked' ORDER BY id DESC LIMIT 300");
+      const CONCURRENCY = 12;
+      for (let i=0; i<unchecked.length; i+=CONCURRENCY) {
+        const batch = unchecked.slice(i, i+CONCURRENCY);
+        await Promise.all(batch.map(async (proxy: any) => {
+          const result = await checkSingleProxy(proxy.ip, proxy.port);
+          const status = result.alive ? 'alive' : 'dead';
+          if (result.alive) stats.alive++; else stats.dead++;
+          await pg.query(
+            'UPDATE free_proxies SET status=$1,speed_ms=$2,country=$3,country_code=$4,anonymity=$5,last_checked=NOW()::text WHERE id=$6',
+            [status, result.speed_ms, result.country, result.country_code, result.anonymity, proxy.id]
+          ).catch(()=>{});
+        }));
+      }
+      console.log(`[ProxyScheduler] Checked ${unchecked.length}: ${stats.alive} alive, ${stats.dead} dead`);
+
+      // 4. Delete dead proxies older than 48 hours
+      const { rowCount } = await pg.query(
+        "DELETE FROM free_proxies WHERE status='dead' AND last_checked < (NOW() - INTERVAL '48 hours')::text"
+      );
+      stats.deleted = rowCount||0;
+      console.log(`[ProxyScheduler] Deleted ${stats.deleted} stale dead proxies`);
+
+    } catch (e:any) { console.error('[ProxyScheduler] Error:', e.message); }
+    finally {
+      proxyScheduler.running = false;
+      proxyScheduler.lastRun = new Date().toISOString();
+      proxyScheduler.lastStats = stats;
+      // Set next run
+      const next = new Date(Date.now() + proxyScheduler.intervalMs);
+      proxyScheduler.nextRun = next.toISOString();
+    }
+  }
+
+  function startProxySchedulerTimer() {
+    if (proxyScheduler.timer) clearInterval(proxyScheduler.timer);
+    proxyScheduler.timer = setInterval(() => {
+      if (proxyScheduler.enabled) runProxyScheduler();
+    }, proxyScheduler.intervalMs);
+    proxyScheduler.nextRun = new Date(Date.now() + proxyScheduler.intervalMs).toISOString();
+  }
+
+  // Start scheduler: first run after 2 minutes, then every 6 hours
+  setTimeout(() => {
+    if (proxyScheduler.enabled) runProxyScheduler();
+    startProxySchedulerTimer();
+  }, 2 * 60 * 1000);
+  console.log('[ProxyScheduler] Started — first run in 2 min, then every 6 hours');
+
+  // Admin endpoints for scheduler control
+  app.get('/api/admin/proxy-scheduler/status', (_req: any, res: any) => {
+    res.json({ success: true, ...proxyScheduler, timer: undefined });
+  });
+  app.post('/api/admin/proxy-scheduler/toggle', (req: any, res: any) => {
+    proxyScheduler.enabled = req.body.enabled !== false ? !proxyScheduler.enabled : false;
+    if (req.body.enabled !== undefined) proxyScheduler.enabled = !!req.body.enabled;
+    if (!proxyScheduler.enabled) {
+      if (proxyScheduler.timer) clearInterval(proxyScheduler.timer);
+      proxyScheduler.timer = null; proxyScheduler.nextRun = null;
+    } else { startProxySchedulerTimer(); }
+    res.json({ success: true, enabled: proxyScheduler.enabled });
+  });
+  app.post('/api/admin/proxy-scheduler/run', (_req: any, res: any) => {
+    if (proxyScheduler.running) return res.json({ success: false, error: 'Already running' });
+    runProxyScheduler().catch(()=>{});
+    res.json({ success: true, message: 'Scheduler triggered — check status in a few minutes' });
+  });
+
+
+
+  // ── Background scheduler: auto-deploy pending orders every 5 minutes ────────
   const RUN_DEPLOY = () => deployPendingOrders().catch((e: any) => console.error("[Scheduler]", e.message));
   setTimeout(() => { RUN_DEPLOY(); setInterval(RUN_DEPLOY, 5 * 60 * 1000); }, 30 * 1000);
   console.log("[Bot Routes] Background deploy scheduler started (runs every 5 min, first run in 30s)");
+
+
+  // ── Gift Cards ─────────────────────────────────────────────────────────────
+  app.get('/api/giftcards/products', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query(`SELECT p.*, COUNT(s.id) FILTER (WHERE s.is_sold=false) AS stock_count FROM gift_card_products p LEFT JOIN gift_card_stock s ON s.product_id=p.id WHERE p.is_active=true GROUP BY p.id ORDER BY p.sort_order ASC, p.id ASC`);
+      res.json({ success: true, products: rows.map((r:any)=>({...r,stock_count:parseInt(r.stock_count)||0})) });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.post('/api/giftcards/order', async (req, res) => {
+    try {
+      const { productId, email } = req.body;
+      if (!productId || !email) return res.status(400).json({ success: false, error: 'Product and email required' });
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows: prods } = await pg.query("SELECT * FROM gift_card_products WHERE id=$1 AND is_active=true", [productId]);
+      if (!prods.length) return res.status(404).json({ success: false, error: 'Product not found' });
+      const product = prods[0];
+      const { rows: stock } = await pg.query("SELECT id FROM gift_card_stock WHERE product_id=$1 AND is_sold=false LIMIT 1", [productId]);
+      if (!stock.length) return res.status(400).json({ success: false, error: 'Out of stock' });
+      const ref = 'GC-' + Date.now() + '-' + Math.random().toString(36).slice(2,7).toUpperCase();
+      await pg.query("INSERT INTO gift_card_orders (reference,customer_email,product_id,product_name,brand,denomination,currency,amount_kes,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending') ON CONFLICT DO NOTHING",
+        [ref, email, product.id, product.name, product.brand, product.denomination, product.currency, product.price_kes]);
+      const httpsM = require('https') as typeof import('https');
+      const paystackBody = JSON.stringify({ email, amount: Math.round(product.price_kes*100), reference: ref, currency: 'KES', metadata: { type:'gift_card', productId: product.id }, callback_url: (process.env.BASE_URL||'') + '/giftcards?ref=' + ref });
+      const psRes = await new Promise<any>((resolve,reject) => {
+        const r = httpsM.request({ hostname:'api.paystack.co', path:'/transaction/initialize', method:'POST', headers:{'Authorization':'Bearer '+process.env.PAYSTACK_SECRET_KEY,'Content-Type':'application/json','Content-Length':Buffer.byteLength(paystackBody)} }, (resp) => { let d=''; resp.on('data',(c:Buffer)=>d+=c); resp.on('end',()=>resolve(JSON.parse(d))); }); r.on('error',reject); r.write(paystackBody); r.end();
+      });
+      if (!psRes.status) return res.status(500).json({ success: false, error: 'Payment init failed' });
+      res.json({ success: true, paymentUrl: psRes.data.authorization_url });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  app.post('/api/giftcards/verify/:reference', async (req, res) => {
+    try {
+      const { reference } = req.params;
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows: orders } = await pg.query("SELECT * FROM gift_card_orders WHERE reference=$1", [reference]);
+      if (!orders.length) return res.status(404).json({ success: false, error: 'Order not found' });
+      const order = orders[0];
+      if (order.status === 'delivered' && order.code) return res.json({ success: true, code: order.code });
+      const httpsM = require('https') as typeof import('https');
+      const psCheck = await new Promise<any>((resolve) => {
+        const r = httpsM.request({ hostname:'api.paystack.co', path:'/transaction/verify/'+reference, method:'GET', headers:{'Authorization':'Bearer '+process.env.PAYSTACK_SECRET_KEY} }, (resp) => { let d=''; resp.on('data',(c:Buffer)=>d+=c); resp.on('end',()=>{try{resolve(JSON.parse(d));}catch{resolve({data:{status:'failed'}});}}); }); r.on('error',()=>resolve({data:{status:'failed'}})); r.end();
+      });
+      if (psCheck.data?.status !== 'success') return res.status(402).json({ success: false, error: 'Payment not confirmed' });
+      const { rows: stock } = await pg.query("SELECT * FROM gift_card_stock WHERE product_id=$1 AND is_sold=false LIMIT 1 FOR UPDATE SKIP LOCKED", [order.product_id]);
+      if (!stock.length) return res.status(400).json({ success: false, error: 'Out of stock - contact support' });
+      const item = stock[0];
+      await pg.query("UPDATE gift_card_stock SET is_sold=true,sold_to_email=$1,sold_at=NOW()::text WHERE id=$2", [order.customer_email, item.id]);
+      await pg.query("UPDATE gift_card_orders SET status='delivered',code=$1,stock_id=$2 WHERE reference=$3", [item.code, item.id, reference]);
+      res.json({ success: true, code: item.code });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // Admin Gift Cards
+  app.get('/api/admin/gift-card-products', async (_req, res) => {
+    try {
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query(`SELECT p.*, COUNT(s.id) FILTER (WHERE s.is_sold=false) AS stock_count, COUNT(s.id) AS total_stock FROM gift_card_products p LEFT JOIN gift_card_stock s ON s.product_id=p.id GROUP BY p.id ORDER BY p.sort_order ASC, p.id ASC`);
+      res.json({ success: true, products: rows.map((r:any)=>({...r,stock_count:parseInt(r.stock_count)||0,total_stock:parseInt(r.total_stock)||0})) });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.post('/api/admin/gift-card-products', async (req, res) => {
+    try {
+      const { name, brand, denomination, currency, price_kes, description, is_active, sort_order } = req.body;
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query("INSERT INTO gift_card_products (name,brand,denomination,currency,price_kes,description,is_active,sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+        [name, brand, denomination||'', currency||'USD', price_kes, description||'', is_active!==false, sort_order||0]);
+      res.json({ success: true, product: rows[0] });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.put('/api/admin/gift-card-products/:id', async (req, res) => {
+    try {
+      const { name, brand, denomination, currency, price_kes, description, is_active, sort_order } = req.body;
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      await pg.query("UPDATE gift_card_products SET name=COALESCE($1,name),brand=COALESCE($2,brand),denomination=COALESCE($3,denomination),currency=COALESCE($4,currency),price_kes=COALESCE($5,price_kes),description=COALESCE($6,description),is_active=COALESCE($7,is_active),sort_order=COALESCE($8,sort_order) WHERE id=$9",
+        [name, brand, denomination, currency, price_kes, description, is_active, sort_order, req.params.id]);
+      res.json({ success: true });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.delete('/api/admin/gift-card-products/:id', async (req, res) => {
+    try { const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool; await pg.query("DELETE FROM gift_card_products WHERE id=$1",[req.params.id]); res.json({ success: true }); } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.post('/api/admin/gift-card-products/:id/stock', async (req, res) => {
+    try {
+      const { codes } = req.body;
+      const lines = (codes||'').split('\n').map((l:string)=>l.trim()).filter((l:string)=>l.length>0);
+      if (!lines.length) return res.status(400).json({ success: false, error: 'No codes provided' });
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      let added=0; for (const code of lines) { try { await pg.query("INSERT INTO gift_card_stock (product_id,code) VALUES ($1,$2)",[req.params.id,code]); added++; } catch {} }
+      res.json({ success: true, added });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.get('/api/admin/gift-card-orders', async (_req, res) => {
+    try { const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool; const { rows } = await pg.query("SELECT * FROM gift_card_orders ORDER BY id DESC LIMIT 500"); res.json({ success: true, orders: rows }); } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // ── Bulk SMS ───────────────────────────────────────────────────────────────
+  app.get('/api/sms/plans', async (_req, res) => {
+    try { const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool; const { rows } = await pg.query("SELECT * FROM sms_plans WHERE is_active=true ORDER BY sms_count ASC"); res.json({ success: true, plans: rows }); } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.post('/api/sms/order', async (req, res) => {
+    try {
+      const { planId, email, senderNote } = req.body;
+      if (!planId || !email) return res.status(400).json({ success: false, error: 'Plan and email required' });
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows: plans } = await pg.query("SELECT * FROM sms_plans WHERE id=$1 AND is_active=true",[planId]);
+      if (!plans.length) return res.status(404).json({ success: false, error: 'Plan not found' });
+      const plan = plans[0];
+      const ref = 'SMS-' + Date.now() + '-' + Math.random().toString(36).slice(2,7).toUpperCase();
+      await pg.query("INSERT INTO sms_orders (reference,customer_email,plan_id,plan_name,sms_count,amount_kes,sender_note,status) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') ON CONFLICT DO NOTHING",
+        [ref, email, plan.id, plan.name, plan.sms_count, plan.price_kes, senderNote||'']);
+      const httpsM = require('https') as typeof import('https');
+      const paystackBody = JSON.stringify({ email, amount: Math.round(plan.price_kes*100), reference: ref, currency: 'KES', metadata: { type:'sms', planId: plan.id }, callback_url: (process.env.BASE_URL||'') + '/sms' });
+      const psRes = await new Promise<any>((resolve,reject) => {
+        const r = httpsM.request({ hostname:'api.paystack.co', path:'/transaction/initialize', method:'POST', headers:{'Authorization':'Bearer '+process.env.PAYSTACK_SECRET_KEY,'Content-Type':'application/json','Content-Length':Buffer.byteLength(paystackBody)} }, (resp) => { let d=''; resp.on('data',(c:Buffer)=>d+=c); resp.on('end',()=>resolve(JSON.parse(d))); }); r.on('error',reject); r.write(paystackBody); r.end();
+      });
+      if (!psRes.status) return res.status(500).json({ success: false, error: 'Payment init failed' });
+      res.json({ success: true, paymentUrl: psRes.data.authorization_url });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.get('/api/admin/sms-plans', async (_req, res) => {
+    try { const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool; const { rows } = await pg.query("SELECT * FROM sms_plans ORDER BY sms_count ASC"); res.json({ success: true, plans: rows }); } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.post('/api/admin/sms-plans', async (req, res) => {
+    try {
+      const { name, sms_count, price_kes, description, features, is_active, sort_order, validity_days } = req.body;
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      const { rows } = await pg.query("INSERT INTO sms_plans (name,sms_count,price_kes,description,features,is_active,sort_order,validity_days) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+        [name, sms_count, price_kes, description||'', features||'', is_active!==false, sort_order||0, validity_days||30]);
+      res.json({ success: true, plan: rows[0] });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.put('/api/admin/sms-plans/:id', async (req, res) => {
+    try {
+      const { name, sms_count, price_kes, description, features, is_active, sort_order, validity_days } = req.body;
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      await pg.query("UPDATE sms_plans SET name=COALESCE($1,name),sms_count=COALESCE($2,sms_count),price_kes=COALESCE($3,price_kes),description=COALESCE($4,description),features=COALESCE($5,features),is_active=COALESCE($6,is_active),sort_order=COALESCE($7,sort_order),validity_days=COALESCE($8,validity_days) WHERE id=$9",
+        [name,sms_count,price_kes,description,features,is_active,sort_order,validity_days,req.params.id]);
+      res.json({ success: true });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.delete('/api/admin/sms-plans/:id', async (req, res) => {
+    try { const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool; await pg.query("DELETE FROM sms_plans WHERE id=$1",[req.params.id]); res.json({ success: true }); } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.get('/api/admin/sms-orders', async (_req, res) => {
+    try { const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool; const { rows } = await pg.query("SELECT * FROM sms_orders ORDER BY id DESC LIMIT 500"); res.json({ success: true, orders: rows }); } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+  app.patch('/api/admin/sms-orders/:id/fulfill', async (req, res) => {
+    try {
+      const { notes } = req.body;
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      await pg.query("UPDATE sms_orders SET status='fulfilled',notes=$1 WHERE id=$2",[notes||'',req.params.id]);
+      res.json({ success: true });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
+  // ── Customer All Orders (unified history) ──────────────────────────────────
+  app.get('/api/customer/all-orders', async (req: any, res) => {
+    try {
+      const token = (req.headers.authorization||'').replace('Bearer ','');
+      if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      const pgMod = await import('./storage'); const pg = (pgMod as any).pgPool;
+      // Get email from customer token via existing sessions/customer lookup
+      const { rows: sessions } = await pg.query("SELECT email FROM customers WHERE session_token=$1 OR id=(SELECT customer_id FROM customer_sessions WHERE token=$1 LIMIT 1) LIMIT 1",[token]).catch(()=>({rows:[]}));
+      let email = sessions[0]?.email;
+      if (!email) {
+        // Try JWT decode
+        try { const jwt = require('jsonwebtoken'); const decoded: any = jwt.verify(token, process.env.JWT_SECRET||process.env.SESSION_SECRET||'secret'); email = decoded.email; } catch {}
+      }
+      if (!email) return res.status(401).json({ success: false, error: 'Invalid token' });
+      const results: any[] = [];
+      // SMM orders
+      try { const { rows } = await pg.query("SELECT id,reference,created_at,amount_kes,status,'smm' AS type,'SMM Boost' AS category,service AS name FROM smm_orders WHERE customer_email=$1 ORDER BY id DESC LIMIT 50",[email]); results.push(...rows); } catch {}
+      // Proxy orders
+      try { const { rows } = await pg.query("SELECT id,reference,created_at,amount_kes,status,'proxy' AS type,'Proxy Plan' AS category,plan_name AS name FROM proxy_orders WHERE customer_email=$1 ORDER BY id DESC LIMIT 50",[email]); results.push(...rows); } catch {}
+      // Digital (aged accounts)
+      try { const { rows } = await pg.query("SELECT id,reference,created_at,amount_kes,status,'digital' AS type,'Aged Account' AS category,product_name AS name FROM digital_orders WHERE customer_email=$1 ORDER BY id DESC LIMIT 50",[email]); results.push(...rows); } catch {}
+      // Gift cards
+      try { const { rows } = await pg.query("SELECT id,reference,created_at,amount_kes,status,'giftcard' AS type,'Gift Card' AS category,product_name AS name FROM gift_card_orders WHERE customer_email=$1 ORDER BY id DESC LIMIT 50",[email]); results.push(...rows); } catch {}
+      // SMS orders
+      try { const { rows } = await pg.query("SELECT id,reference,created_at,amount_kes,status,'sms' AS type,'Bulk SMS' AS category,plan_name AS name FROM sms_orders WHERE customer_email=$1 ORDER BY id DESC LIMIT 50",[email]); results.push(...rows); } catch {}
+      // Sort all by date desc
+      results.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
+      res.json({ success: true, orders: results.slice(0,200), email });
+    } catch (e:any) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
 
 }
 

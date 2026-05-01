@@ -210,3 +210,22 @@ export const planPreviews = sqliteTable("plan_previews", {
 });
 
 export type PlanPreview = typeof planPreviews.$inferSelect;
+
+
+// ── Trading Bot Subscriptions ─────────────────────────────────────────────────
+export const tradingBotSubscriptions = sqliteTable("trading_bot_subscriptions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  customerId: integer("customer_id"),
+  customerEmail: text("customer_email").notNull(),
+  customerName: text("customer_name"),
+  plan: text("plan").notNull(),
+  amount: integer("amount").notNull(),
+  paystackReference: text("paystack_reference").unique(),
+  status: text("status").default("pending"),
+  expiresAt: text("expires_at"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at").default(sql`(datetime('now'))`),
+});
+
+export type TradingBotSubscription = typeof tradingBotSubscriptions.$inferSelect;
+export type InsertTradingBotSubscription = typeof tradingBotSubscriptions.$inferInsert;

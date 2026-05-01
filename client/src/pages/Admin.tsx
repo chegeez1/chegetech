@@ -15,7 +15,7 @@ import {
   MessageCircle, Globe, Server, RotateCw, Play, MapPin, Ban,
   Wifi, HardDrive, Cpu, MemoryStick, Link2, ExternalLink, CheckCircle2, Camera,
   Bot, Sparkles, Minimize2, Database, UserCircle, Wallet, Pencil,
-  MinusCircle, History, ArrowUpCircle, ArrowDownCircle, Bell, ShoppingBag
+  MinusCircle, History, ArrowUpCircle, ArrowDownCircle, Bell, ShoppingBag, MessageSquare, Gift
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 
-type Tab = "dashboard" | "analytics" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "ratings" | "feature-requests" | "emailblast" | "campaigns" | "logs" | "settings" | "support" | "subadmins" | "super-admins" | "geo-restrict" | "vps" | "vps-sales" | "domains" | "funnel" | "groups" | "flash-sales" | "whatsapp" | "bot-store" | "bot-orders";
+type Tab = "dashboard" | "analytics" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "ratings" | "feature-requests" | "emailblast" | "campaigns" | "logs" | "settings" | "support" | "subadmins" | "super-admins" | "geo-restrict" | "vps" | "vps-sales" | "domains" | "funnel" | "groups" | "flash-sales" | "whatsapp" | "bot-store" | "bot-orders" | "smm-orders" | "proxy-plans" | "proxy-orders" | "digital-products" | "digital-orders" | "free-proxies" | "gift-cards" | "gc-orders" | "sms-plans" | "sms-orders" | "cc-checker" | "email-gen" | "chegebot-subs";
 
 class SettingsErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
   constructor(props: any) { super(props); this.state = { error: null }; }
@@ -267,6 +267,19 @@ export default function Admin() {
     { id: "whatsapp", label: "WhatsApp Bot", icon: MessageCircle, alwaysVisible: true },
     { id: "bot-store", label: "Bot Store", icon: Bot, alwaysVisible: true },
     { id: "bot-orders", label: "Bot Orders", icon: Package, alwaysVisible: true },
+    { id: "smm-orders", label: "SMM Orders", icon: TrendingUp, alwaysVisible: true },
+    { id: "proxy-plans", label: "Proxy Plans", icon: Shield, alwaysVisible: true },
+    { id: "proxy-orders", label: "Proxy Orders", icon: Shield, alwaysVisible: true },
+    { id: "digital-products", label: "Aged Accounts", icon: Users, alwaysVisible: true },
+    { id: "digital-orders", label: "Acct Orders", icon: Users, alwaysVisible: true },
+    { id: "free-proxies", label: "Free Proxies", icon: Shield, alwaysVisible: true },
+    { id: "gift-cards", label: "Gift Cards", icon: Gift, alwaysVisible: true },
+    { id: "gc-orders", label: "GC Orders", icon: Gift, alwaysVisible: true },
+    { id: "sms-plans", label: "SMS Plans", icon: MessageSquare, alwaysVisible: true },
+    { id: "sms-orders", label: "SMS Orders", icon: MessageSquare, alwaysVisible: true },
+    { id: "cc-checker", label: "CC Checker", icon: CreditCard, alwaysVisible: true },
+    { id: "email-gen", label: "Email Generator", icon: Mail, alwaysVisible: true },
+    { id: "chegebot-subs", label: "ChegeBot Pro", icon: Zap, alwaysVisible: true },
     { id: "logs", label: "Activity Logs", icon: Activity },
     { id: "subadmins", label: "Sub-Admins", icon: Users, superOnly: true },
     { id: "super-admins", label: "Super Admins", icon: Shield, superOnly: true },
@@ -402,6 +415,19 @@ export default function Admin() {
           {activeTab === "whatsapp" && <WhatsAppTab />}
           {activeTab === "bot-store" && <BotStoreAdminTab />}
           {activeTab === "bot-orders" && <BotOrdersAdminTab />}
+          {activeTab === "smm-orders" && <SmmOrdersAdminTab />}
+          {activeTab === "proxy-plans" && <ProxyPlansAdminTab />}
+          {activeTab === "proxy-orders" && <ProxyOrdersAdminTab />}
+          {activeTab === "digital-products" && <DigitalProductsAdminTab />}
+          {activeTab === "digital-orders" && <DigitalOrdersAdminTab />}
+          {activeTab === "free-proxies" && <FreeProxiesAdminTab />}
+          {activeTab === "gift-cards" && <GiftCardsAdminTab />}
+          {activeTab === "gc-orders" && <GiftCardOrdersAdminTab />}
+          {activeTab === "sms-plans" && <SmsPlansAdminTab />}
+          {activeTab === "sms-orders" && <SmsOrdersAdminTab />}
+          {activeTab === "cc-checker" && <BulkCcCheckerAdminTab />}
+          {activeTab === "email-gen" && <EmailGenAdminTab />}
+          {activeTab === "chegebot-subs" && <ChegeBotSubsAdminTab />}
           {activeTab === "subadmins" && adminRole === "super" && <SubAdminsTab />}
           {activeTab === "super-admins" && adminRole === "super" && isPrimary && <SuperAdminsTab />}
           {activeTab === "geo-restrict" && adminRole === "super" && <GeoRestrictTab />}
@@ -2061,6 +2087,18 @@ function DashboardTab() {
   const stats = statsData?.transactions;
   const accStats = statsData?.accounts;
   const botStats = statsData?.bots;
+  const { data: smmData }     = useQuery<any>({ queryKey:["/api/admin/smm-orders"],     queryFn:()=>authFetch("/api/admin/smm-orders"),     refetchInterval:60000 });
+  const { data: proxyData }   = useQuery<any>({ queryKey:["/api/admin/proxy-orders"],   queryFn:()=>authFetch("/api/admin/proxy-orders"),   refetchInterval:60000 });
+  const { data: digitalData } = useQuery<any>({ queryKey:["/api/admin/digital-orders"], queryFn:()=>authFetch("/api/admin/digital-orders"), refetchInterval:60000 });
+  const { data: cbData }      = useQuery<any>({ queryKey:["/api/admin/tradingbot/stats"],  queryFn:()=>authFetch("/api/admin/tradingbot/stats"),  refetchInterval:60000 });
+  const smmOrders     = smmData?.orders     || [];
+  const proxyOrders   = proxyData?.orders   || [];
+  const digitalOrders = digitalData?.orders || [];
+  const smmRevenue     = smmOrders.filter((o:any)=>o.status!=='failed').reduce((s:number,o:any)=>s+(parseFloat(o.amount_kes)||0),0);
+  const proxyRevenue   = proxyOrders.filter((o:any)=>o.status!=='failed').reduce((s:number,o:any)=>s+(parseFloat(o.amount_kes)||0),0);
+  const digitalRevenue = digitalOrders.filter((o:any)=>o.status==='delivered').reduce((s:number,o:any)=>s+(parseFloat(o.amount_kes)||0),0);
+  const cbRevenue      = parseFloat(cbData?.totalRevenue || 0);
+  const totalStoreRevenue = (stats?.revenue||0) + (botStats?.revenue||0) + smmRevenue + proxyRevenue + digitalRevenue + cbRevenue;
   const daily: Array<{ date: string; revenue: number; orders: number }> = analyticsData?.daily ?? [];
   const topPlans: Array<{ planName: string; revenue: number; orders: number }> = analyticsData?.topPlans ?? [];
   const maxRevenue = Math.max(...daily.map((d) => d.revenue), 1);
@@ -2092,6 +2130,31 @@ function DashboardTab() {
             <GlassStatCard title="Bot Revenue" value={`KES ${(botStats?.revenue || 0).toLocaleString()}`} icon={TrendingUp} gradient="from-lime-500 to-green-600" glow="rgba(132,204,22,0.3)" />
             <GlassStatCard title="Bots Deployed" value={botStats?.deployed ?? 0} icon={Zap} gradient="from-teal-500 to-cyan-600" glow="rgba(20,184,166,0.3)" />
           </div>
+          <div className="glass-card rounded-2xl p-4 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">⚡</span>
+              <h3 className="font-semibold text-white text-sm">ChegeBot Pro — Deriv Trading Bot</h3>
+              <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-medium">Subscriptions</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white/5 border border-white/8 rounded-xl p-3">
+                <p className="text-xs text-white/40 mb-1">Active Subscribers</p>
+                <p className="text-2xl font-bold text-white">{cbData?.activeSubs ?? '—'}</p>
+              </div>
+              <div className="bg-white/5 border border-white/8 rounded-xl p-3">
+                <p className="text-xs text-white/40 mb-1">Total Revenue</p>
+                <p className="text-2xl font-bold text-amber-400">KES {(cbData?.totalRevenue || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-white/5 border border-white/8 rounded-xl p-3">
+                <p className="text-xs text-white/40 mb-1">This Month</p>
+                <p className="text-2xl font-bold text-cyan-400">KES {(cbData?.monthRevenue || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-white/5 border border-white/8 rounded-xl p-3">
+                <p className="text-xs text-white/40 mb-1">Lifetime Members</p>
+                <p className="text-2xl font-bold text-purple-400">{cbData?.lifetimeSubs ?? 0}</p>
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             {[
               { label: "Completed", value: stats?.completed ?? 0, icon: CheckCircle, color: "text-emerald-400", bg: "bg-emerald-500/10" },
@@ -2101,6 +2164,56 @@ function DashboardTab() {
               <div key={label} className="glass-card rounded-2xl p-4 flex items-center gap-3">
                 <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center`}><Icon className={`w-4 h-4 ${color}`} /></div>
                 <div><p className="text-xs text-white/40">{label}</p><p className="text-xl font-bold text-white">{value}</p></div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Revenue Streams ─────────────────────────────────────── */}
+          <div className="glass-card rounded-2xl p-5 mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-indigo-400" />
+                <h3 className="font-semibold text-white text-sm">All Revenue Streams</h3>
+              </div>
+              <span className="text-xs text-white/40 bg-white/5 px-2 py-1 rounded-lg">Total: <span className="text-emerald-400 font-bold">KES {totalStoreRevenue.toLocaleString()}</span></span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                { label:"Premium Accounts", revenue:stats?.revenue||0,    orders:stats?.total||0,          color:"from-indigo-500 to-blue-600",    icon:"🛒" },
+                { label:"WhatsApp Bots",    revenue:botStats?.revenue||0,  orders:botStats?.total||0,       color:"from-green-500 to-emerald-600",  icon:"🤖" },
+                { label:"SMM Boost",        revenue:smmRevenue,            orders:smmOrders.length,         color:"from-pink-500 to-rose-600",      icon:"📈" },
+                { label:"Proxies",          revenue:proxyRevenue,          orders:proxyOrders.length,       color:"from-emerald-500 to-teal-600",   icon:"🛡️" },
+                { label:"Aged Accounts",    revenue:digitalRevenue,        orders:digitalOrders.length,     color:"from-violet-500 to-purple-600",  icon:"👤" },
+                { label:"ChegeBot Pro",      revenue:cbRevenue,             orders:cbData?.totalSubs||0,     color:"from-amber-500 to-orange-600",   icon:"⚡" },
+              ].map(s=>(
+                <div key={s.label} className="bg-white/5 border border-white/8 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="text-base">{s.icon}</span>
+                    <span className="text-xs text-white/40 truncate">{s.label}</span>
+                  </div>
+                  <p className="text-lg font-bold text-white">KES {s.revenue.toLocaleString()}</p>
+                  <p className="text-xs text-white/30 mt-0.5">{s.orders} orders</p>
+                  <div className="mt-2 h-1 bg-white/5 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full bg-gradient-to-r ${s.color}`} style={{width:totalStoreRevenue>0?`${Math.round((s.revenue/totalStoreRevenue)*100)}%`:'0%'}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── New product order counters ─────────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+            {[
+              { label:"SMM Orders",          value:smmOrders.length,                                                               icon:TrendingUp, color:"text-pink-400",    bg:"bg-pink-500/10"    },
+              { label:"SMM Pending",         value:smmOrders.filter((o:any)=>o.status==='pending').length,                         icon:Clock,      color:"text-amber-400",   bg:"bg-amber-500/10"   },
+              { label:"Proxy Orders",        value:proxyOrders.length,                                                             icon:Shield,     color:"text-emerald-400", bg:"bg-emerald-500/10" },
+              { label:"Proxy Active",        value:proxyOrders.filter((o:any)=>o.status==='active').length,                        icon:Zap,        color:"text-cyan-400",    bg:"bg-cyan-500/10"    },
+              { label:"Aged Acct Orders",    value:digitalOrders.length,                                                           icon:Users,      color:"text-violet-400",  bg:"bg-violet-500/10"  },
+              { label:"Accts Delivered",     value:digitalOrders.filter((o:any)=>o.status==='delivered').length,                   icon:CheckCircle,color:"text-emerald-400", bg:"bg-emerald-500/10" },
+            ].map(({ label, value, icon: Icon, color, bg }) => (
+              <div key={label} className="glass-card rounded-xl p-3 flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0`}><Icon className={`w-3.5 h-3.5 ${color}`} /></div>
+                <div><p className="text-xs text-white/40 leading-tight">{label}</p><p className="text-lg font-bold text-white">{value}</p></div>
               </div>
             ))}
           </div>
@@ -8022,7 +8135,7 @@ function CustomerGroupsTab() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-bold text-white">Customer Groups</h2>
-          <p className="text-xs text-white/40 mt-0.5">Tag customers as VIP, Reseller, Banned etc. and apply group discounts</p>
+          <p className="text-xs text-white/40 mt-0.5">Tags customers as VIP, Reseller, Banned etc. and apply group discounts</p>
         </div>
         <Button onClick={openCreate} className="bg-gradient-to-r from-indigo-600 to-violet-600 border-0 text-white font-bold hover:opacity-90 gap-2 h-9">
           <Plus className="w-4 h-4" /> New Group
@@ -9289,6 +9402,1668 @@ const botLogsRef = useRef<HTMLDivElement>(null);
               )}
             </TableBody>
           </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SMM Orders Admin Tab ─────────────────────────────────────────────────────
+function SmmOrdersAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["/api/admin/smm-orders"],
+    queryFn: () => fetch("/api/admin/smm-orders", { headers: authHeaders() as any }).then(r => r.json()),
+    refetchInterval: 30000,
+  });
+
+  const orders: any[] = data?.orders || [];
+
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      fetch(`/api/admin/smm-orders/${id}/status`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" } as any,
+        body: JSON.stringify({ status }),
+      }).then(r => r.json()),
+    onSuccess: (res) => {
+      if (res.success) {
+        toast({ title: "Status updated" });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/smm-orders"] });
+      } else {
+        toast({ title: "Error", description: res.error, variant: "destructive" });
+      }
+    },
+  });
+
+  const filtered = orders.filter(o => {
+    const matchStatus = statusFilter === "all" || o.status === statusFilter;
+    const matchSearch = !search || [o.reference, o.service_name, o.platform, o.customer_email, o.link].some(v => (v || "").toLowerCase().includes(search.toLowerCase()));
+    return matchStatus && matchSearch;
+  });
+
+  const totalKes = orders.filter(o => o.status !== "failed").reduce((s: number, o: any) => s + (o.amount_kes || 0), 0);
+  const pending = orders.filter(o => o.status === "pending").length;
+  const processing = orders.filter(o => o.status === "processing").length;
+
+  const STATUS_OPTS = [
+    { v: "pending",    label: "Pending",    cls: "text-amber-400 border-amber-500/30 bg-amber-500/10" },
+    { v: "processing", label: "Processing", cls: "text-blue-400 border-blue-500/30 bg-blue-500/10" },
+    { v: "completed",  label: "Completed",  cls: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10" },
+    { v: "failed",     label: "Failed",     cls: "text-red-400 border-red-500/30 bg-red-500/10" },
+  ];
+  const statusCls = (s: string) => STATUS_OPTS.find(x => x.v === s)?.cls || "text-gray-400 border-gray-500/30 bg-gray-500/10";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white">SMM Orders</h2>
+          <p className="text-sm text-gray-400 mt-0.5">Manage social media boost orders from customers</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => refetch()} className="border-white/10 text-gray-400 hover:text-white gap-1.5">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Total Orders", value: orders.length, color: "text-white" },
+          { label: "Pending", value: pending, color: "text-amber-400" },
+          { label: "Processing", value: processing, color: "text-blue-400" },
+          { label: "Revenue (KES)", value: `KES ${totalKes.toLocaleString()}`, color: "text-emerald-400" },
+        ].map(stat => (
+          <div key={stat.label} className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <p className="text-xs text-gray-400 mb-1">{stat.label}</p>
+            <p className={`text-xl font-bold ${stat.color}`}>{stat.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by reference, service, email..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9" />
+        </div>
+        <div className="flex gap-1.5">
+          {["all", "pending", "processing", "completed", "failed"].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize ${statusFilter === s ? "bg-pink-500/20 border-pink-500/30 text-pink-300" : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"}`}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      {isLoading ? (
+        <div className="text-center py-12 text-gray-500">Loading orders...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-gray-500">
+          <TrendingUp className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p>No SMM orders yet</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-white/10 hover:bg-transparent">
+                {["Reference","Platform","Service","Qty","Link","Amount","Status","Date","Action"].map(h => (
+                  <TableHead key={h} className="text-gray-400 text-xs font-medium">{h}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((order: any) => (
+                <TableRow key={order.id} className="border-white/5 hover:bg-white/3">
+                  <TableCell className="font-mono text-xs text-gray-300">{order.reference?.slice(0, 14)}…</TableCell>
+                  <TableCell>
+                    <span className="text-xs px-2 py-0.5 rounded-full border bg-pink-500/10 text-pink-400 border-pink-500/20">{order.platform || "—"}</span>
+                  </TableCell>
+                  <TableCell className="text-xs text-gray-300 max-w-48">
+                    <p className="truncate" title={order.service_name}>{order.service_name || "—"}</p>
+                    <p className="text-gray-500">{order.customer_email}</p>
+                  </TableCell>
+                  <TableCell className="text-sm text-white font-medium">{(order.quantity || 0).toLocaleString()}</TableCell>
+                  <TableCell className="text-xs max-w-32">
+                    <a href={order.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline flex items-center gap-1 truncate">
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{order.link}</span>
+                    </a>
+                  </TableCell>
+                  <TableCell className="text-sm text-emerald-400 font-medium">KES {(order.amount_kes || 0).toLocaleString()}</TableCell>
+                  <TableCell>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${statusCls(order.status)}`}>{order.status}</span>
+                  </TableCell>
+                  <TableCell className="text-xs text-gray-500">{order.created_at ? new Date(order.created_at).toLocaleDateString() : "—"}</TableCell>
+                  <TableCell>
+                    <select
+                      value={order.status}
+                      onChange={e => updateStatus.mutate({ id: order.id, status: e.target.value })}
+                      className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-gray-300 focus:outline-none focus:border-pink-500/40"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="processing">Processing</option>
+                      <option value="completed">Completed</option>
+                      <option value="failed">Failed</option>
+                    </select>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Proxy Plans Admin Tab ────────────────────────────────────────────────────
+function ProxyPlansAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ name:"", description:"", type:"residential", gb_amount:"", country:"", price_kes:"", bandwidth:"Unlimited", speed:"100Mbps", features:"", is_active:true, sort_order:"0" });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["/api/admin/proxy-plans"],
+    queryFn: () => fetch("/api/admin/proxy-plans", { headers: authHeaders() as any }).then(r => r.json()),
+  });
+  const plans: any[] = data?.plans || [];
+
+  const reset = () => { setForm({ name:"", description:"", type:"residential", gb_amount:"", country:"", price_kes:"", bandwidth:"Unlimited", speed:"100Mbps", features:"", is_active:true, sort_order:"0" }); setEditing(null); setShowForm(false); };
+
+  const startEdit = (p: any) => {
+    setForm({ name:p.name, description:p.description||"", type:p.type, gb_amount:p.gb_amount||"", country:p.country||"", price_kes:p.price_kes, bandwidth:p.bandwidth||"Unlimited", speed:p.speed||"100Mbps", features:p.features||"", is_active:p.is_active, sort_order:p.sort_order||"0" });
+    setEditing(p); setShowForm(true);
+  };
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body = { ...form, price_kes: parseFloat(form.price_kes as any), gb_amount: form.gb_amount ? parseFloat(form.gb_amount as any) : null, sort_order: parseInt(form.sort_order as any)||0 };
+      const url = editing ? `/api/admin/proxy-plans/${editing.id}` : "/api/admin/proxy-plans";
+      return fetch(url, { method: editing ? "PUT" : "POST", headers: { ...authHeaders(), "Content-Type":"application/json" } as any, body: JSON.stringify(body) }).then(r => r.json());
+    },
+    onSuccess: (res) => {
+      if (res.success) { toast({ title: editing ? "Plan updated" : "Plan created" }); queryClient.invalidateQueries({ queryKey:["/api/admin/proxy-plans"] }); reset(); }
+      else toast({ title:"Error", description:res.error, variant:"destructive" });
+    },
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => fetch(`/api/admin/proxy-plans/${id}`, { method:"DELETE", headers: authHeaders() as any }).then(r=>r.json()),
+    onSuccess: () => { toast({ title:"Plan deleted" }); queryClient.invalidateQueries({ queryKey:["/api/admin/proxy-plans"] }); },
+  });
+
+  const toggle = useMutation({
+    mutationFn: ({ id, is_active }: any) => fetch(`/api/admin/proxy-plans/${id}`, { method:"PUT", headers:{...authHeaders(),"Content-Type":"application/json"} as any, body:JSON.stringify({ is_active:!is_active }) }).then(r=>r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey:["/api/admin/proxy-plans"] }),
+  });
+
+  const inp = "w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40";
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold text-white">Proxy Plans</h2><p className="text-sm text-gray-400">Create and manage proxy packages customers can purchase</p></div>
+        <Button size="sm" onClick={() => { reset(); setShowForm(true); }} className="bg-emerald-600 hover:bg-emerald-700 gap-1.5"><Plus className="w-4 h-4"/>Add Plan</Button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white/5 border border-emerald-500/20 rounded-2xl p-5 space-y-4">
+          <h3 className="font-semibold text-white">{editing ? "Edit Plan" : "New Proxy Plan"}</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label className="text-xs text-gray-400 mb-1 block">Plan Name *</label><input className={inp} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Kenya Residential 5GB" /></div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Type *</label>
+              <select className={inp} value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
+                <option value="residential">Residential</option><option value="rotating">Rotating</option><option value="datacenter">Datacenter</option><option value="static">Static</option>
+              </select>
+            </div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Price (KES) *</label><input type="number" className={inp} value={form.price_kes} onChange={e=>setForm(f=>({...f,price_kes:e.target.value}))} placeholder="e.g. 1500" /></div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Country (optional)</label><input className={inp} value={form.country} onChange={e=>setForm(f=>({...f,country:e.target.value}))} placeholder="e.g. Kenya, USA, Global" /></div>
+            <div><label className="text-xs text-gray-400 mb-1 block">GB Amount (optional)</label><input type="number" className={inp} value={form.gb_amount} onChange={e=>setForm(f=>({...f,gb_amount:e.target.value}))} placeholder="e.g. 5" /></div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Bandwidth</label><input className={inp} value={form.bandwidth} onChange={e=>setForm(f=>({...f,bandwidth:e.target.value}))} placeholder="e.g. Unlimited, 5GB" /></div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Speed</label><input className={inp} value={form.speed} onChange={e=>setForm(f=>({...f,speed:e.target.value}))} placeholder="e.g. 100Mbps" /></div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Sort Order</label><input type="number" className={inp} value={form.sort_order} onChange={e=>setForm(f=>({...f,sort_order:e.target.value}))} /></div>
+            <div className="sm:col-span-2"><label className="text-xs text-gray-400 mb-1 block">Description</label><textarea className={inp} rows={2} value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Brief plan description..." /></div>
+            <div className="sm:col-span-2"><label className="text-xs text-gray-400 mb-1 block">Features (one per line)</label><textarea className={inp} rows={3} value={form.features} onChange={e=>setForm(f=>({...f,features:e.target.value}))} placeholder={"HTTP/HTTPS/SOCKS5 support\nUnlimited threads\n99.9% uptime"} /></div>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+              <input type="checkbox" checked={form.is_active} onChange={e=>setForm(f=>({...f,is_active:e.target.checked}))} className="w-4 h-4 rounded" />
+              Active (visible to customers)
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => save.mutate()} disabled={save.isPending || !form.name || !form.price_kes} className="bg-emerald-600 hover:bg-emerald-700">
+              {save.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}{editing ? "Update" : "Create"} Plan
+            </Button>
+            <Button variant="outline" onClick={reset} className="border-white/10 text-gray-400">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? <div className="text-center py-8 text-gray-500">Loading plans...</div> : plans.length === 0 ? (
+        <div className="text-center py-12 text-gray-500"><Shield className="w-8 h-8 mx-auto mb-2 opacity-30" /><p>No plans yet. Add your first proxy plan.</p></div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-white/10 hover:bg-transparent">
+                {["Name","Type","Country","Data","Price (KES)","Speed","Status","Actions"].map(h=>(
+                  <TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {plans.map((p:any) => (
+                <TableRow key={p.id} className="border-white/5 hover:bg-white/3">
+                  <TableCell className="text-sm text-white font-medium">{p.name}</TableCell>
+                  <TableCell><span className="text-xs px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 capitalize">{p.type}</span></TableCell>
+                  <TableCell className="text-xs text-gray-400">{p.country||"Global"}</TableCell>
+                  <TableCell className="text-xs text-gray-400">{p.gb_amount ? p.gb_amount+"GB" : p.bandwidth||"—"}</TableCell>
+                  <TableCell className="text-sm text-emerald-400 font-medium">KES {(p.price_kes||0).toLocaleString()}</TableCell>
+                  <TableCell className="text-xs text-gray-400">{p.speed||"—"}</TableCell>
+                  <TableCell>
+                    <button onClick={() => toggle.mutate({ id:p.id, is_active:p.is_active })}
+                      className={`text-xs px-2 py-0.5 rounded-full border cursor-pointer transition-colors ${p.is_active ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-white/5 text-gray-500 border-white/10"}`}>
+                      {p.is_active ? "Active" : "Hidden"}
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1.5">
+                      <Button size="sm" variant="outline" onClick={() => startEdit(p)} className="border-white/10 text-gray-400 h-7 px-2 text-xs"><Edit2 className="w-3 h-3"/></Button>
+                      <Button size="sm" variant="outline" onClick={() => { if(confirm("Delete this plan?")) del.mutate(p.id); }} className="border-red-500/20 text-red-400 hover:bg-red-500/10 h-7 px-2 text-xs"><Trash2 className="w-3 h-3"/></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Proxy Orders Admin Tab ───────────────────────────────────────────────────
+function ProxyOrdersAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [credModal, setCredModal] = useState<any>(null);
+  const [credText, setCredText] = useState("");
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["/api/admin/proxy-orders"],
+    queryFn: () => fetch("/api/admin/proxy-orders", { headers: authHeaders() as any }).then(r=>r.json()),
+    refetchInterval: 30000,
+  });
+  const orders: any[] = data?.orders || [];
+
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status, credentials }: any) =>
+      fetch(`/api/admin/proxy-orders/${id}/status`, { method:"PATCH", headers:{...authHeaders(),"Content-Type":"application/json"} as any, body:JSON.stringify({ status, credentials }) }).then(r=>r.json()),
+    onSuccess: (res) => { if(res.success){toast({title:"Updated"});queryClient.invalidateQueries({queryKey:["/api/admin/proxy-orders"]});setCredModal(null);}else toast({title:"Error",description:res.error,variant:"destructive"}); },
+  });
+
+  const filtered = orders.filter(o => {
+    const ms = statusFilter==="all"||o.status===statusFilter;
+    const mq = !search||[o.reference,o.plan_name,o.customer_email].some(v=>(v||"").toLowerCase().includes(search.toLowerCase()));
+    return ms && mq;
+  });
+
+  const totalKes = orders.filter(o=>o.status!=="failed").reduce((s:number,o:any)=>s+(o.amount_kes||0),0);
+  const statusCls = (s:string) => ({ pending:"text-amber-400 border-amber-500/30 bg-amber-500/10", processing:"text-blue-400 border-blue-500/30 bg-blue-500/10", active:"text-emerald-400 border-emerald-500/30 bg-emerald-500/10", completed:"text-gray-400 border-gray-500/30 bg-gray-500/10", failed:"text-red-400 border-red-500/30 bg-red-500/10" }[s] || "text-gray-400 border-gray-500/30");
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold text-white">Proxy Orders</h2><p className="text-sm text-gray-400">Manage customer proxy orders and deliver credentials</p></div>
+        <Button size="sm" variant="outline" onClick={()=>refetch()} className="border-white/10 text-gray-400 gap-1.5"><RefreshCw className="w-3.5 h-3.5"/>Refresh</Button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          {label:"Total Orders",value:orders.length,color:"text-white"},
+          {label:"Pending",value:orders.filter((o:any)=>o.status==="pending").length,color:"text-amber-400"},
+          {label:"Active",value:orders.filter((o:any)=>o.status==="active").length,color:"text-emerald-400"},
+          {label:"Revenue (KES)",value:`KES ${totalKes.toLocaleString()}`,color:"text-emerald-400"},
+        ].map(s=>(
+          <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <p className="text-xs text-gray-400 mb-1">{s.label}</p>
+            <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-40">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500"/>
+          <Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search orders..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9"/>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {["all","pending","processing","active","completed","failed"].map(s=>(
+            <button key={s} onClick={()=>setStatusFilter(s)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize ${statusFilter===s?"bg-emerald-500/20 border-emerald-500/30 text-emerald-300":"bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"}`}>{s}</button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? <div className="text-center py-8 text-gray-500">Loading...</div> : filtered.length===0 ? (
+        <div className="text-center py-12 text-gray-500"><Shield className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No proxy orders yet</p></div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-white/10 hover:bg-transparent">
+                {["Reference","Plan","Customer","Amount","Status","Date","Actions"].map(h=>(
+                  <TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((o:any)=>(
+                <TableRow key={o.id} className="border-white/5 hover:bg-white/3">
+                  <TableCell className="font-mono text-xs text-gray-300">{(o.reference||"").slice(0,14)}…</TableCell>
+                  <TableCell className="text-sm text-white">{o.plan_name}</TableCell>
+                  <TableCell className="text-xs text-gray-400">{o.customer_email}</TableCell>
+                  <TableCell className="text-sm text-emerald-400 font-medium">KES {(o.amount_kes||0).toLocaleString()}</TableCell>
+                  <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${statusCls(o.status)}`}>{o.status}</span></TableCell>
+                  <TableCell className="text-xs text-gray-500">{o.created_at?new Date(o.created_at).toLocaleDateString():"—"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1.5">
+                      <select value={o.status} onChange={e=>updateStatus.mutate({id:o.id,status:e.target.value})}
+                        className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-gray-300 focus:outline-none">
+                        <option value="pending">Pending</option><option value="processing">Processing</option>
+                        <option value="active">Active</option><option value="completed">Completed</option><option value="failed">Failed</option>
+                      </select>
+                      <Button size="sm" variant="outline" onClick={()=>{setCredModal(o);setCredText(o.credentials||"");}}
+                        className="border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 h-7 px-2 text-xs">
+                        <Key className="w-3 h-3 mr-1"/>Creds
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {credModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget)setCredModal(null);}}>
+          <div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-md p-6">
+            <h3 className="font-bold mb-1">Deliver Credentials</h3>
+            <p className="text-sm text-gray-400 mb-4">{credModal.customer_email} — {credModal.plan_name}</p>
+            <textarea value={credText} onChange={e=>setCredText(e.target.value)} rows={6}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-emerald-500/40 mb-4"
+              placeholder={"host: proxy.example.com\nport: 8080\nusername: user123\npassword: pass456\nprotocol: HTTP/HTTPS/SOCKS5"} />
+            <div className="flex gap-2">
+              <Button onClick={()=>updateStatus.mutate({id:credModal.id,status:"active",credentials:credText})} disabled={updateStatus.isPending} className="bg-emerald-600 hover:bg-emerald-700 flex-1">
+                {updateStatus.isPending?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:null}Save & Mark Active
+              </Button>
+              <Button variant="outline" onClick={()=>setCredModal(null)} className="border-white/10 text-gray-400">Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Digital Products Admin Tab ───────────────────────────────────────────────
+function DigitalProductsAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [stockModal, setStockModal] = useState<any>(null);
+  const [stockText, setStockText] = useState("");
+  const [stockLoading, setStockLoading] = useState(false);
+  const [form, setForm] = useState({ name:"", platform:"Instagram", category:"social", price_kes:"", description:"", features:"", is_active:true, sort_order:"0" });
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey:["/api/admin/digital-products"],
+    queryFn:()=>fetch("/api/admin/digital-products",{headers:authHeaders() as any}).then(r=>r.json()),
+  });
+  const products:any[] = data?.products||[];
+
+  const SOCIAL_PLATS = ["Instagram","TikTok","Twitter","Facebook","LinkedIn","Other"];
+  const EMAIL_PLATS  = ["Gmail","Outlook","Yahoo","ProtonMail","Other"];
+
+  const reset = () => { setForm({name:"",platform:"Instagram",category:"social",price_kes:"",description:"",features:"",is_active:true,sort_order:"0"}); setEditing(null); setShowForm(false); };
+  const startEdit = (p:any) => { setForm({name:p.name,platform:p.platform,category:p.category,price_kes:p.price_kes,description:p.description||"",features:p.features||"",is_active:p.is_active,sort_order:p.sort_order||"0"}); setEditing(p); setShowForm(true); };
+
+  const save = useMutation({
+    mutationFn:()=>{
+      const body={...form,price_kes:parseFloat(form.price_kes as any),sort_order:parseInt(form.sort_order as any)||0};
+      const url=editing?`/api/admin/digital-products/${editing.id}`:"/api/admin/digital-products";
+      return fetch(url,{method:editing?"PUT":"POST",headers:{...authHeaders(),"Content-Type":"application/json"} as any,body:JSON.stringify(body)}).then(r=>r.json());
+    },
+    onSuccess:(res)=>{ if(res.success){toast({title:editing?"Product updated":"Product created"});queryClient.invalidateQueries({queryKey:["/api/admin/digital-products"]});reset();}else toast({title:"Error",description:res.error,variant:"destructive"}); },
+  });
+
+  const del = useMutation({
+    mutationFn:(id:number)=>fetch(`/api/admin/digital-products/${id}`,{method:"DELETE",headers:authHeaders() as any}).then(r=>r.json()),
+    onSuccess:()=>{toast({title:"Deleted"});queryClient.invalidateQueries({queryKey:["/api/admin/digital-products"]});},
+  });
+
+  const addStock = async () => {
+    if(!stockModal||!stockText.trim()) return;
+    setStockLoading(true);
+    try {
+      const res = await fetch(`/api/admin/digital-products/${stockModal.id}/stock`,{method:"POST",headers:{...authHeaders(),"Content-Type":"application/json"} as any,body:JSON.stringify({credentials:stockText})}).then(r=>r.json());
+      if(res.success){toast({title:`Added ${res.added} accounts`});queryClient.invalidateQueries({queryKey:["/api/admin/digital-products"]});setStockModal(null);setStockText("");}
+      else toast({title:"Error",description:res.error,variant:"destructive"});
+    }catch{toast({title:"Network error",variant:"destructive"});}
+    setStockLoading(false);
+  };
+
+  const inp = "w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/40";
+  const plats = form.category==="social" ? SOCIAL_PLATS : EMAIL_PLATS;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold text-white">Aged Accounts Products</h2><p className="text-sm text-gray-400">Manage social media and email account listings with stock</p></div>
+        <Button size="sm" onClick={()=>{reset();setShowForm(true);}} className="bg-violet-600 hover:bg-violet-700 gap-1.5"><Plus className="w-4 h-4"/>Add Product</Button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white/5 border border-violet-500/20 rounded-2xl p-5 space-y-4">
+          <h3 className="font-semibold text-white">{editing?"Edit Product":"New Account Product"}</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label className="text-xs text-gray-400 mb-1 block">Category *</label>
+              <select className={inp} value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value,platform:e.target.value==="social"?"Instagram":"Gmail"}))}>
+                <option value="social">Social Media</option><option value="email">Email Accounts</option>
+              </select>
+            </div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Platform *</label>
+              <select className={inp} value={form.platform} onChange={e=>setForm(f=>({...f,platform:e.target.value}))}>
+                {plats.map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Product Name *</label><input className={inp} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Aged Instagram (2yr+ PVA)"/></div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Price (KES) *</label><input type="number" className={inp} value={form.price_kes} onChange={e=>setForm(f=>({...f,price_kes:e.target.value}))} placeholder="e.g. 800"/></div>
+            <div className="sm:col-span-2"><label className="text-xs text-gray-400 mb-1 block">Description</label><input className={inp} value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Brief description shown to customers"/></div>
+            <div className="sm:col-span-2"><label className="text-xs text-gray-400 mb-1 block">Features (one per line)</label>
+              <textarea className={inp} rows={4} value={form.features} onChange={e=>setForm(f=>({...f,features:e.target.value}))} placeholder={"Phone Verified (PVA)\n2+ Years Old\n500+ Followers\nFull account access\nEmail + password included"}/>
+            </div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Sort Order</label><input type="number" className={inp} value={form.sort_order} onChange={e=>setForm(f=>({...f,sort_order:e.target.value}))}/></div>
+            <div className="flex items-center gap-2 self-end pb-2">
+              <input type="checkbox" checked={form.is_active} onChange={e=>setForm(f=>({...f,is_active:e.target.checked}))} className="w-4 h-4 rounded"/>
+              <label className="text-sm text-gray-300">Active (visible to customers)</label>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={()=>save.mutate()} disabled={save.isPending||!form.name||!form.price_kes} className="bg-violet-600 hover:bg-violet-700">
+              {save.isPending?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:null}{editing?"Update":"Create"} Product
+            </Button>
+            <Button variant="outline" onClick={reset} className="border-white/10 text-gray-400">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:products.length===0?(
+        <div className="text-center py-12 text-gray-500"><Users className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No products yet. Add your first account product.</p></div>
+      ):(
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <Table>
+            <TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Platform","Name","Category","Price (KES)","Stock","Status","Actions"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader>
+            <TableBody>
+              {products.map((p:any)=>(
+                <TableRow key={p.id} className="border-white/5 hover:bg-white/3">
+                  <TableCell className="text-lg">{{"Instagram":"📸","TikTok":"🎵","Twitter":"🐦","Facebook":"📘","Gmail":"📧","Outlook":"📨","Yahoo":"📮"}[p.platform]||"📱"} <span className="text-xs text-gray-400 ml-1">{p.platform}</span></TableCell>
+                  <TableCell className="text-sm text-white font-medium max-w-40"><p className="truncate">{p.name}</p></TableCell>
+                  <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${p.category==="social"?"bg-violet-500/10 text-violet-400 border-violet-500/20":"bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>{p.category}</span></TableCell>
+                  <TableCell className="text-sm text-emerald-400 font-medium">KES {(p.price_kes||0).toLocaleString()}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-bold ${p.stock_count>0?"text-emerald-400":"text-red-400"}`}>{p.stock_count}</span>
+                      <span className="text-xs text-gray-500">/ {p.total_stock} total</span>
+                    </div>
+                  </TableCell>
+                  <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border ${p.is_active?"bg-emerald-500/10 text-emerald-400 border-emerald-500/20":"bg-white/5 text-gray-500 border-white/10"}`}>{p.is_active?"Active":"Hidden"}</span></TableCell>
+                  <TableCell>
+                    <div className="flex gap-1.5">
+                      <Button size="sm" variant="outline" onClick={()=>{setStockModal(p);setStockText("");}} className="border-violet-500/20 text-violet-400 hover:bg-violet-500/10 h-7 px-2 text-xs"><Plus className="w-3 h-3 mr-1"/>Stock</Button>
+                      <Button size="sm" variant="outline" onClick={()=>startEdit(p)} className="border-white/10 text-gray-400 h-7 px-2 text-xs"><Edit2 className="w-3 h-3"/></Button>
+                      <Button size="sm" variant="outline" onClick={()=>{if(confirm("Delete?"))del.mutate(p.id);}} className="border-red-500/20 text-red-400 hover:bg-red-500/10 h-7 px-2 text-xs"><Trash2 className="w-3 h-3"/></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Add Stock Modal */}
+      {stockModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget){setStockModal(null);setStockText("");}}}>
+          <div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-lg p-6">
+            <h3 className="font-bold mb-1">Add Account Stock</h3>
+            <p className="text-sm text-gray-400 mb-1">{stockModal.name} — Current stock: <span className="text-emerald-400 font-bold">{stockModal.stock_count}</span></p>
+            <p className="text-xs text-gray-500 mb-3">Paste accounts below — one per line. Format: <code className="text-violet-400">username:password:email:recovery</code></p>
+            <textarea value={stockText} onChange={e=>setStockText(e.target.value)} rows={10}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-green-400 font-mono focus:outline-none focus:border-violet-500/40 mb-4"
+              placeholder={"user1:pass1:backup@gmail.com\nuser2:pass2:backup@gmail.com\nuser3:pass3:backup@gmail.com"}/>
+            <p className="text-xs text-gray-500 mb-3">{stockText.split('\n').filter(l=>l.trim()).length} accounts ready to import</p>
+            <div className="flex gap-2">
+              <Button onClick={addStock} disabled={stockLoading||!stockText.trim()} className="bg-violet-600 hover:bg-violet-700 flex-1">
+                {stockLoading?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:<Plus className="w-4 h-4 mr-1"/>}Import Accounts
+              </Button>
+              <Button variant="outline" onClick={()=>{setStockModal(null);setStockText("");}} className="border-white/10 text-gray-400">Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Digital Orders Admin Tab ─────────────────────────────────────────────────
+function DigitalOrdersAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey:["/api/admin/digital-orders"],
+    queryFn:()=>fetch("/api/admin/digital-orders",{headers:authHeaders() as any}).then(r=>r.json()),
+    refetchInterval:30000,
+  });
+  const orders:any[] = data?.orders||[];
+
+  const filtered = orders.filter(o=>{
+    const ms=statusFilter==="all"||o.status===statusFilter;
+    const mq=!search||[o.reference,o.product_name,o.platform,o.customer_email].some((v:string)=>(v||"").toLowerCase().includes(search.toLowerCase()));
+    return ms&&mq;
+  });
+  const totalKes=orders.filter((o:any)=>o.status==="delivered").reduce((s:number,o:any)=>s+(parseFloat(o.amount_kes)||0),0);
+  const sCls=(s:string)=>({pending:"text-amber-400 border-amber-500/30 bg-amber-500/10",delivered:"text-emerald-400 border-emerald-500/30 bg-emerald-500/10",failed:"text-red-400 border-red-500/30 bg-red-500/10"}[s]||"text-gray-400 border-gray-500/30 bg-gray-500/10");
+
+  const [credView, setCredView] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
+  const copy=(t:string)=>{navigator.clipboard.writeText(t);setCopied(true);setTimeout(()=>setCopied(false),2000);};
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold text-white">Digital Account Orders</h2><p className="text-sm text-gray-400">All social media and email account purchases</p></div>
+        <Button size="sm" variant="outline" onClick={()=>refetch()} className="border-white/10 text-gray-400 gap-1.5"><RefreshCw className="w-3.5 h-3.5"/>Refresh</Button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[{label:"Total Orders",value:orders.length,c:"text-white"},{label:"Delivered",value:orders.filter((o:any)=>o.status==="delivered").length,c:"text-emerald-400"},{label:"Pending",value:orders.filter((o:any)=>o.status==="pending").length,c:"text-amber-400"},{label:"Revenue",value:`KES ${totalKes.toLocaleString()}`,c:"text-emerald-400"}].map(s=>(
+          <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-4"><p className="text-xs text-gray-400 mb-1">{s.label}</p><p className={`text-xl font-bold ${s.c}`}>{s.value}</p></div>
+        ))}
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-40"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500"/><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9"/></div>
+        {["all","pending","delivered","failed"].map(s=><button key={s} onClick={()=>setStatusFilter(s)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize ${statusFilter===s?"bg-violet-500/20 border-violet-500/30 text-violet-300":"bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"}`}>{s}</button>)}
+      </div>
+      {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:filtered.length===0?(
+        <div className="text-center py-12 text-gray-500"><Users className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No orders yet</p></div>
+      ):(
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <Table>
+            <TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Reference","Platform","Product","Customer","Amount","Status","Date","Creds"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader>
+            <TableBody>
+              {filtered.map((o:any)=>(
+                <TableRow key={o.id} className="border-white/5 hover:bg-white/3">
+                  <TableCell className="font-mono text-xs text-gray-300">{(o.reference||"").slice(0,14)}…</TableCell>
+                  <TableCell className="text-sm">{"📸📧🎵🐦📘".includes(o.platform)?"":<span className="text-base">{{Instagram:"📸",TikTok:"🎵",Twitter:"🐦",Facebook:"📘",Gmail:"📧",Outlook:"📨",Yahoo:"📮"}[o.platform]||"📱"}</span>}<span className="text-xs text-gray-400 ml-1">{o.platform}</span></TableCell>
+                  <TableCell className="text-xs text-white max-w-32"><p className="truncate">{o.product_name}</p></TableCell>
+                  <TableCell className="text-xs text-gray-400">{o.customer_email}</TableCell>
+                  <TableCell className="text-sm text-emerald-400 font-medium">KES {parseFloat(o.amount_kes||0).toLocaleString()}</TableCell>
+                  <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${sCls(o.status)}`}>{o.status}</span></TableCell>
+                  <TableCell className="text-xs text-gray-500">{o.created_at?new Date(o.created_at).toLocaleDateString():"—"}</TableCell>
+                  <TableCell>
+                    {o.credentials?<Button size="sm" variant="outline" onClick={()=>setCredView(o)} className="border-violet-500/20 text-violet-400 hover:bg-violet-500/10 h-7 px-2 text-xs"><Eye className="w-3 h-3"/></Button>:<span className="text-xs text-gray-600">—</span>}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      {credView && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget)setCredView(null);}}>
+          <div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-md p-6">
+            <h3 className="font-bold mb-1">Delivered Credentials</h3>
+            <p className="text-sm text-gray-400 mb-4">{credView.customer_email} — {credView.product_name}</p>
+            <pre className="bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-green-400 font-mono whitespace-pre-wrap break-all mb-4">{credView.credentials}</pre>
+            <div className="flex gap-2">
+              <Button onClick={()=>copy(credView.credentials)} className="flex-1 bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 text-sm">
+                {copied?<Check className="w-4 h-4 text-green-400 mr-1"/>:<Copy className="w-4 h-4 mr-1"/>}{copied?"Copied":"Copy"}
+              </Button>
+              <Button onClick={()=>setCredView(null)} className="flex-1 bg-violet-600 hover:bg-violet-700 text-sm">Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Free Proxies Admin Tab ───────────────────────────────────────────────────
+function FreeProxiesAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [bulkText, setBulkText] = useState("");
+  const [proxyType, setProxyType] = useState("HTTP");
+  const [importing, setImporting] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<{checked:number;alive:number;dead:number}|null>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [showImport, setShowImport] = useState(false);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey:["/api/admin/free-proxies"],
+    queryFn:()=>fetch("/api/admin/free-proxies",{headers:authHeaders() as any}).then(r=>r.json()),
+    refetchInterval: checking ? 5000 : false,
+  });
+  const { data: schedData, refetch: refetchSched } = useQuery({
+    queryKey:["/api/admin/proxy-scheduler/status"],
+    queryFn:()=>fetch("/api/admin/proxy-scheduler/status",{headers:authHeaders() as any}).then(r=>r.json()),
+    refetchInterval: 8000,
+  });
+  const sched = schedData || {};
+  const [triggering, setTriggering] = useState(false);
+  const toggleScheduler = async () => {
+    await fetch("/api/admin/proxy-scheduler/toggle",{method:"POST",headers:{...authHeaders(),"Content-Type":"application/json"} as any,body:JSON.stringify({enabled:!sched.enabled})});
+    refetchSched();
+  };
+  const triggerNow = async () => {
+    if(triggering||sched.running) return;
+    setTriggering(true);
+    const r = await fetch("/api/admin/proxy-scheduler/run",{method:"POST",headers:authHeaders() as any}).then(r=>r.json()).catch(()=>({}));
+    toast({title: r.success ? "Scheduler triggered!" : (r.error||"Error"), description: r.success ? "Fetching + checking proxies now..." : undefined});
+    setTriggering(false); setTimeout(()=>refetchSched(),3000);
+  };
+  const proxies: any[] = data?.proxies || [];
+
+  const alive    = proxies.filter(p=>p.status==='alive').length;
+  const dead     = proxies.filter(p=>p.status==='dead').length;
+  const unchecked= proxies.filter(p=>p.status==='unchecked').length;
+
+  const filtered = proxies.filter(p => {
+    const ms = statusFilter==='all' || p.status===statusFilter;
+    const mq = !search || (p.ip||'').includes(search) || (p.country||'').toLowerCase().includes(search.toLowerCase()) || (p.raw||'').includes(search);
+    return ms && mq;
+  });
+
+  const COUNTRY_FLAG = (code: string) => code ? String.fromCodePoint(...[...code.toUpperCase()].map(c=>c.charCodeAt(0)+127397)) : '🌍';
+
+  const importProxies = async () => {
+    if (!bulkText.trim()) return;
+    setImporting(true);
+    try {
+      const lines = bulkText.split('\n').filter(l=>l.trim()).length;
+      const res = await fetch('/api/admin/free-proxies/bulk',{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'} as any,body:JSON.stringify({proxies:bulkText,type:proxyType})}).then(r=>r.json());
+      if(res.success){
+        toast({title:`✅ Imported ${res.added} proxies`,description:`${res.dupes||0} duplicates skipped out of ${lines} lines`});
+        setBulkText(''); setShowImport(false);
+        queryClient.invalidateQueries({queryKey:["/api/admin/free-proxies"]});
+      } else toast({title:'Error',description:res.error,variant:'destructive'});
+    } catch { toast({title:'Network error',variant:'destructive'}); }
+    setImporting(false);
+  };
+
+  const checkAll = async () => {
+    setChecking(true); setCheckResult(null);
+    try {
+      const res = await fetch('/api/admin/free-proxies/check',{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'} as any,body:JSON.stringify({})}).then(r=>r.json());
+      if(res.success){
+        setCheckResult({checked:res.checked,alive:res.alive,dead:res.dead});
+        toast({title:`✅ Check done — ${res.alive} alive, ${res.dead} dead`});
+        queryClient.invalidateQueries({queryKey:["/api/admin/free-proxies"]});
+      }
+    } catch { toast({title:'Check failed',variant:'destructive'}); }
+    setChecking(false);
+  };
+
+  const deleteDead = async () => {
+    if(!confirm('Delete all dead proxies?')) return;
+    try {
+      const res = await fetch('/api/admin/free-proxies/bulk/dead',{method:'DELETE',headers:authHeaders() as any}).then(r=>r.json());
+      if(res.success){ toast({title:`Deleted ${res.deleted} dead proxies`}); queryClient.invalidateQueries({queryKey:["/api/admin/free-proxies"]}); }
+    } catch {}
+  };
+
+  const deleteOne = async (id:number) => {
+    try {
+      await fetch(`/api/admin/free-proxies/${id}`,{method:'DELETE',headers:authHeaders() as any});
+      queryClient.invalidateQueries({queryKey:["/api/admin/free-proxies"]});
+    } catch {}
+  };
+
+  const copyAll = () => {
+    const alive=proxies.filter(p=>p.status==='alive').map(p=>p.raw).join('\n');
+    navigator.clipboard.writeText(alive);
+    toast({title:`Copied ${proxies.filter(p=>p.status==='alive').length} alive proxies`});
+  };
+
+  const ANON_COLOR: Record<string,string> = { elite:'text-emerald-400', anonymous:'text-blue-400', transparent:'text-amber-400' };
+  const STATUS_STYLE: Record<string,string> = {
+    alive:   'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    dead:    'bg-red-500/10 text-red-400 border-red-500/20',
+    unchecked:'bg-white/5 text-white/40 border-white/10',
+  };
+  const inp = "bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/40";
+
+  const lineCount = bulkText.split('\n').filter(l=>l.trim()).length;
+
+  return (
+    <div className="space-y-5">
+      {/* Scheduler Status */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${sched.running?"bg-blue-400 animate-pulse":sched.enabled?"bg-emerald-400":"bg-white/20"}`}/>
+            <span className="text-sm font-semibold text-white">Auto-Scraper</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${sched.running?"bg-blue-500/10 border-blue-500/20 text-blue-400":sched.enabled?"bg-emerald-500/10 border-emerald-500/20 text-emerald-400":"bg-white/5 border-white/10 text-white/30"}`}>
+              {sched.running?"Running…":sched.enabled?"Active":"Disabled"}
+            </span>
+          </div>
+          <div className="flex gap-2 items-center">
+            <Button size="sm" variant="outline" onClick={triggerNow} disabled={triggering||sched.running} className="border-white/10 text-gray-300 h-7 px-3 text-xs gap-1.5">
+              {triggering||sched.running?<Loader2 className="w-3 h-3 animate-spin"/>:<Zap className="w-3 h-3"/>}
+              {sched.running?"Running…":"Run Now"}
+            </Button>
+            <button onClick={toggleScheduler} className={`relative w-10 h-5 rounded-full transition-colors ${sched.enabled?"bg-emerald-500":"bg-white/15"}`}>
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${sched.enabled?"left-5":"left-0.5"}`}/>
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-white/8">
+          {([
+            {label:"Last Run", value: sched.lastRun ? new Date(sched.lastRun).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})+" · "+new Date(sched.lastRun).toLocaleDateString([],{month:"short",day:"numeric"}) : "Never"},
+            {label:"Next Run", value: sched.nextRun ? new Date(sched.nextRun).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})+" · "+new Date(sched.nextRun).toLocaleDateString([],{month:"short",day:"numeric"}) : "—"},
+            {label:"Added Last Run", value: sched.lastStats?.added ?? "—"},
+            {label:"Alive / Checked", value: sched.lastStats ? `${sched.lastStats.alive||0} / ${(sched.lastStats.alive||0)+(sched.lastStats.dead||0)}` : "—"},
+          ] as const).map((s:any)=>(
+            <div key={s.label} className="px-3 py-2 text-center">
+              <p className="text-xs text-gray-500 mb-0.5">{s.label}</p>
+              <p className="text-xs font-semibold text-white">{String(s.value)}</p>
+            </div>
+          ))}
+        </div>
+        <div className="px-4 py-2 border-t border-white/8 text-xs text-white/25 flex justify-between">
+          <span>Sources: ProxyScrape + Geonode (HTTP · HTTPS · SOCKS4 · SOCKS5)</span>
+          <span>Every 6 h · 300 checked · 12 concurrent · dead cleared after 48 h</span>
+        </div>
+      </div>
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-white">Free Proxies Manager</h2>
+          <p className="text-sm text-gray-400">Upload, check, and manage your free proxy pool</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={copyAll} disabled={!alive} className="border-white/10 text-gray-400 gap-1.5 text-xs"><Copy className="w-3 h-3"/>Copy Alive</Button>
+          <Button size="sm" variant="outline" onClick={deleteDead} disabled={!dead} className="border-red-500/20 text-red-400 hover:bg-red-500/10 gap-1.5 text-xs"><Trash2 className="w-3 h-3"/>Delete Dead ({dead})</Button>
+          <Button size="sm" onClick={checkAll} disabled={checking||!proxies.length} className="bg-blue-600 hover:bg-blue-700 gap-1.5 text-xs">
+            {checking?<Loader2 className="w-3 h-3 animate-spin"/>:<Zap className="w-3 h-3"/>}{checking?'Checking...':'Check All'}
+          </Button>
+          <Button size="sm" onClick={()=>setShowImport(v=>!v)} className="bg-emerald-600 hover:bg-emerald-700 gap-1.5 text-xs"><Plus className="w-3 h-3"/>Import Proxies</Button>
+        </div>
+      </div>
+
+      {/* Stats bar */}
+      <div className="grid grid-cols-4 gap-3">
+        {[{label:'Total',value:proxies.length,c:'text-white',b:'bg-white/5'},{label:'Alive',value:alive,c:'text-emerald-400',b:'bg-emerald-500/10'},{label:'Dead',value:dead,c:'text-red-400',b:'bg-red-500/10'},{label:'Unchecked',value:unchecked,c:'text-amber-400',b:'bg-amber-500/10'}].map(s=>(
+          <div key={s.label} className={`${s.b} border border-white/8 rounded-xl p-3 text-center`}>
+            <p className={`text-2xl font-bold ${s.c}`}>{s.value}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Check result banner */}
+      {checkResult && (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0"/>
+          <span className="text-emerald-300">Last check: <strong>{checkResult.checked}</strong> tested — <strong className="text-emerald-400">{checkResult.alive} alive</strong> · <strong className="text-red-400">{checkResult.dead} dead</strong></span>
+          <button onClick={()=>setCheckResult(null)} className="ml-auto text-white/30 hover:text-white"><X className="w-4 h-4"/></button>
+        </div>
+      )}
+
+      {/* Import panel */}
+      {showImport && (
+        <div className="bg-white/5 border border-emerald-500/20 rounded-2xl p-5 space-y-4">
+          <h3 className="font-semibold text-white flex items-center gap-2"><Plus className="w-4 h-4 text-emerald-400"/>Bulk Import Proxies</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {['HTTP','HTTPS','SOCKS4','SOCKS5'].map(t=>(
+              <button key={t} onClick={()=>setProxyType(t)}
+                className={`py-2 rounded-xl text-sm font-medium border transition-colors ${proxyType===t?'bg-emerald-500/20 border-emerald-500/30 text-emerald-300':'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1.5 block">Paste proxies — one per line</label>
+            <textarea value={bulkText} onChange={e=>setBulkText(e.target.value)} rows={10}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-green-400 font-mono focus:outline-none focus:border-emerald-500/40"
+              placeholder={"192.168.1.1:8080\n10.0.0.1:3128\nuser:pass@192.168.1.2:8080\n192.168.1.3:8080:user:pass"}/>
+            <p className="text-xs text-gray-500 mt-1.5">Supported: <code className="text-emerald-400">ip:port</code> · <code className="text-emerald-400">ip:port:user:pass</code> · <code className="text-emerald-400">user:pass@ip:port</code> — <strong className="text-white">{lineCount}</strong> lines ready</p>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={importProxies} disabled={importing||!bulkText.trim()} className="bg-emerald-600 hover:bg-emerald-700">
+              {importing?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:<Plus className="w-4 h-4 mr-1"/>}Import {lineCount>0?lineCount+' Proxies':'Proxies'}
+            </Button>
+            <Button variant="outline" onClick={()=>{setShowImport(false);setBulkText('');}} className="border-white/10 text-gray-400">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <div className="relative flex-1 min-w-36">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500"/>
+          <Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search IP, country..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9"/>
+        </div>
+        {['all','alive','dead','unchecked'].map(s=>(
+          <button key={s} onClick={()=>setStatusFilter(s)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border capitalize transition-colors ${statusFilter===s?'bg-emerald-500/20 border-emerald-500/30 text-emerald-300':'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}>
+            {s}
+          </button>
+        ))}
+        <Button size="sm" variant="outline" onClick={()=>refetch()} className="border-white/10 text-gray-400 h-9 gap-1.5 text-xs"><RefreshCw className="w-3 h-3"/>Refresh</Button>
+      </div>
+
+      {/* Proxy table */}
+      {isLoading ? (
+        <div className="text-center py-10 text-gray-500">Loading proxies...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-14 text-gray-500">
+          <Shield className="w-8 h-8 mx-auto mb-2 opacity-30"/>
+          <p>{proxies.length===0?'No proxies yet — import your first batch':'No proxies match the current filter'}</p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-white/10 overflow-hidden">
+          <div className="grid grid-cols-[2.5fr_1fr_1.5fr_1.2fr_1fr_0.8fr_auto] gap-2 px-4 py-2 bg-white/5 border-b border-white/10 text-xs text-white/30 font-medium uppercase tracking-wide">
+            <span>Proxy</span><span>Type</span><span>Country</span><span>Anonymity</span><span>Speed</span><span>Status</span><span></span>
+          </div>
+          <div className="divide-y divide-white/5 max-h-[55vh] overflow-y-auto">
+            {filtered.map((p:any) => (
+              <div key={p.id} className="grid grid-cols-[2.5fr_1fr_1.5fr_1.2fr_1fr_0.8fr_auto] gap-2 px-4 py-2.5 items-center hover:bg-white/3 transition-colors">
+                <code className="text-xs font-mono text-green-400 truncate" title={p.raw}>{p.ip}:{p.port}{p.username?<span className="text-white/20"> [auth]</span>:null}</code>
+                <span className="text-xs font-bold text-white/50">{p.type||'HTTP'}</span>
+                <span className="text-xs text-white/60 truncate">{p.country_code?COUNTRY_FLAG(p.country_code):''} {p.country||'—'}</span>
+                <span className={`text-xs capitalize ${p.anonymity?ANON_COLOR[p.anonymity]||'text-white/40':'text-white/20'}`}>{p.anonymity||'—'}</span>
+                <span className="text-xs">
+                  {p.speed_ms ? (
+                    <span className={`font-medium ${p.speed_ms<1000?'text-emerald-400':p.speed_ms<3000?'text-amber-400':'text-red-400'}`}>{p.speed_ms}ms</span>
+                  ) : <span className="text-white/20">—</span>}
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${STATUS_STYLE[p.status]||STATUS_STYLE.unchecked}`}>{p.status}</span>
+                <button onClick={()=>deleteOne(p.id)} className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/10 hover:text-red-400 text-white/30 transition-colors">
+                  <Trash2 className="w-3 h-3"/>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Gift Cards Admin Tab ─────────────────────────────────────────────────────
+function GiftCardsAdminTab() {
+  const { toast } = useToast(); const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false); const [editing, setEditing] = useState<any>(null);
+  const [stockModal, setStockModal] = useState<any>(null); const [stockText, setStockText] = useState("");
+  const [stockLoading, setStockLoading] = useState(false);
+  const [form, setForm] = useState({name:"",brand:"Google Play",denomination:"",currency:"USD",price_kes:"",description:"",is_active:true,sort_order:"0"});
+  const BRANDS = ["Google Play","iTunes","Steam","Amazon","Netflix","Spotify","Xbox","PlayStation","Roblox","Razer Gold","Fortnite","Valorant","Other"];
+  const BRAND_EMOJI: Record<string,string> = {"Google Play":"🎮","iTunes":"🍎","Steam":"🎲","Amazon":"📦","Netflix":"🎬","Spotify":"🎵","Xbox":"🟢","PlayStation":"🎯","Roblox":"🟡","Razer Gold":"💚","Fortnite":"🔷","Valorant":"🔴","Other":"🎁"};
+  const { data, isLoading, refetch } = useQuery({ queryKey:["/api/admin/gift-card-products"], queryFn:()=>fetch("/api/admin/gift-card-products",{headers:authHeaders() as any}).then(r=>r.json()) });
+  const products:any[]=data?.products||[];
+  const inp="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500/40";
+  const reset=()=>{setForm({name:"",brand:"Google Play",denomination:"",currency:"USD",price_kes:"",description:"",is_active:true,sort_order:"0"});setEditing(null);setShowForm(false);};
+  const startEdit=(p:any)=>{setForm({name:p.name,brand:p.brand,denomination:p.denomination||"",currency:p.currency||"USD",price_kes:p.price_kes,description:p.description||"",is_active:p.is_active,sort_order:p.sort_order||"0"});setEditing(p);setShowForm(true);};
+  const save=useMutation({mutationFn:()=>{ const body={...form,price_kes:parseFloat(form.price_kes as any),sort_order:parseInt(form.sort_order as any)||0}; return fetch(editing?`/api/admin/gift-card-products/${editing.id}`:"/api/admin/gift-card-products",{method:editing?"PUT":"POST",headers:{...authHeaders(),"Content-Type":"application/json"} as any,body:JSON.stringify(body)}).then(r=>r.json()); },onSuccess:(r)=>{if(r.success){toast({title:editing?"Updated":"Created"});queryClient.invalidateQueries({queryKey:["/api/admin/gift-card-products"]});reset();}else toast({title:"Error",description:r.error,variant:"destructive"});},});
+  const del=useMutation({mutationFn:(id:number)=>fetch(`/api/admin/gift-card-products/${id}`,{method:"DELETE",headers:authHeaders() as any}).then(r=>r.json()),onSuccess:()=>{toast({title:"Deleted"});queryClient.invalidateQueries({queryKey:["/api/admin/gift-card-products"]});}});
+  const addStock=async()=>{if(!stockModal||!stockText.trim())return;setStockLoading(true);try{const r=await fetch(`/api/admin/gift-card-products/${stockModal.id}/stock`,{method:"POST",headers:{...authHeaders(),"Content-Type":"application/json"} as any,body:JSON.stringify({codes:stockText})}).then(r=>r.json());if(r.success){toast({title:`Added ${r.added} codes`});queryClient.invalidateQueries({queryKey:["/api/admin/gift-card-products"]});setStockModal(null);setStockText("");}else toast({title:"Error",description:r.error,variant:"destructive"});}catch{toast({title:"Error",variant:"destructive"});}setStockLoading(false);};
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white">Gift Cards</h2><p className="text-sm text-gray-400">Manage gift card products and code inventory</p></div><Button size="sm" onClick={()=>{reset();setShowForm(true);}} className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold gap-1.5"><Plus className="w-4 h-4"/>Add Product</Button></div>
+      {showForm&&(<div className="bg-white/5 border border-yellow-500/20 rounded-2xl p-5 space-y-3"><h3 className="font-semibold">{editing?"Edit":"New"} Gift Card Product</h3><div className="grid grid-cols-2 sm:grid-cols-3 gap-3"><div><label className="text-xs text-gray-400 mb-1 block">Brand</label><select className={inp} value={form.brand} onChange={e=>setForm(f=>({...f,brand:e.target.value}))}>{BRANDS.map(b=><option key={b} value={b}>{BRAND_EMOJI[b]} {b}</option>)}</select></div><div><label className="text-xs text-gray-400 mb-1 block">Product Name</label><input className={inp} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Google Play $10"/></div><div><label className="text-xs text-gray-400 mb-1 block">Denomination</label><input className={inp} value={form.denomination} onChange={e=>setForm(f=>({...f,denomination:e.target.value}))} placeholder="10"/></div><div><label className="text-xs text-gray-400 mb-1 block">Currency</label><input className={inp} value={form.currency} onChange={e=>setForm(f=>({...f,currency:e.target.value}))} placeholder="USD"/></div><div><label className="text-xs text-gray-400 mb-1 block">Price (KES)</label><input type="number" className={inp} value={form.price_kes} onChange={e=>setForm(f=>({...f,price_kes:e.target.value}))} placeholder="1500"/></div><div><label className="text-xs text-gray-400 mb-1 block">Sort Order</label><input type="number" className={inp} value={form.sort_order} onChange={e=>setForm(f=>({...f,sort_order:e.target.value}))}/></div><div className="col-span-2 sm:col-span-3"><label className="text-xs text-gray-400 mb-1 block">Description (optional)</label><input className={inp} value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Works worldwide, no expiry"/></div><div className="flex items-center gap-2"><input type="checkbox" checked={form.is_active} onChange={e=>setForm(f=>({...f,is_active:e.target.checked}))} className="w-4 h-4"/><label className="text-sm text-gray-300">Active</label></div></div><div className="flex gap-2"><Button onClick={()=>save.mutate()} disabled={save.isPending||!form.name||!form.price_kes} className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold">{save.isPending?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:null}{editing?"Update":"Create"}</Button><Button variant="outline" onClick={reset} className="border-white/10 text-gray-400">Cancel</Button></div></div>)}
+      {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:products.length===0?<div className="text-center py-12 text-gray-500"><Gift className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No products yet</p></div>:(
+        <div className="overflow-x-auto rounded-xl border border-white/10"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Brand","Product","Denom","Price KES","Stock","Status","Actions"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{products.map((p:any)=>(
+          <TableRow key={p.id} className="border-white/5 hover:bg-white/3">
+            <TableCell className="text-lg">{BRAND_EMOJI[p.brand]||"🎁"} <span className="text-xs text-gray-400">{p.brand}</span></TableCell>
+            <TableCell className="text-sm text-white font-medium max-w-32"><p className="truncate">{p.name}</p></TableCell>
+            <TableCell className="text-sm text-white/60">{p.denomination} {p.currency}</TableCell>
+            <TableCell className="text-sm text-yellow-400 font-bold">KES {(p.price_kes||0).toLocaleString()}</TableCell>
+            <TableCell><span className={`text-sm font-bold ${p.stock_count>0?"text-emerald-400":"text-red-400"}`}>{p.stock_count}</span><span className="text-xs text-gray-500 ml-1">/ {p.total_stock}</span></TableCell>
+            <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border ${p.is_active?"bg-emerald-500/10 text-emerald-400 border-emerald-500/20":"bg-white/5 text-gray-500 border-white/10"}`}>{p.is_active?"Active":"Hidden"}</span></TableCell>
+            <TableCell><div className="flex gap-1.5"><Button size="sm" variant="outline" onClick={()=>{setStockModal(p);setStockText("");}} className="border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/10 h-7 px-2 text-xs"><Plus className="w-3 h-3 mr-1"/>Codes</Button><Button size="sm" variant="outline" onClick={()=>startEdit(p)} className="border-white/10 text-gray-400 h-7 px-2 text-xs"><Edit2 className="w-3 h-3"/></Button><Button size="sm" variant="outline" onClick={()=>{if(confirm("Delete?"))del.mutate(p.id);}} className="border-red-500/20 text-red-400 hover:bg-red-500/10 h-7 px-2 text-xs"><Trash2 className="w-3 h-3"/></Button></div></TableCell>
+          </TableRow>
+        ))}</TableBody></Table></div>
+      )}
+      {stockModal&&(<div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget){setStockModal(null);setStockText("");}}}><div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-lg p-6"><h3 className="font-bold mb-1">Add Gift Card Codes</h3><p className="text-sm text-gray-400 mb-3">{stockModal.name} — Stock: <span className="text-yellow-400 font-bold">{stockModal.stock_count}</span></p><textarea value={stockText} onChange={e=>setStockText(e.target.value)} rows={8} className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-yellow-400 font-mono focus:outline-none focus:border-yellow-500/40 mb-3" placeholder={"XXXX-XXXX-XXXX-XXXX\nYYYY-YYYY-YYYY-YYYY\nZZZZ-ZZZZ-ZZZZ-ZZZZ"}/><p className="text-xs text-gray-500 mb-3">{stockText.split('\n').filter(l=>l.trim()).length} codes ready</p><div className="flex gap-2"><Button onClick={addStock} disabled={stockLoading||!stockText.trim()} className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold flex-1">{stockLoading?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:<Plus className="w-4 h-4 mr-1"/>}Import Codes</Button><Button variant="outline" onClick={()=>{setStockModal(null);setStockText("");}} className="border-white/10 text-gray-400">Cancel</Button></div></div></div>)}
+    </div>
+  );
+}
+
+// ─── Gift Card Orders Admin Tab ───────────────────────────────────────────────
+function GiftCardOrdersAdminTab() {
+  const { toast } = useToast();
+  const [search, setSearch] = useState(""); const [credView, setCredView] = useState<any>(null); const [copied, setCopied] = useState(false);
+  const { data, isLoading, refetch } = useQuery({ queryKey:["/api/admin/gift-card-orders"], queryFn:()=>fetch("/api/admin/gift-card-orders",{headers:authHeaders() as any}).then(r=>r.json()), refetchInterval:30000 });
+  const orders:any[]=data?.orders||[];
+  const filtered=orders.filter(o=>!search||[o.reference,o.product_name,o.brand,o.customer_email].some((v:string)=>(v||"").toLowerCase().includes(search.toLowerCase())));
+  const revenue=orders.filter((o:any)=>o.status==="delivered").reduce((s:number,o:any)=>s+(parseFloat(o.amount_kes)||0),0);
+  const sCls=(s:string)=>({pending:"text-amber-400 border-amber-500/30 bg-amber-500/10",delivered:"text-emerald-400 border-emerald-500/30 bg-emerald-500/10",failed:"text-red-400 border-red-500/30 bg-red-500/10"}[s]||"text-gray-400 border-gray-500/30 bg-gray-500/10");
+  const EMOJI: Record<string,string>={"Google Play":"🎮","iTunes":"🍎","Steam":"🎲","Amazon":"📦","Netflix":"🎬","Spotify":"🎵","Xbox":"🟢","PlayStation":"🎯","Roblox":"🟡","Other":"🎁"};
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white">Gift Card Orders</h2><p className="text-sm text-gray-400">All gift card purchases and code deliveries</p></div><Button size="sm" variant="outline" onClick={()=>refetch()} className="border-white/10 text-gray-400 gap-1.5"><RefreshCw className="w-3.5 h-3.5"/>Refresh</Button></div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[{label:"Total",value:orders.length,c:"text-white"},{label:"Delivered",value:orders.filter((o:any)=>o.status==="delivered").length,c:"text-emerald-400"},{label:"Pending",value:orders.filter((o:any)=>o.status==="pending").length,c:"text-amber-400"},{label:"Revenue",value:`KES ${revenue.toLocaleString()}`,c:"text-yellow-400"}].map(s=>(<div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-4"><p className="text-xs text-gray-400 mb-1">{s.label}</p><p className={`text-xl font-bold ${s.c}`}>{s.value}</p></div>))}</div>
+      <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500"/><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search orders..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9"/></div>
+      {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:filtered.length===0?<div className="text-center py-10 text-gray-500"><Gift className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No orders</p></div>:(
+        <div className="overflow-x-auto rounded-xl border border-white/10"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Ref","Brand","Product","Customer","Amount","Status","Code"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{filtered.map((o:any)=>(
+          <TableRow key={o.id} className="border-white/5 hover:bg-white/3">
+            <TableCell className="font-mono text-xs text-gray-300">{(o.reference||"").slice(0,12)}…</TableCell>
+            <TableCell className="text-base">{EMOJI[o.brand]||"🎁"} <span className="text-xs text-gray-400">{o.brand}</span></TableCell>
+            <TableCell className="text-xs text-white max-w-28"><p className="truncate">{o.product_name}</p></TableCell>
+            <TableCell className="text-xs text-gray-400">{o.customer_email}</TableCell>
+            <TableCell className="text-sm text-yellow-400 font-medium">KES {parseFloat(o.amount_kes||0).toLocaleString()}</TableCell>
+            <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${sCls(o.status)}`}>{o.status}</span></TableCell>
+            <TableCell>{o.code?<Button size="sm" variant="outline" onClick={()=>setCredView(o)} className="border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/10 h-7 px-2 text-xs"><Eye className="w-3 h-3"/></Button>:<span className="text-xs text-gray-600">—</span>}</TableCell>
+          </TableRow>
+        ))}</TableBody></Table></div>
+      )}
+      {credView&&(<div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget)setCredView(null);}}><div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-sm p-6"><h3 className="font-bold mb-1">Delivered Code</h3><p className="text-sm text-gray-400 mb-4">{credView.customer_email} — {credView.product_name}</p><div className="bg-black/40 border border-white/10 rounded-xl p-4 text-xl font-mono font-bold text-yellow-400 text-center tracking-widest mb-4">{credView.code}</div><div className="flex gap-2"><Button onClick={()=>{navigator.clipboard.writeText(credView.code);setCopied(true);setTimeout(()=>setCopied(false),2000);}} className="flex-1 bg-white/5 border border-white/10 text-white/70 text-sm">{copied?<Check className="w-4 h-4 text-green-400 mr-1"/>:<Copy className="w-4 h-4 mr-1"/>}Copy</Button><Button onClick={()=>setCredView(null)} className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-sm">Close</Button></div></div></div>)}
+    </div>
+  );
+}
+
+// ─── SMS Plans Admin Tab ──────────────────────────────────────────────────────
+function SmsPlansAdminTab() {
+  const { toast } = useToast(); const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false); const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({name:"",sms_count:"",price_kes:"",description:"",features:"",is_active:true,sort_order:"0",validity_days:"30"});
+  const { data, isLoading } = useQuery({ queryKey:["/api/admin/sms-plans"], queryFn:()=>fetch("/api/admin/sms-plans",{headers:authHeaders() as any}).then(r=>r.json()) });
+  const plans:any[]=data?.plans||[];
+  const inp="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500/40";
+  const reset=()=>{setForm({name:"",sms_count:"",price_kes:"",description:"",features:"",is_active:true,sort_order:"0",validity_days:"30"});setEditing(null);setShowForm(false);};
+  const startEdit=(p:any)=>{setForm({name:p.name,sms_count:p.sms_count,price_kes:p.price_kes,description:p.description||"",features:p.features||"",is_active:p.is_active,sort_order:p.sort_order||"0",validity_days:p.validity_days||"30"});setEditing(p);setShowForm(true);};
+  const save=useMutation({mutationFn:()=>fetch(editing?`/api/admin/sms-plans/${editing.id}`:"/api/admin/sms-plans",{method:editing?"PUT":"POST",headers:{...authHeaders(),"Content-Type":"application/json"} as any,body:JSON.stringify({...form,sms_count:parseInt(form.sms_count as any),price_kes:parseFloat(form.price_kes as any),sort_order:parseInt(form.sort_order as any)||0,validity_days:parseInt(form.validity_days as any)||30})}).then(r=>r.json()),onSuccess:(r)=>{if(r.success){toast({title:editing?"Updated":"Created"});queryClient.invalidateQueries({queryKey:["/api/admin/sms-plans"]});reset();}else toast({title:"Error",description:r.error,variant:"destructive"});},});
+  const del=useMutation({mutationFn:(id:number)=>fetch(`/api/admin/sms-plans/${id}`,{method:"DELETE",headers:authHeaders() as any}).then(r=>r.json()),onSuccess:()=>{toast({title:"Deleted"});queryClient.invalidateQueries({queryKey:["/api/admin/sms-plans"]});}});
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white">Bulk SMS Plans</h2><p className="text-sm text-gray-400">Manage SMS credit packages for customers</p></div><Button size="sm" onClick={()=>{reset();setShowForm(true);}} className="bg-green-600 hover:bg-green-700 gap-1.5"><Plus className="w-4 h-4"/>Add Plan</Button></div>
+      {showForm&&(<div className="bg-white/5 border border-green-500/20 rounded-2xl p-5 space-y-3"><h3 className="font-semibold">{editing?"Edit":"New"} SMS Plan</h3><div className="grid grid-cols-2 sm:grid-cols-3 gap-3"><div><label className="text-xs text-gray-400 mb-1 block">Plan Name</label><input className={inp} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Starter 1000"/></div><div><label className="text-xs text-gray-400 mb-1 block">SMS Count</label><input type="number" className={inp} value={form.sms_count} onChange={e=>setForm(f=>({...f,sms_count:e.target.value}))} placeholder="1000"/></div><div><label className="text-xs text-gray-400 mb-1 block">Price (KES)</label><input type="number" className={inp} value={form.price_kes} onChange={e=>setForm(f=>({...f,price_kes:e.target.value}))} placeholder="500"/></div><div><label className="text-xs text-gray-400 mb-1 block">Validity (days)</label><input type="number" className={inp} value={form.validity_days} onChange={e=>setForm(f=>({...f,validity_days:e.target.value}))}/></div><div><label className="text-xs text-gray-400 mb-1 block">Sort Order</label><input type="number" className={inp} value={form.sort_order} onChange={e=>setForm(f=>({...f,sort_order:e.target.value}))}/></div><div className="flex items-center gap-2 self-end pb-2"><input type="checkbox" checked={form.is_active} onChange={e=>setForm(f=>({...f,is_active:e.target.checked}))} className="w-4 h-4"/><label className="text-sm text-gray-300">Active</label></div><div className="col-span-2 sm:col-span-3"><label className="text-xs text-gray-400 mb-1 block">Description</label><input className={inp} value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Great for small businesses"/></div><div className="col-span-2 sm:col-span-3"><label className="text-xs text-gray-400 mb-1 block">Features (one per line)</label><textarea className={inp} rows={3} value={form.features} onChange={e=>setForm(f=>({...f,features:e.target.value}))} placeholder={"Custom sender ID\nDelivery reports\nAPI access"}/></div></div><div className="flex gap-2"><Button onClick={()=>save.mutate()} disabled={save.isPending||!form.name||!form.sms_count||!form.price_kes} className="bg-green-600 hover:bg-green-700">{save.isPending?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:null}{editing?"Update":"Create"}</Button><Button variant="outline" onClick={reset} className="border-white/10 text-gray-400">Cancel</Button></div></div>)}
+      {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:plans.length===0?<div className="text-center py-12 text-gray-500"><MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No SMS plans yet</p></div>:(
+        <div className="overflow-x-auto rounded-xl border border-white/10"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Name","SMS Count","Price KES","Per SMS","Validity","Status","Actions"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{plans.map((p:any)=>(
+          <TableRow key={p.id} className="border-white/5 hover:bg-white/3">
+            <TableCell className="text-sm text-white font-medium">{p.name}</TableCell>
+            <TableCell className="text-lg font-bold text-green-400">{(p.sms_count||0).toLocaleString()}</TableCell>
+            <TableCell className="text-sm text-yellow-400 font-medium">KES {(p.price_kes||0).toLocaleString()}</TableCell>
+            <TableCell className="text-xs text-white/50">KES {((p.price_kes||0)/(p.sms_count||1)).toFixed(2)}</TableCell>
+            <TableCell className="text-xs text-white/50">{p.validity_days||30} days</TableCell>
+            <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border ${p.is_active?"bg-emerald-500/10 text-emerald-400 border-emerald-500/20":"bg-white/5 text-gray-500 border-white/10"}`}>{p.is_active?"Active":"Hidden"}</span></TableCell>
+            <TableCell><div className="flex gap-1.5"><Button size="sm" variant="outline" onClick={()=>startEdit(p)} className="border-white/10 text-gray-400 h-7 px-2 text-xs"><Edit2 className="w-3 h-3"/></Button><Button size="sm" variant="outline" onClick={()=>{if(confirm("Delete?"))del.mutate(p.id);}} className="border-red-500/20 text-red-400 hover:bg-red-500/10 h-7 px-2 text-xs"><Trash2 className="w-3 h-3"/></Button></div></TableCell>
+          </TableRow>
+        ))}</TableBody></Table></div>
+      )}
+    </div>
+  );
+}
+
+
+// ─── Bulk CC Checker Admin Tab ──────────────────────────────────────────────
+function luhnValid(num: string): boolean {
+  const digits = num.replace(/\D/g, '').split('').reverse().map(Number);
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let d = digits[i];
+    if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+const EG_DOMAINS = ['yopmail.com','guerrillamail.com','mailsac.com','sharklasers.com','throwam.com','trashmail.com','spamoff.de','maildrop.cc','dispostable.com','10minutemail.com'];
+const EG_WORDS = ['alpha','beta','delta','echo','foxtrot','gamma','hotel','india','juliet','kilo','lima','mike','nova','oscar','papa','quebec','romeo','sierra','tango','ultra'];
+const EG_NAMES = ['alex','blake','casey','drew','elliot','finley','gray','harper','indigo','jordan','kendall','lane','morgan','noel','ocean','parker','quinn','river','sage','taylor'];
+
+type CcResult = { card: string; status: 'Live'|'Dead'; bank?: string; cardType?: string; country?: string; flag?: string; message?: string };
+
+function BulkCcCheckerAdminTab() {
+  const { toast } = useToast();
+  const [input, setInput] = useState('');
+  const [results, setResults] = useState<CcResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [sessionChecked, setSessionChecked] = useState(0);
+
+  const live = results.filter(r => r.status === 'Live');
+  const dead = results.filter(r => r.status === 'Dead');
+
+  async function checkAll() {
+    const lines = input.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 50);
+    if (!lines.length) return toast({ title: 'No cards', description: 'Paste at least one card', variant: 'destructive' });
+    setLoading(true); setResults([]); setProgress(0);
+    const parsed = lines.map(line => {
+      const [num, mm, yy, cvv] = line.split('|');
+      return { raw: line, num: (num || '').replace(/\D/g, ''), mm, yy, cvv };
+    });
+    const uniqueBins = [...new Set(parsed.filter(c => c.num.length >= 6).map(c => c.num.slice(0, 6)))];
+    let binData: Record<string, any> = {};
+    try {
+      const r = await fetch('https://bins.antipublic.cc/bins/lookup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(uniqueBins)
+      });
+      if (r.ok) {
+        const arr: any[] = await r.json();
+        arr.forEach((b: any) => { if (b?.bin) binData[b.bin] = b; });
+      }
+    } catch {}
+    const out: CcResult[] = [];
+    for (let i = 0; i < parsed.length; i++) {
+      const c = parsed[i];
+      if (!luhnValid(c.num)) {
+        out.push({ card: c.raw, status: 'Dead', message: 'Luhn failed' });
+      } else {
+        const b = binData[c.num.slice(0, 6)] || binData[c.num.slice(0, 8)];
+        if (b) {
+          const cc = b.country_code || '';
+          const flag = cc ? String.fromCodePoint(...[...cc].map((ch: string) => ch.charCodeAt(0) + 127397)) : '';
+          out.push({ card: c.raw, status: 'Live', bank: b.bank || 'Unknown', cardType: [b.scheme, b.type, b.level].filter(Boolean).join(' '), country: b.country_name || cc, flag });
+        } else {
+          out.push({ card: c.raw, status: 'Live', bank: 'Unknown BIN', cardType: 'Unknown' });
+        }
+      }
+      setProgress(Math.round(((i + 1) / parsed.length) * 100));
+    }
+    setResults(out); setSessionChecked(p => p + out.length); setLoading(false);
+  }
+
+  function downloadLive() {
+    const txt = live.map(r => r.card).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([txt], { type: 'text/plain' }));
+    a.download = 'live_cards.txt'; a.click();
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold text-white">CC Bulk Checker</h2><p className="text-sm text-gray-400">Validate up to 50 cards — Luhn + BIN lookup</p></div>
+        {sessionChecked > 0 && <span className="text-xs text-gray-500">Session: {sessionChecked} checked</span>}
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {[{label:'Checked',value:results.length,c:'text-white'},{label:'Live',value:live.length,c:'text-emerald-400'},{label:'Dead',value:dead.length,c:'text-red-400'}].map(s=>(
+          <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-4 text-center"><p className="text-xs text-gray-400 mb-1">{s.label}</p><p className={`text-2xl font-bold ${s.c}`}>{s.value}</p></div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
+          <p className="text-sm font-medium text-gray-300">Paste Cards <span className="text-xs text-gray-500">(number|mm|yy|cvv · one per line · max 50)</span></p>
+          <textarea value={input} onChange={e=>setInput(e.target.value)} rows={12} className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-green-400 font-mono focus:outline-none focus:border-green-500/40 resize-none" placeholder="4532015112830366|12|27|123" />
+          <Button onClick={checkAll} disabled={loading} className="w-full bg-green-600 hover:bg-green-700">
+            {loading ? <><Loader2 className="w-4 h-4 animate-spin mr-2"/>Checking… {progress}%</> : <><CreditCard className="w-4 h-4 mr-2"/>Check All</>}
+          </Button>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-300">Results</p>
+            {live.length > 0 && <Button size="sm" variant="outline" onClick={downloadLive} className="border-white/10 text-gray-400 h-7 px-2 text-xs gap-1"><Download className="w-3 h-3"/>Live</Button>}
+          </div>
+          {results.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 text-gray-600"><CreditCard className="w-10 h-10 mb-2 opacity-30"/><p className="text-sm">Paste cards and click Check All</p></div>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {results.map((r, i) => (
+                <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 border ${r.status==='Live'?'bg-emerald-500/5 border-emerald-500/20':'bg-red-500/5 border-red-500/15'}`}>
+                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded mt-0.5 ${r.status==='Live'?'bg-emerald-500/20 text-emerald-400':'bg-red-500/20 text-red-400'}`}>{r.status}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-mono text-white/80 truncate">{r.card}</p>
+                    <p className="text-xs text-gray-400">{r.flag} {r.bank}{r.cardType?' · '+r.cardType:''}{r.country?' · '+r.country:''}{r.message?' · '+r.message:''}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Email Generator Admin Tab ────────────────────────────────────────────────
+function EmailGenAdminTab() {
+  const { toast } = useToast();
+  const [count, setCount] = useState(20);
+  const [domain, setDomain] = useState('random');
+  const [format, setFormat] = useState('name_num');
+  const [emails, setEmails] = useState<string[]>([]);
+  const [sessionTotal, setSessionTotal] = useState(0);
+
+  function rnd(n: number) { return Math.floor(Math.random() * n); }
+  function uid() { return Math.random().toString(36).slice(2, 9); }
+
+  function genEmail(d: string, f: string): string {
+    const domains = d === 'random' ? EG_DOMAINS : [d];
+    const pick = domains[rnd(domains.length)];
+    let user = '';
+    if (f === 'name_num') user = EG_NAMES[rnd(EG_NAMES.length)] + (100 + rnd(9900));
+    else if (f === 'word_word') user = EG_WORDS[rnd(EG_WORDS.length)] + EG_WORDS[rnd(EG_WORDS.length)] + rnd(99);
+    else user = uid();
+    return user + '@' + pick;
+  }
+
+  function generate() {
+    const n = Math.min(Math.max(1, count), 100);
+    const list = Array.from({ length: n }, () => genEmail(domain, format));
+    setEmails(list); setSessionTotal(p => p + list.length);
+  }
+
+  function copyAll() { navigator.clipboard.writeText(emails.join('\n')); toast({ title: 'Copied!', description: emails.length + ' emails copied' }); }
+  function download() {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([emails.join('\n')], { type: 'text/plain' }));
+    a.download = 'emails.txt'; a.click();
+  }
+  function copyOne(e: string) { navigator.clipboard.writeText(e); toast({ title: 'Copied', description: e }); }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold text-white">Email Generator</h2><p className="text-sm text-gray-400">Generate up to 100 disposable addresses</p></div>
+        {sessionTotal > 0 && <span className="text-xs text-gray-500">Session: {sessionTotal} generated</span>}
+      </div>
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="text-xs text-gray-400 mb-1.5 block">Count (max 100)</label>
+            <Input type="number" min={1} max={100} value={count} onChange={e=>setCount(Number(e.target.value))} className="bg-black/40 border-white/10 text-white h-9"/>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1.5 block">Domain</label>
+            <select value={domain} onChange={e=>setDomain(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg px-3 h-9 text-sm text-white focus:outline-none focus:border-green-500/40">
+              <option value="random">Random mix</option>
+              {EG_DOMAINS.map(d=><option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1.5 block">Format</label>
+            <select value={format} onChange={e=>setFormat(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg px-3 h-9 text-sm text-white focus:outline-none focus:border-green-500/40">
+              <option value="name_num">name + numbers</option>
+              <option value="word_word">word + word</option>
+              <option value="random">random chars</option>
+            </select>
+          </div>
+        </div>
+        <Button onClick={generate} className="w-full bg-green-600 hover:bg-green-700"><Mail className="w-4 h-4 mr-2"/>Generate</Button>
+      </div>
+      {emails.length > 0 && (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-300">{emails.length} emails generated</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={copyAll} className="border-white/10 text-gray-400 h-7 px-2 text-xs gap-1"><Copy className="w-3 h-3"/>Copy All</Button>
+              <Button size="sm" variant="outline" onClick={download} className="border-white/10 text-gray-400 h-7 px-2 text-xs gap-1"><Download className="w-3 h-3"/>Download</Button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-72 overflow-y-auto pr-1">
+            {emails.map((e, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 bg-black/30 border border-white/[0.08] rounded-lg px-3 py-1.5 group">
+                <span className="text-xs font-mono text-green-400 truncate">{e}</span>
+                <button onClick={()=>copyOne(e)} className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hover:text-white"><Copy className="w-3 h-3"/></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SMS Orders Admin Tab ─────────────────────────────────────────────────────
+function SmsOrdersAdminTab() {
+  const { toast } = useToast(); const queryClient = useQueryClient();
+  const [search, setSearch] = useState(""); const [fulfillModal, setFulfillModal] = useState<any>(null); const [notes, setNotes] = useState(""); const [fulfilling, setFulfilling] = useState(false);
+  const { data, isLoading, refetch } = useQuery({ queryKey:["/api/admin/sms-orders"], queryFn:()=>fetch("/api/admin/sms-orders",{headers:authHeaders() as any}).then(r=>r.json()), refetchInterval:30000 });
+  const orders:any[]=data?.orders||[];
+  const filtered=orders.filter(o=>!search||[o.reference,o.plan_name,o.customer_email].some((v:string)=>(v||"").toLowerCase().includes(search.toLowerCase())));
+  const revenue=orders.filter((o:any)=>o.status==="fulfilled").reduce((s:number,o:any)=>s+(parseFloat(o.amount_kes)||0),0);
+  const sCls=(s:string)=>({pending:"text-amber-400 border-amber-500/30 bg-amber-500/10",fulfilled:"text-emerald-400 border-emerald-500/30 bg-emerald-500/10",failed:"text-red-400 border-red-500/30 bg-red-500/10"}[s]||"text-gray-400 border-gray-500/30 bg-gray-500/10");
+  const fulfill=async()=>{if(!fulfillModal)return;setFulfilling(true);try{const r=await fetch(`/api/admin/sms-orders/${fulfillModal.id}/fulfill`,{method:"PATCH",headers:{...authHeaders(),"Content-Type":"application/json"} as any,body:JSON.stringify({notes})}).then(r=>r.json());if(r.success){toast({title:"Order fulfilled"});queryClient.invalidateQueries({queryKey:["/api/admin/sms-orders"]});setFulfillModal(null);setNotes("");}else toast({title:"Error",description:r.error,variant:"destructive"});}catch{toast({title:"Error",variant:"destructive"});}setFulfilling(false);};
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white">SMS Orders</h2><p className="text-sm text-gray-400">Manage bulk SMS purchases and fulfillment</p></div><Button size="sm" variant="outline" onClick={()=>refetch()} className="border-white/10 text-gray-400 gap-1.5"><RefreshCw className="w-3.5 h-3.5"/>Refresh</Button></div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[{label:"Total",value:orders.length,c:"text-white"},{label:"Fulfilled",value:orders.filter((o:any)=>o.status==="fulfilled").length,c:"text-emerald-400"},{label:"Pending",value:orders.filter((o:any)=>o.status==="pending").length,c:"text-amber-400"},{label:"Revenue",value:`KES ${revenue.toLocaleString()}`,c:"text-green-400"}].map(s=>(<div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-4"><p className="text-xs text-gray-400 mb-1">{s.label}</p><p className={`text-xl font-bold ${s.c}`}>{s.value}</p></div>))}</div>
+      <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500"/><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9"/></div>
+      {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:filtered.length===0?<div className="text-center py-10 text-gray-500"><MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No orders</p></div>:(
+        <div className="overflow-x-auto rounded-xl border border-white/10"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Reference","Plan","SMS","Customer","Sender ID","Amount","Status","Action"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{filtered.map((o:any)=>(
+          <TableRow key={o.id} className="border-white/5 hover:bg-white/3">
+            <TableCell className="font-mono text-xs text-gray-300">{(o.reference||"").slice(0,12)}…</TableCell>
+            <TableCell className="text-sm text-white font-medium">{o.plan_name}</TableCell>
+            <TableCell className="text-sm text-green-400 font-bold">{(o.sms_count||0).toLocaleString()}</TableCell>
+            <TableCell className="text-xs text-gray-400">{o.customer_email}</TableCell>
+            <TableCell className="text-xs text-white/50">{o.sender_note||"—"}</TableCell>
+            <TableCell className="text-sm text-yellow-400 font-medium">KES {parseFloat(o.amount_kes||0).toLocaleString()}</TableCell>
+            <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${sCls(o.status)}`}>{o.status}</span></TableCell>
+            <TableCell>{o.status!=="fulfilled"&&<Button size="sm" onClick={()=>{setFulfillModal(o);setNotes(o.notes||"");}} className="bg-green-600 hover:bg-green-700 h-7 px-2 text-xs">Fulfill</Button>}</TableCell>
+          </TableRow>
+        ))}</TableBody></Table></div>
+      )}
+      {fulfillModal&&(<div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget){setFulfillModal(null);setNotes("");}}}><div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-md p-6"><h3 className="font-bold mb-1">Fulfill SMS Order</h3><p className="text-sm text-gray-400 mb-4">{fulfillModal.customer_email} — {fulfillModal.sms_count?.toLocaleString()} SMS</p>{fulfillModal.sender_note&&<p className="text-xs text-white/50 mb-3">Requested sender ID: <span className="text-green-400 font-medium">{fulfillModal.sender_note}</span></p>}<textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={4} className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500/40 mb-4" placeholder="Add notes (API credentials, login details, etc.)"/><div className="flex gap-2"><Button onClick={fulfill} disabled={fulfilling} className="flex-1 bg-green-600 hover:bg-green-700">{fulfilling?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:null}Mark Fulfilled</Button><Button variant="outline" onClick={()=>{setFulfillModal(null);setNotes("");}} className="flex-1 border-white/10 text-gray-400">Cancel</Button></div></div></div>)}
+    </div>
+  );
+}
+
+
+
+// ─── ChegeBot Pro Subscriptions Admin Tab ─────────────────────────────────────
+function ChegeBotSubsAdminTab() {
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [grantModal, setGrantModal] = useState(false);
+  const [grantEmail, setGrantEmail] = useState("");
+  const [grantPlan, setGrantPlan] = useState("monthly");
+  const [grantDays, setGrantDays] = useState(30);
+  const [granting, setGranting] = useState(false);
+  const [editingPlans, setEditingPlans] = useState(false);
+  const [planDraft, setPlanDraft] = useState<any[]>([]);
+  const [savingPlans, setSavingPlans] = useState(false);
+  const queryClient = useQueryClient();
+
+  const { data: stats, isLoading: statsLoading } = useQuery<any>({
+    queryKey: ["/api/admin/tradingbot/stats"],
+    queryFn: () => authFetch("/api/admin/tradingbot/stats"),
+    staleTime: 30000,
+  });
+
+  const { data: subData, isLoading: subsLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/tradingbot/subscriptions", search, statusFilter],
+    queryFn: () => authFetch(`/api/admin/tradingbot/subscriptions?search=${encodeURIComponent(search)}&status=${statusFilter}`),
+    staleTime: 15000,
+  });
+
+  const { data: plansData, refetch: refetchPlans } = useQuery<any>({
+    queryKey: ["/api/admin/tradingbot/plans-config"],
+    queryFn: () => authFetch("/api/admin/tradingbot/plans-config"),
+    staleTime: 60000,
+  });
+
+  const livePlans: any[] = plansData?.plans ?? [];
+
+  function startEditPlans() {
+    setPlanDraft(livePlans.map(p => ({ ...p })));
+    setEditingPlans(true);
+  }
+
+  function updateDraftPlan(id: string, field: string, value: any) {
+    setPlanDraft(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+  }
+
+  async function savePlans() {
+    setSavingPlans(true);
+    const r = await authFetch("/api/admin/tradingbot/plans-config", {
+      method: "PUT",
+      body: JSON.stringify({ plans: planDraft }),
+    });
+    setSavingPlans(false);
+    if (r.success) {
+      toast({ title: "Plans updated", description: "New prices are live immediately" });
+      setEditingPlans(false);
+      refetchPlans();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/tradingbot/stats"] });
+    } else {
+      toast({ title: "Error", description: r.error, variant: "destructive" });
+    }
+  }
+
+  const subs: any[] = subData?.subscriptions ?? [];
+
+  async function handleRevoke(id: number) {
+    if (!confirm("Revoke this subscription?")) return;
+    const r = await authFetch(`/api/admin/tradingbot/revoke/${id}`, { method: "POST" });
+    if (r.success) { toast({ title: "Subscription revoked" }); refetch(); }
+    else toast({ title: "Error", description: r.error, variant: "destructive" });
+  }
+
+  async function handleActivate(id: number) {
+    const r = await authFetch(`/api/admin/tradingbot/activate/${id}`, { method: "POST" });
+    if (r.success) { toast({ title: "Subscription activated" }); refetch(); }
+    else toast({ title: "Error", description: r.error, variant: "destructive" });
+  }
+
+  async function handleGrant() {
+    if (!grantEmail.trim()) return;
+    setGranting(true);
+    const r = await authFetch("/api/admin/tradingbot/grant", {
+      method: "POST",
+      body: JSON.stringify({ email: grantEmail.trim(), plan: grantPlan, days: grantDays }),
+    });
+    setGranting(false);
+    if (r.success) {
+      toast({ title: "Access granted", description: `${grantEmail} now has ${grantPlan} access` });
+      setGrantModal(false); setGrantEmail(""); refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/tradingbot/stats"] });
+    } else {
+      toast({ title: "Error", description: r.error, variant: "destructive" });
+    }
+  }
+
+  const planBadge: Record<string, string> = {
+    monthly:   "bg-blue-500/15 text-blue-400 border border-blue-500/20",
+    quarterly: "bg-green-500/15 text-green-400 border border-green-500/20",
+    lifetime:  "bg-purple-500/15 text-purple-400 border border-purple-500/20",
+  };
+  const statusBadge: Record<string, string> = {
+    active:  "bg-green-500/15 text-green-400",
+    pending: "bg-yellow-500/15 text-yellow-400",
+    revoked: "bg-red-500/15 text-red-400",
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-green-500/15 border border-green-500/25 flex items-center justify-center">
+            <Zap className="w-5 h-5 text-green-400" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold">ChegeBot Pro Subscriptions</h2>
+            <p className="text-sm text-gray-400">Manage trading bot subscribers</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={startEditPlans}
+            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-medium rounded-xl transition-all">
+            <Pencil className="w-4 h-4" /> Edit Plans
+          </button>
+          <button onClick={() => setGrantModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-xl transition-all shadow-lg shadow-green-900/20">
+            <Plus className="w-4 h-4" /> Grant Access
+          </button>
+        </div>
+      </div>
+
+      {/* ── Plans & Pricing Editor ─────────────────────────────────────────── */}
+      {editingPlans && (
+        <div className="rounded-2xl bg-white/[0.03] border border-green-500/20 p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Tags className="w-4 h-4 text-green-400" />
+              <span className="font-semibold">Edit Plans & Pricing</span>
+              <span className="text-xs text-gray-500 ml-1">Changes go live immediately</span>
+            </div>
+            <button onClick={() => setEditingPlans(false)} className="text-gray-500 hover:text-white transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {planDraft.map(p => (
+              <div key={p.id} className="rounded-xl bg-black/40 border border-white/10 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${planBadge[p.id] ?? "bg-gray-500/15 text-gray-400 border border-gray-500/20"}`}>{p.id}</span>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+                    <input type="checkbox" checked={!!p.popular} onChange={e => updateDraftPlan(p.id, "popular", e.target.checked)}
+                      className="accent-green-500" />
+                    Popular
+                  </label>
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-gray-500 block mb-1">Label</label>
+                  <input value={p.label} onChange={e => updateDraftPlan(p.id, "label", e.target.value)}
+                    className="w-full bg-black/60 border border-white/10 rounded-lg px-3 h-9 text-sm text-white focus:outline-none focus:border-green-500/40" />
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-gray-500 block mb-1">Price (KES)</label>
+                  <input type="number" min={0} value={p.price} onChange={e => updateDraftPlan(p.id, "price", parseInt(e.target.value) || 0)}
+                    className="w-full bg-black/60 border border-white/10 rounded-lg px-3 h-9 text-sm text-white focus:outline-none focus:border-green-500/40 font-mono" />
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-gray-500 block mb-1">Duration (days, blank = lifetime)</label>
+                  <input type="number" min={1} value={p.durationDays ?? ""} placeholder="∞ lifetime"
+                    onChange={e => updateDraftPlan(p.id, "durationDays", e.target.value === "" ? null : parseInt(e.target.value) || null)}
+                    className="w-full bg-black/60 border border-white/10 rounded-lg px-3 h-9 text-sm text-white focus:outline-none focus:border-green-500/40 font-mono placeholder:text-gray-600" />
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-gray-500 block mb-1">Badge text (optional)</label>
+                  <input value={p.badge ?? ""} placeholder="e.g. Save 20%" onChange={e => updateDraftPlan(p.id, "badge", e.target.value || null)}
+                    className="w-full bg-black/60 border border-white/10 rounded-lg px-3 h-9 text-sm text-white focus:outline-none focus:border-green-500/40 placeholder:text-gray-600" />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Preview */}
+          <div className="border-t border-white/5 pt-4">
+            <p className="text-xs text-gray-500 mb-3 uppercase tracking-wide font-medium">Preview</p>
+            <div className="flex flex-wrap gap-3">
+              {planDraft.map(p => (
+                <div key={p.id} className="flex items-center gap-3 bg-white/[0.03] border border-white/[0.07] rounded-xl px-4 py-2.5">
+                  <span className={planBadge[p.id] ? `px-2 py-0.5 rounded-md text-xs font-medium ${planBadge[p.id]}` : "text-sm font-semibold"}>{p.label}</span>
+                  <span className="font-bold">KES {p.price.toLocaleString()}</span>
+                  <span className="text-xs text-gray-500">{p.durationDays ? p.durationDays + "d" : "lifetime"}</span>
+                  {p.badge && <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">{p.badge}</span>}
+                  {p.popular && <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">Popular</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-1">
+            <button onClick={() => setEditingPlans(false)} className="px-4 py-2 rounded-xl border border-white/10 text-gray-400 hover:text-white text-sm transition-colors">Cancel</button>
+            <button onClick={savePlans} disabled={savingPlans}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-60 text-white text-sm font-semibold transition-all">
+              {savingPlans ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {savingPlans ? "Saving…" : "Save Plans"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Current Plans (read-only when not editing) ─────────────────────── */}
+      {!editingPlans && livePlans.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          {livePlans.map((p: any) => (
+            <div key={p.id} className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-4 flex items-center justify-between">
+              <div>
+                <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium mb-1 ${planBadge[p.id] ?? "bg-gray-500/15 text-gray-400 border border-gray-500/20"}`}>{p.label}</span>
+                <p className="text-xl font-bold">KES {(p.price ?? 0).toLocaleString()}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">{p.durationDays ? p.durationDays + " days" : "lifetime"}{p.badge ? " · " + p.badge : ""}</p>
+              </div>
+              <button onClick={startEditPlans} className="text-gray-600 hover:text-gray-300 transition-colors" title="Edit">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {statsLoading ? (
+          [...Array(4)].map((_,i) => (
+            <div key={i} className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-5 animate-pulse h-24" />
+          ))
+        ) : ([
+          { label: "Total Revenue", value: `KES ${(stats?.totalRevenue ?? 0).toLocaleString()}`, icon: TrendingUp, color: "text-green-400", sub: "all time" },
+          { label: "Active Subs",   value: stats?.activeSubs ?? 0,    icon: CheckCircle, color: "text-green-400", sub: `of ${stats?.totalSubs ?? 0} total` },
+          { label: "This Month",    value: `KES ${(stats?.monthRevenue ?? 0).toLocaleString()}`, icon: BarChart2, color: "text-blue-400", sub: `${stats?.monthCount ?? 0} new` },
+          { label: "Lifetime",      value: stats?.lifetimeSubs ?? 0,  icon: Star, color: "text-purple-400", sub: `${stats?.quarterlySubs ?? 0} quarterly` },
+        ]).map(s => (
+          <div key={s.label} className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-5">
+            <div className="flex items-center justify-between mb-2"><span className="text-xs text-gray-500">{s.label}</span><s.icon className="w-3.5 h-3.5 text-gray-600" /></div>
+            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-[11px] text-gray-500 mt-1">{s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Plan breakdown */}
+      {stats && (
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { plan: "monthly",   label: "Monthly",   count: stats.monthlySubs,   revenue: stats.monthlyRevenue,   price: livePlans.find((p:any)=>p.id==="monthly")?.price   ?? 500  },
+            { plan: "quarterly", label: "Quarterly", count: stats.quarterlySubs, revenue: stats.quarterlyRevenue, price: livePlans.find((p:any)=>p.id==="quarterly")?.price ?? 1200 },
+            { plan: "lifetime",  label: "Lifetime",  count: stats.lifetimeSubs,  revenue: stats.lifetimeRevenue,  price: livePlans.find((p:any)=>p.id==="lifetime")?.price  ?? 5000 },
+          ].map(p => (
+            <div key={p.plan} className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-4">
+              <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium mb-2 ${planBadge[p.plan]}`}>{p.label}</span>
+              <p className="text-xl font-bold">{p.count ?? 0}</p>
+              <p className="text-[11px] text-gray-500">KES {(p.revenue ?? 0).toLocaleString()} · KES {p.price}/sub</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search email or reference…"
+            className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 h-10 text-sm text-white focus:outline-none focus:border-green-500/40" />
+        </div>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          className="bg-black/40 border border-white/10 rounded-xl px-3 h-10 text-sm text-white focus:outline-none focus:border-green-500/40">
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="pending">Pending</option>
+          <option value="revoked">Revoked</option>
+        </select>
+        <button onClick={() => refetch()} title="Refresh"
+          className="h-10 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 transition-colors">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Subscribers Table */}
+      <div className="rounded-2xl bg-white/[0.03] border border-white/[0.07] overflow-hidden">
+        {subsLoading ? (
+          <div className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin text-gray-500 mx-auto" /></div>
+        ) : subs.length === 0 ? (
+          <div className="p-12 text-center">
+            <Zap className="w-10 h-10 text-gray-700 mx-auto mb-2" />
+            <p className="text-gray-500">No subscriptions found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-white/[0.06]">
+                <tr className="text-gray-500 text-xs">
+                  {["ID","Customer","Plan","Amount","Status","Started","Expires","Reference","Actions"].map(h => (
+                    <th key={h} className="text-left px-4 py-3 font-medium whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {subs.map((sub: any) => {
+                  const expired = sub.expires_at && new Date(sub.expires_at) < new Date();
+                  const effectiveStatus = sub.status === "active" && expired ? "expired" : sub.status;
+                  return (
+                    <tr key={sub.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-3 text-gray-500 font-mono text-xs">{sub.id}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{sub.customer_name || "—"}</div>
+                        <div className="text-xs text-gray-400">{sub.customer_email}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${planBadge[sub.plan] ?? "bg-gray-500/15 text-gray-400"}`}>
+                          {sub.plan}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-mono font-semibold text-white">KES {(sub.amount ?? 0).toLocaleString()}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${effectiveStatus === "expired" ? "bg-orange-500/15 text-orange-400" : statusBadge[effectiveStatus] ?? "bg-gray-500/15 text-gray-400"}`}>
+                          {effectiveStatus}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400">{sub.created_at ? new Date(sub.created_at).toLocaleDateString() : "—"}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400">{sub.expires_at ? new Date(sub.expires_at).toLocaleDateString() : <span className="text-purple-400">Never</span>}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">{sub.paystack_reference?.slice(0,16)}…</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1.5">
+                          {sub.status !== "active" && (
+                            <button onClick={() => handleActivate(sub.id)}
+                              className="px-2.5 py-1 rounded-lg bg-green-600/20 hover:bg-green-600/40 text-green-400 text-xs font-medium transition-colors whitespace-nowrap">
+                              Activate
+                            </button>
+                          )}
+                          {sub.status === "active" && (
+                            <button onClick={() => handleRevoke(sub.id)}
+                              className="px-2.5 py-1 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-400 text-xs font-medium transition-colors whitespace-nowrap">
+                              Revoke
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-gray-600 text-right">{subs.length} result{subs.length !== 1 ? "s" : ""}</p>
+
+      {/* Grant Modal */}
+      {grantModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setGrantModal(false)}>
+          <div className="bg-[#0f0f0f] border border-white/10 rounded-2xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-lg">Grant Free Access</h3>
+              <button onClick={() => setGrantModal(false)} className="text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-400 mb-1.5 block">Customer Email</label>
+                <input value={grantEmail} onChange={e => setGrantEmail(e.target.value)} placeholder="customer@email.com"
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 h-10 text-sm text-white focus:outline-none focus:border-green-500/40" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-400 mb-1.5 block">Plan</label>
+                  <select value={grantPlan} onChange={e => setGrantPlan(e.target.value)}
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 h-10 text-sm text-white focus:outline-none focus:border-green-500/40">
+                    {livePlans.map((p: any) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 mb-1.5 block">Duration (days, 0=∞)</label>
+                  <input type="number" value={grantDays} onChange={e => setGrantDays(Number(e.target.value))} min={0}
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 h-10 text-sm text-white focus:outline-none focus:border-green-500/40" />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setGrantModal(false)} className="flex-1 h-10 rounded-xl border border-white/10 text-gray-400 hover:text-white text-sm transition-colors">Cancel</button>
+              <button onClick={handleGrant} disabled={granting || !grantEmail.trim()}
+                className="flex-1 h-10 rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-semibold transition-all flex items-center justify-center gap-2">
+                {granting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                {granting ? "Granting…" : "Grant Access"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

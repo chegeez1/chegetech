@@ -34,7 +34,7 @@ async function customerFetch(url: string, opts: RequestInit = {}) {
   return res.json();
 }
 
-type DashTab = "orders" | "my-bots" | "wallet" | "referral" | "payment-history" | "receipts" | "support" | "apikeys" | "security" | "profile" | "requests";
+type DashTab = "orders" | "my-bots" | "wallet" | "referral" | "payment-history" | "receipts" | "support" | "apikeys" | "security" | "profile" | "requests" | "all-orders";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   success: { label: "Completed", color: "text-emerald-400", icon: CheckCircle },
@@ -982,6 +982,7 @@ export default function Dashboard() {
             { id: "referral", label: "Referral", icon: Gift },
             { id: "receipts", label: "Receipts", icon: Download },
             { id: "payment-history", label: "Payments", icon: History },
+            { id: "all-orders", label: "All Orders", icon: ShoppingCart },
             { id: "support", label: "Support", icon: MessageCircle },
             { id: "requests", label: "Ideas", icon: Sparkles },
             { id: "apikeys", label: "API Keys", icon: Key },
@@ -1005,6 +1006,10 @@ export default function Dashboard() {
         </div>
 
         {/* ORDERS TAB */}
+        
+        {/* ALL ORDERS TAB */}
+        {tab === "all-orders" && <AllOrdersTab />}
+
         {tab === "orders" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between mb-2">
@@ -2903,4 +2908,57 @@ export default function Dashboard() {
       </div>
     </>
     );
+
+function AllOrdersTab() {
+  const { toast } = useToast();
+  const [allOrders, setAllOrders] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [search, setSearch] = React.useState("");
+  const [typeFilter, setTypeFilter] = React.useState("all");
+  const TYPE_STYLES: Record<string,{label:string;color:string;bg:string}> = {
+    smm:{label:"SMM",color:"text-pink-400",bg:"bg-pink-500/10 border-pink-500/20"},
+    proxy:{label:"Proxy",color:"text-emerald-400",bg:"bg-emerald-500/10 border-emerald-500/20"},
+    digital:{label:"Aged Acct",color:"text-violet-400",bg:"bg-violet-500/10 border-violet-500/20"},
+    giftcard:{label:"Gift Card",color:"text-yellow-400",bg:"bg-yellow-500/10 border-yellow-500/20"},
+    sms:{label:"Bulk SMS",color:"text-green-400",bg:"bg-green-500/10 border-green-500/20"},
+  };
+  const STATUS_CLS: Record<string,string> = {
+    pending:"text-amber-400 border-amber-500/25",delivered:"text-emerald-400 border-emerald-500/25",
+    fulfilled:"text-emerald-400 border-emerald-500/25",completed:"text-emerald-400 border-emerald-500/25",
+    success:"text-emerald-400 border-emerald-500/25",failed:"text-red-400 border-red-500/25",
+    cancelled:"text-red-400 border-red-500/25",processing:"text-blue-400 border-blue-500/25",
+  };
+  React.useEffect(()=>{
+    customerFetch("/api/customer/all-orders").then((d:any)=>{if(d.success)setAllOrders(d.orders||[]);}).catch(()=>{}).finally(()=>setLoading(false));
+  },[]);
+  const types=["all","smm","proxy","digital","giftcard","sms"];
+  const filtered=allOrders.filter(o=>{
+    if(typeFilter!=="all"&&o.type!==typeFilter)return false;
+    if(search&&![o.reference,o.name,o.category].some((v:string)=>(v||"").toLowerCase().includes(search.toLowerCase())))return false;
+    return true;
+  });
+  const total=allOrders.length;
+  const spent=allOrders.reduce((s:number,o:any)=>s+(parseFloat(o.amount_kes||0)),0);
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white flex items-center gap-2"><ShoppingCart className="w-5 h-5"/>All Purchases</h2><p className="text-sm text-gray-400">Every order across all products in one place</p></div></div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[{label:"Total Orders",value:total,c:"text-white"},{label:"Total Spent",value:"KES "+spent.toLocaleString(),c:"text-indigo-400"},{label:"Completed",value:allOrders.filter((o:any)=>["delivered","fulfilled","completed","success"].includes(o.status)).length,c:"text-emerald-400"},{label:"Pending",value:allOrders.filter((o:any)=>o.status==="pending").length,c:"text-amber-400"}].map(s=>(<div key={s.label} className="rounded-xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-gray-400 mb-1">{s.label}</p><p className={"text-xl font-bold "+s.c}>{s.value}</p></div>))}</div>
+      <div className="flex gap-2 overflow-x-auto pb-1">{types.map(t=>(<button key={t} onClick={()=>setTypeFilter(t)} className={"px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap border shrink-0 transition-colors "+(typeFilter===t?"bg-indigo-500/20 border-indigo-500/30 text-indigo-300":"bg-white/5 border-white/10 text-white/50 hover:bg-white/10")}>{t==="all"?"All Orders":(TYPE_STYLES[t]?.label||t)}</button>))}</div>
+      <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" /><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search orders..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9"/></div>
+      {loading?(<div className="space-y-3">{[...Array(5)].map((_,i)=><div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse"/>)}</div>):filtered.length===0?(<div className="text-center py-16 text-white/30"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30"/><p className="text-sm">No orders found</p><p className="text-xs mt-1">Your purchases from all stores will appear here</p></div>):(
+        <div className="space-y-2">{filtered.map((o:any,i:number)=>{
+          const ts=TYPE_STYLES[o.type]||{label:o.type,color:"text-gray-400",bg:"bg-white/5 border-white/10"};
+          const sc=STATUS_CLS[o.status]||"text-gray-400 border-white/10";
+          const dateStr=o.created_at?new Date(o.created_at).toLocaleDateString("en-KE",{day:"numeric",month:"short",year:"numeric"}):"—";
+          return (
+            <div key={i} className="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0"><div className="flex items-center gap-2 mb-0.5"><span className={"text-xs px-2 py-0.5 rounded-full border font-medium "+ts.bg+" "+ts.color}>{ts.label}</span><p className="text-sm text-white font-medium truncate">{o.name||o.category}</p></div><div className="flex items-center gap-3"><p className="text-xs font-mono text-gray-500">{(o.reference||"").slice(0,14)}</p><p className="text-xs text-gray-500">{dateStr}</p></div></div>
+              <div className="text-right shrink-0"><p className="text-sm font-bold text-white">KES {parseFloat(o.amount_kes||0).toLocaleString()}</p><span className={"text-xs px-1.5 py-0.5 rounded border capitalize "+sc}>{o.status}</span></div>
+            </div>
+          );
+        })}</div>
+      )}
+    </div>
+  );
+}
 }

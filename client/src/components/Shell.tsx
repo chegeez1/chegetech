@@ -1,6 +1,6 @@
 import { useLocation } from "wouter";
 import {
-  ShoppingBag, Bot, Server, LayoutDashboard, LogOut, Zap, Smartphone
+  ShoppingBag, Bot, Server, LayoutDashboard, LogOut, Zap, Smartphone, TrendingUp, Shield, Users, Mail, Gift, MessageSquare
 } from "lucide-react";
 import { useState } from "react";
 
@@ -18,7 +18,14 @@ const NAV_ITEMS: NavItem[] = [
   { icon: ShoppingBag, label: "Premium Accounts", shortLabel: "Accounts", path: "/",          color: "text-indigo-400", activeBg: "bg-indigo-500/20 border-indigo-500/30", activeTextBg: "bg-indigo-500/15" },
   { icon: Bot,         label: "WhatsApp Bots",    shortLabel: "Bots",     path: "/bots",       color: "text-green-400",  activeBg: "bg-green-500/20 border-green-500/30",  activeTextBg: "bg-green-500/15"  },
   { icon: Server,      label: "VPS Hosting",      shortLabel: "VPS",      path: "/vps",        color: "text-cyan-400",   activeBg: "bg-cyan-500/20 border-cyan-500/30",    activeTextBg: "bg-cyan-500/15"   },
+  { icon: Gift,          label: "Gift Cards",   shortLabel: "Gifts",   path: "/giftcards",color: "text-yellow-400", activeBg: "bg-yellow-500/20 border-yellow-500/30",   activeTextBg: "bg-yellow-500/15"  },
+  { icon: Zap,           label: "Trading Bot",  shortLabel: "Bot",     path: "/tradingbot", color: "text-lime-400",   activeBg: "bg-lime-500/20 border-lime-500/30",       activeTextBg: "bg-lime-500/15"    },
   { icon: Smartphone, label: "Free Numbers", shortLabel: "Numbers", path: "/numbers", color: "text-cyan-400", activeBg: "bg-cyan-500/20 border-cyan-500/30", activeTextBg: "bg-cyan-500/15" },
+  { icon: TrendingUp,   label: "SMM Boost",    shortLabel: "SMM",     path: "/smm",     color: "text-pink-400",   activeBg: "bg-pink-500/20 border-pink-500/30",    activeTextBg: "bg-pink-500/15"   },
+  { icon: Shield,        label: "Proxies",      shortLabel: "Proxy",   path: "/proxy",   color: "text-emerald-400", activeBg: "bg-emerald-500/20 border-emerald-500/30", activeTextBg: "bg-emerald-500/15" },
+  { icon: Users,         label: "Aged Accts",   shortLabel: "Accts",   path: "/accounts",color: "text-violet-400",  activeBg: "bg-violet-500/20 border-violet-500/30",   activeTextBg: "bg-violet-500/15"  },
+  { icon: Mail,          label: "TempMail",     shortLabel: "Mail",    path: "/tempmail",color: "text-sky-400",    activeBg: "bg-sky-500/20 border-sky-500/30",         activeTextBg: "bg-sky-500/15"     },
+  { icon: MessageSquare, label: "Bulk SMS",     shortLabel: "SMS",     path: "/sms",      color: "text-green-400",  activeBg: "bg-green-500/20 border-green-500/30",     activeTextBg: "bg-green-500/15"   },
   { icon: LayoutDashboard, label: "My Account",   shortLabel: "Account",  path: "/dashboard",  color: "text-purple-400", activeBg: "bg-purple-500/20 border-purple-500/30", activeTextBg: "bg-purple-500/15" },
 ];
 
