@@ -244,9 +244,14 @@ export function registerDownloadRoutes(app: Express) {
         "--add-header", "Accept-Language:en-US,en;q=0.9",
       ];
 
-      // YouTube bot detection bypass — use the TV client which isn't blocked
+      // YouTube bot detection bypass:
+      // Android/iOS app clients are not subject to the same bot checks as web.
+      // Try android first (no sign-in required for public videos), then ios, then mweb.
       if (isYouTube) {
-        args.push("--extractor-args", "youtube:player_client=tv,web");
+        args.push(
+          "--extractor-args", "youtube:player_client=android,ios,mweb",
+          "--socket-timeout", "30",
+        );
       }
 
       const raw = await ytdlp(args);
@@ -263,12 +268,14 @@ export function registerDownloadRoutes(app: Express) {
       console.error("[downloader] info error:", msg.slice(0, 400));
 
       const notFound  = msg.includes("Video unavailable") || msg.includes("Private video") || msg.includes("does not exist");
-      const botBlock  = msg.includes("Sign in") || msg.includes("bot") || msg.includes("confirm your age");
+      const botBlock  = msg.includes("Sign in") || msg.includes("bot") || msg.includes("confirm your age") || msg.includes("nsig") || msg.includes("sabotage");
+      const ageGate   = msg.includes("age") || msg.includes("18+");
       const notReady  = msg.includes("ENOENT");
 
       const error = notReady  ? "Downloader is still initialising — please wait 30 seconds and try again."
                   : notFound  ? "Video unavailable or private. Check the URL and try again."
-                  : botBlock  ? "YouTube is blocking this request. Try a TikTok or Instagram link, or try again in a few minutes."
+                  : ageGate   ? "Age-restricted video — cannot download without account login."
+                  : botBlock  ? "YouTube is temporarily blocking this server. Please try a TikTok or Instagram link instead."
                   : "Could not fetch video info. Check the URL and try again.";
 
       res.status(500).json({ error });
@@ -325,9 +332,12 @@ export function registerDownloadRoutes(app: Express) {
         "--add-header", "Accept-Language:en-US,en;q=0.9",
         "-o", tmpFile,
       ];
-      // YouTube bot detection bypass
+      // YouTube bot detection bypass — android/ios clients bypass bot checks
       if (isYouTube) {
-        dlArgs.push("--extractor-args", "youtube:player_client=tv,web");
+        dlArgs.push(
+          "--extractor-args", "youtube:player_client=android,ios,mweb",
+          "--socket-timeout", "30",
+        );
       }
       await execFileAsync(bin, dlArgs, { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
 
