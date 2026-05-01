@@ -5,12 +5,14 @@
  *   - Ksh 100/month subscription for unlimited via Paystack
  *
  * yt-dlp is downloaded automatically at server start if not already present.
+ * Videos are proxied through the server so CDN 403s never reach the browser.
  */
 import type { Express, Request, Response } from "express";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { createWriteStream, existsSync, mkdirSync, chmodSync } from "fs";
-import { get } from "https";
+import https from "https";
+import http from "http";
 import path from "path";
 
 const execFileAsync = promisify(execFile);
@@ -19,7 +21,6 @@ const execFileAsync = promisify(execFile);
 const BIN_DIR  = path.join(process.cwd(), "node_modules", "youtube-dl-exec", "bin");
 const BIN_PATH = path.join(BIN_DIR, "yt-dlp");
 
-// Direct CDN URL — no GitHub API call, no rate limits
 const YTDLP_CDN = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
 
 let ytdlpReady: Promise<string> | null = null;
@@ -27,8 +28,9 @@ let ytdlpReady: Promise<string> | null = null;
 function downloadFile(url: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const file = createWriteStream(dest);
-    const request = (u: string) =>
-      get(u, (res) => {
+    const request = (u: string) => {
+      const mod = u.startsWith("https") ? https : http;
+      mod.get(u, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           request(res.headers.location);
           return;
@@ -41,6 +43,7 @@ function downloadFile(url: string, dest: string): Promise<void> {
         file.on("finish", () => file.close(() => resolve()));
         file.on("error", reject);
       }).on("error", reject);
+    };
     request(url);
   });
 }
@@ -48,7 +51,6 @@ function downloadFile(url: string, dest: string): Promise<void> {
 function ensureYtDlp(): Promise<string> {
   if (ytdlpReady) return ytdlpReady;
 
-  // Check all known locations first
   const candidates = [
     BIN_PATH,
     path.join(process.cwd(), "node_modules", ".bin", "yt-dlp"),
@@ -63,7 +65,6 @@ function ensureYtDlp(): Promise<string> {
     }
   }
 
-  // Not found — download from GitHub CDN at runtime
   console.log("[downloader] yt-dlp not found — downloading from GitHub CDN...");
   ytdlpReady = (async () => {
     mkdirSync(BIN_DIR, { recursive: true });
@@ -72,14 +73,13 @@ function ensureYtDlp(): Promise<string> {
     console.log("[downloader] yt-dlp ready at", BIN_PATH);
     return BIN_PATH;
   })().catch((err) => {
-    ytdlpReady = null; // allow retry on next request
+    ytdlpReady = null;
     throw err;
   });
 
   return ytdlpReady;
 }
 
-// Start download eagerly at module load so it is ready by the time requests arrive
 ensureYtDlp().catch((err) =>
   console.error("[downloader] Background yt-dlp download failed:", err.message)
 );
@@ -92,6 +92,80 @@ async function ytdlp(args: string[]): Promise<string> {
     maxBuffer: 4 * 1024 * 1024,
   });
   return stdout.trim();
+}
+
+// ── Proxy a CDN URL through the server (handles redirects, spoofs headers) ───
+function proxyVideoStream(
+  cdnUrl: string,
+  referer: string,
+  filename: string,
+  res: Response,
+  req: Request,
+): void {
+  const BROWSER_UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+  const doRequest = (u: string, redirectsLeft = 5) => {
+    const mod = u.startsWith("https") ? https : http;
+    const proxyReq = mod.get(
+      u,
+      {
+        headers: {
+          "User-Agent":      BROWSER_UA,
+          "Referer":         referer,
+          "Accept":          "*/*",
+          "Accept-Encoding": "identity",
+          "Connection":      "keep-alive",
+        },
+      },
+      (proxyRes) => {
+        // Follow redirects
+        if (
+          proxyRes.statusCode &&
+          proxyRes.statusCode >= 300 &&
+          proxyRes.statusCode < 400 &&
+          proxyRes.headers.location
+        ) {
+          if (redirectsLeft <= 0) {
+            if (!res.headersSent) res.status(502).json({ error: "Too many redirects from CDN" });
+            return;
+          }
+          doRequest(proxyRes.headers.location, redirectsLeft - 1);
+          return;
+        }
+
+        if (!proxyRes.statusCode || proxyRes.statusCode < 200 || proxyRes.statusCode >= 300) {
+          if (!res.headersSent)
+            res.status(502).json({ error: `CDN returned HTTP ${proxyRes.statusCode}` });
+          return;
+        }
+
+        // Set download headers
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.setHeader("Content-Type", proxyRes.headers["content-type"] || "video/mp4");
+        if (proxyRes.headers["content-length"]) {
+          res.setHeader("Content-Length", proxyRes.headers["content-length"]);
+        }
+        res.setHeader("Cache-Control", "no-store");
+
+        proxyRes.pipe(res);
+        proxyRes.on("error", () => {
+          if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+        });
+      },
+    );
+
+    proxyReq.on("error", (err) => {
+      console.error("[downloader] Proxy request error:", err.message);
+      if (!res.headersSent) res.status(500).json({ error: "Failed to fetch video from CDN" });
+    });
+
+    // If client disconnects, abort upstream request
+    req.on("close", () => proxyReq.destroy());
+  };
+
+  doRequest(cdnUrl);
 }
 
 // ── In-memory quota store (resets monthly) ───────────────────────────────────
@@ -136,6 +210,10 @@ function isAllowedUrl(raw: string): boolean {
   } catch { return false; }
 }
 
+function safeFilename(title: string): string {
+  return (title || "video").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_").slice(0, 80) + ".mp4";
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 export function registerDownloadRoutes(app: Express) {
 
@@ -168,14 +246,6 @@ export function registerDownloadRoutes(app: Express) {
         duration:  info.duration  || 0,
         uploader:  info.uploader  || info.channel || "",
         platform:  info.extractor_key || "",
-        formats: (info.formats || [])
-          .filter((f: any) => f.ext === "mp4" || f.acodec !== "none")
-          .slice(-6)
-          .map((f: any) => ({
-            id:    f.format_id,
-            label: f.format_note || (f.height ? f.height + "p" : f.ext),
-            ext:   f.ext,
-          })),
       });
     } catch (err: any) {
       const isSetupErr =
@@ -190,9 +260,11 @@ export function registerDownloadRoutes(app: Express) {
     }
   });
 
-  // POST /api/dl/link — get a direct download URL (quota enforced)
-  app.post("/api/dl/link", async (req: Request, res: Response) => {
-    const { url, email } = req.body as { url?: string; email?: string };
+  // GET /api/dl/stream — stream video directly through the server (quota enforced)
+  // Usage: GET /api/dl/stream?url=<encoded_url>&email=<optional_email>&title=<optional_title>
+  app.get("/api/dl/stream", async (req: Request, res: Response) => {
+    const { url, email, title } = req.query as { url?: string; email?: string; title?: string };
+
     if (!url || !isAllowedUrl(url)) {
       return res.status(400).json({ error: "Invalid or unsupported URL" });
     }
@@ -213,7 +285,8 @@ export function registerDownloadRoutes(app: Express) {
     }
 
     try {
-      const directUrl = await ytdlp([
+      // Get direct CDN URL via yt-dlp
+      const rawUrl = await ytdlp([
         url,
         "--print", "urls",
         "--no-playlist",
@@ -223,10 +296,23 @@ export function registerDownloadRoutes(app: Express) {
         "-f", "best[ext=mp4][height<=720]/best[ext=mp4]/best",
       ]);
 
+      const cdnUrl = rawUrl.split("\n")[0].trim();
+      if (!cdnUrl) throw new Error("yt-dlp returned empty URL");
+
+      // Consume quota before streaming begins
       if (!isSubscribed) incrementUsage(ip);
-      res.json({ url: directUrl.split("\n")[0] });
-    } catch {
-      res.status(500).json({ error: "Could not generate download link. Try again shortly." });
+
+      // Determine referer from the original URL
+      let referer = "https://www.tiktok.com/";
+      try { referer = new URL(url).origin + "/"; } catch {}
+
+      const filename = safeFilename(title || "video");
+      proxyVideoStream(cdnUrl, referer, filename, res, req);
+
+    } catch (err: any) {
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Could not generate download. Try again shortly." });
+      }
     }
   });
 
@@ -248,7 +334,7 @@ export function registerDownloadRoutes(app: Express) {
     res.json({ subscribed: subscribers.has(email) });
   });
 
-  // GET /api/dl/admin/subscribers — list all unlimited-access emails
+  // GET /api/dl/admin/subscribers
   app.get("/api/dl/admin/subscribers", (req: Request, res: Response) => {
     const adminKey = req.headers["x-admin-key"];
     if (adminKey !== process.env.ADMIN_API_KEY && adminKey !== "chegetech-admin") {
@@ -257,7 +343,7 @@ export function registerDownloadRoutes(app: Express) {
     res.json({ subscribers: [...subscribers] });
   });
 
-  // POST /api/dl/admin/revoke — remove unlimited access from an email
+  // POST /api/dl/admin/revoke
   app.post("/api/dl/admin/revoke", (req: Request, res: Response) => {
     const adminKey = req.headers["x-admin-key"];
     if (adminKey !== process.env.ADMIN_API_KEY && adminKey !== "chegetech-admin") {
@@ -269,7 +355,7 @@ export function registerDownloadRoutes(app: Express) {
     res.json({ success: true, message: `${email} revoked` });
   });
 
-  // GET /api/dl/admin/status — check yt-dlp availability
+  // GET /api/dl/admin/status
   app.get("/api/dl/admin/status", async (req: Request, res: Response) => {
     const adminKey = req.headers["x-admin-key"];
     if (adminKey !== process.env.ADMIN_API_KEY && adminKey !== "chegetech-admin") {
