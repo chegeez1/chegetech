@@ -11075,29 +11075,40 @@ function ChegeBotSubsAdminTab() {
 // ═══════════════════════════════════════════════════════════════
 // PO TOKEN INSTRUCTIONS COMPONENT
 // ═══════════════════════════════════════════════════════════════
-const CONSOLE_SCRIPT = `// Step 1: Open youtube.com, play any video, then paste this in the Console tab:
+const CONSOLE_SCRIPT = `// Paste this in Chrome DevTools → Console tab while on youtube.com
+// It captures poToken from the outgoing request body + visitorData from ytcfg
 (function() {
-  const visitorData = ytcfg.get('VISITOR_DATA') || '';
-  console.log('%c✅ visitorData:', 'color:lime;font-weight:bold', visitorData);
-  if (!visitorData) { console.warn('Not on YouTube or not loaded yet — refresh the page and try again.'); return; }
-  // Step 2: Intercept the next player API call to grab poToken
+  const visitorData = (typeof ytcfg !== 'undefined' && ytcfg.get('VISITOR_DATA')) || '';
+  if (visitorData) {
+    console.log('%c✅ visitorData:', 'color:lime;font-weight:bold', visitorData);
+    try { copy(visitorData); console.log('%c📋 visitorData copied to clipboard', 'color:cyan'); } catch(e){}
+  } else {
+    console.warn('visitorData not found — make sure you are on youtube.com and a video is loaded');
+  }
+
+  // Intercept outgoing /player requests to read poToken from the request body
   const origFetch = window.fetch;
   window.fetch = async function(...args) {
-    const res = await origFetch(...args);
     try {
-      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-      if (url.includes('youtubei') && url.includes('player')) {
-        const clone = res.clone();
-        const json = await clone.json();
-        const pt = json?.playerConfig?.attestationConfig?.botguardData?.poToken || json?.poToken || '';
-        if (pt) { console.log('%c✅ poToken:', 'color:lime;font-weight:bold', pt); window.fetch = origFetch; }
+      const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+      if (url.includes('/youtubei/') && (url.includes('/player') || url.includes('/ad_break'))) {
+        const opts = args[1];
+        if (opts?.body) {
+          const body = JSON.parse(typeof opts.body === 'string' ? opts.body : new TextDecoder().decode(opts.body));
+          const pt = (body?.serviceIntegrityDimensions?.poToken)
+                  || (body?.context?.client?.poToken)
+                  || '';
+          if (pt) {
+            console.log('%c✅ poToken:', 'color:lime;font-weight:bold', pt);
+            console.log('%c👉 Copy the poToken above, then paste it in the admin panel', 'color:yellow');
+            window.fetch = origFetch;
+          }
+        }
       }
-    } catch {}
-    return res;
+    } catch(e) {}
+    return origFetch(...args);
   };
-  console.log('%c⏳ Now RELOAD or click a video to capture poToken...', 'color:orange');
-  copy(visitorData);
-  console.log('%c📋 visitorData copied to clipboard!', 'color:cyan');
+  console.log('%c⏳ Script active — interact with any video to capture poToken...', 'color:orange;font-weight:bold');
 })();`;
 
 function PoTokenInstructions({ onSet }: { onSet: (po: string, vd: string) => void }) {
@@ -11112,33 +11123,24 @@ function PoTokenInstructions({ onSet }: { onSet: (po: string, vd: string) => voi
 
   return (
     <div className="text-xs bg-orange-500/10 rounded-xl p-3 space-y-2">
-      <p className="font-semibold text-orange-300 text-sm">Get PO Token from YouTube (2 ways)</p>
-
-      <div className="space-y-1">
-        <p className="text-orange-200 font-medium">Method A — Network tab (you can see it now!):</p>
-        <ol className="list-decimal list-inside space-y-1 text-orange-200/80">
-          <li>Click any request (e.g. <code className="bg-black/30 px-1 rounded">ad_break</code>) in the Network panel</li>
-          <li>Click the <strong className="text-white">Payload</strong> sub-tab on the right</li>
-          <li>Find <code className="bg-black/30 px-1 rounded">visitorData</code> — copy it</li>
-          <li>Find <code className="bg-black/30 px-1 rounded">poToken</code> — copy it (may be inside <code className="bg-black/30 px-1 rounded">attestationConfig</code>)</li>
-        </ol>
+      <p className="font-semibold text-orange-300 text-sm">Get PO Token via Console (30 seconds)</p>
+      <ol className="list-decimal list-inside space-y-1.5 text-orange-200/80">
+        <li>Open <strong className="text-white">youtube.com</strong> in Chrome and play any video</li>
+        <li>Open DevTools → click <strong className="text-white">Console</strong> tab</li>
+        <li>Click <strong className="text-orange-300">Copy Script</strong> below, paste it in Console, press Enter</li>
+        <li>The <code className="bg-black/30 px-1 rounded">visitorData</code> prints instantly in green</li>
+        <li>Interact with any video (play/seek) — <code className="bg-black/30 px-1 rounded">poToken</code> appears in green</li>
+        <li>Copy each value into the fields above and click <strong className="text-white">Save PO Token</strong></li>
+      </ol>
+      <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2 text-yellow-200/80">
+        <strong className="text-yellow-300">Note:</strong> Do NOT copy cookies from the Network tab — those are rotated and won't work. Use the "Get cookies.txt LOCALLY" Chrome extension instead.
       </div>
-
-      <div className="border-t border-orange-500/20 pt-2 space-y-1">
-        <p className="text-orange-200 font-medium">Method B — Console script (easier):</p>
-        <ol className="list-decimal list-inside space-y-1 text-orange-200/80">
-          <li>Click the <strong className="text-white">Console</strong> tab in DevTools</li>
-          <li>Click <strong>Copy Script</strong> below, paste it, press Enter</li>
-          <li>Reload YouTube — both values print automatically in green</li>
-        </ol>
-        <button
-          onClick={copyScript}
-          className={`w-full h-8 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${copied ? "bg-green-600 text-white" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
-        >
-          {copied ? "✓ Copied!" : "Copy Script"}
-        </button>
-      </div>
-
+      <button
+        onClick={copyScript}
+        className={`w-full h-8 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${copied ? "bg-green-600 text-white" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
+      >
+        {copied ? "✓ Copied!" : "Copy Script"}
+      </button>
       <p className="text-gray-500 text-[10px]">After getting both values, click "Set Token" above and paste them in.</p>
     </div>
   );
