@@ -301,7 +301,10 @@ export function registerDownloadRoutes(app: Express) {
         "--no-check-certificates",
         "--no-warnings",
         "--quiet",
-        "-f", "best[ext=mp4][height<=720]/best[ext=mp4]/best",
+        // Prefer H.264 (avc1) — plays natively on Windows/macOS without extra codecs
+        // Falls back to any mp4, then best available
+        "-f", "bestvideo[vcodec^=avc1][height<=720]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=720]+bestaudio[ext=m4a]/best[vcodec^=avc1][height<=720]/best[ext=mp4][height<=720]/best[ext=mp4]/best",
+        "--merge-output-format", "mp4",
         "--add-header", `User-Agent:${BROWSER_UA}`,
         "--add-header", "Accept-Language:en-US,en;q=0.9",
         "-o", tmpFile,
