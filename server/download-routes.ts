@@ -229,8 +229,11 @@ export function registerDownloadRoutes(app: Express) {
     if (!url || !isAllowedUrl(url)) {
       return res.status(400).json({ error: "Invalid or unsupported URL" });
     }
+
+    const isYouTube = /youtube\.com|youtu\.be/.test(url);
+
     try {
-      const raw = await ytdlp([
+      const args = [
         url,
         "--dump-single-json",
         "--no-playlist",
@@ -239,7 +242,14 @@ export function registerDownloadRoutes(app: Express) {
         "--quiet",
         "--add-header", `User-Agent:${BROWSER_UA}`,
         "--add-header", "Accept-Language:en-US,en;q=0.9",
-      ]);
+      ];
+
+      // YouTube bot detection bypass — use the TV client which isn't blocked
+      if (isYouTube) {
+        args.push("--extractor-args", "youtube:player_client=tv,web");
+      }
+
+      const raw = await ytdlp(args);
       const info = JSON.parse(raw);
       res.json({
         title:     info.title     || "Unknown title",
@@ -249,14 +259,19 @@ export function registerDownloadRoutes(app: Express) {
         platform:  info.extractor_key || "",
       });
     } catch (err: any) {
-      const msg = String(err?.message || "");
-      const isSetupErr = msg.includes("ENOENT") || msg.includes("yt-dlp");
-      console.error("[downloader] info error:", msg.slice(0, 300));
-      res.status(500).json({
-        error: isSetupErr
-          ? "Downloader is still initialising — please wait 30 seconds and try again."
-          : "Could not fetch video info. Check the URL and try again.",
-      });
+      const msg = String(err?.stderr || err?.message || "");
+      console.error("[downloader] info error:", msg.slice(0, 400));
+
+      const notFound  = msg.includes("Video unavailable") || msg.includes("Private video") || msg.includes("does not exist");
+      const botBlock  = msg.includes("Sign in") || msg.includes("bot") || msg.includes("confirm your age");
+      const notReady  = msg.includes("ENOENT");
+
+      const error = notReady  ? "Downloader is still initialising — please wait 30 seconds and try again."
+                  : notFound  ? "Video unavailable or private. Check the URL and try again."
+                  : botBlock  ? "YouTube is blocking this request. Try a TikTok or Instagram link, or try again in a few minutes."
+                  : "Could not fetch video info. Check the URL and try again.";
+
+      res.status(500).json({ error });
     }
   });
 
@@ -295,20 +310,25 @@ export function registerDownloadRoutes(app: Express) {
       // yt-dlp downloads the video itself — it handles all cookies/auth internally
       // This avoids CDN 403s from IP/cookie mismatch when proxying raw URLs
       const bin = await ensureYtDlp();
-      await execFileAsync(bin, [
+      const isYouTube = /youtube\.com|youtu\.be/.test(url);
+      const dlArgs = [
         url,
         "--no-playlist",
         "--no-check-certificates",
         "--no-warnings",
         "--quiet",
         // Prefer H.264 (avc1) — plays natively on Windows/macOS without extra codecs
-        // Falls back to any mp4, then best available
         "-f", "bestvideo[vcodec^=avc1][height<=720]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=720]+bestaudio[ext=m4a]/best[vcodec^=avc1][height<=720]/best[ext=mp4][height<=720]/best[ext=mp4]/best",
         "--merge-output-format", "mp4",
         "--add-header", `User-Agent:${BROWSER_UA}`,
         "--add-header", "Accept-Language:en-US,en;q=0.9",
         "-o", tmpFile,
-      ], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
+      ];
+      // YouTube bot detection bypass
+      if (isYouTube) {
+        dlArgs.push("--extractor-args", "youtube:player_client=tv,web");
+      }
+      await execFileAsync(bin, dlArgs, { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
 
       if (!existsSync(tmpFile)) throw new Error("yt-dlp produced no output file");
 
