@@ -1,31 +1,63 @@
 /**
  * dl-db.ts
- * Lightweight SQLite database for the video downloader feature.
+ * Persistent storage for the video downloader feature.
+ *
+ * Uses PostgreSQL when EXTERNAL_DATABASE_URL or DATABASE_URL is set (production),
+ * otherwise falls back to SQLite (local dev).
  *
  * Tables:
- *   dl_subscribers  — emails with unlimited access (survives server restarts)
+ *   dl_subscribers  — emails with unlimited access
  *   dl_usage        — daily download counts per IP (resets each calendar day)
  */
+
+// ─── PostgreSQL path ──────────────────────────────────────────────────────────
+
+import pg from "pg";
+const { Pool } = pg;
+
+const PG_URL = process.env.EXTERNAL_DATABASE_URL || process.env.DATABASE_URL;
+
+let pgPool: InstanceType<typeof Pool> | null = null;
+
+async function getPool(): Promise<InstanceType<typeof Pool>> {
+  if (pgPool) return pgPool;
+  pgPool = new Pool({ connectionString: PG_URL, ssl: { rejectUnauthorized: false } });
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS dl_subscribers (
+      email      TEXT PRIMARY KEY,
+      granted_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS dl_usage (
+      ip   TEXT    NOT NULL,
+      date TEXT    NOT NULL,
+      cnt  INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (ip, date)
+    );
+  `);
+  // Prune old usage
+  await pgPool.query("DELETE FROM dl_usage WHERE date < (NOW() AT TIME ZONE 'UTC' - INTERVAL '3 days')::DATE::TEXT");
+  return pgPool;
+}
+
+// ─── SQLite fallback (local dev only) ─────────────────────────────────────────
+
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-const DB_DIR  = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIR, "downloads.db");
+let _sqlite: ReturnType<typeof Database> | null = null;
 
-let _db: ReturnType<typeof Database> | null = null;
-
-function db(): ReturnType<typeof Database> {
-  if (_db) return _db;
-  fs.mkdirSync(DB_DIR, { recursive: true });
-  _db = new Database(DB_PATH);
-  _db.pragma("journal_mode = WAL");
-  _db.exec(`
+function getSqlite(): ReturnType<typeof Database> {
+  if (_sqlite) return _sqlite;
+  const dir = path.join(process.cwd(), "data");
+  fs.mkdirSync(dir, { recursive: true });
+  _sqlite = new Database(path.join(dir, "downloads.db"));
+  _sqlite.pragma("journal_mode = WAL");
+  _sqlite.exec(`
     CREATE TABLE IF NOT EXISTS dl_subscribers (
       email TEXT PRIMARY KEY,
       granted_at TEXT DEFAULT (datetime('now'))
     );
-
     CREATE TABLE IF NOT EXISTS dl_usage (
       ip   TEXT NOT NULL,
       date TEXT NOT NULL,
@@ -33,54 +65,111 @@ function db(): ReturnType<typeof Database> {
       PRIMARY KEY (ip, date)
     );
   `);
-  // Prune usage records older than 3 days to keep the DB tiny
-  _db.prepare("DELETE FROM dl_usage WHERE date < date('now', '-3 days')").run();
-  return _db;
+  _sqlite.prepare("DELETE FROM dl_usage WHERE date < date('now', '-3 days')").run();
+  return _sqlite;
 }
 
-// ── Initialise at import time ─────────────────────────────────────────────────
-export function initDlDb() { db(); }
+// ─── Initialise ───────────────────────────────────────────────────────────────
 
-// ── Subscribers ───────────────────────────────────────────────────────────────
-export function isSubscriber(email: string): boolean {
-  const row = db().prepare("SELECT 1 FROM dl_subscribers WHERE email = ?").get(email.toLowerCase());
+export async function initDlDb(): Promise<void> {
+  if (PG_URL) {
+    await getPool();
+    console.log("[dl-db] using PostgreSQL for downloader data");
+  } else {
+    getSqlite();
+    console.log("[dl-db] using SQLite for downloader data (dev mode)");
+  }
+}
+
+// ─── Today key (UTC) ─────────────────────────────────────────────────────────
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// ─── Subscribers ──────────────────────────────────────────────────────────────
+
+export async function isSubscriber(email: string): Promise<boolean> {
+  const e = email.toLowerCase();
+  if (PG_URL) {
+    const pool = await getPool();
+    const { rows } = await pool.query("SELECT 1 FROM dl_subscribers WHERE email = $1", [e]);
+    return rows.length > 0;
+  }
+  const row = getSqlite().prepare("SELECT 1 FROM dl_subscribers WHERE email = ?").get(e);
   return !!row;
 }
 
-export function addSubscriber(email: string): void {
-  db().prepare(
-    "INSERT INTO dl_subscribers (email) VALUES (?) ON CONFLICT(email) DO NOTHING"
-  ).run(email.toLowerCase());
+export async function addSubscriber(email: string): Promise<void> {
+  const e = email.toLowerCase();
+  if (PG_URL) {
+    const pool = await getPool();
+    await pool.query(
+      "INSERT INTO dl_subscribers (email) VALUES ($1) ON CONFLICT (email) DO NOTHING", [e]
+    );
+  } else {
+    getSqlite().prepare(
+      "INSERT INTO dl_subscribers (email) VALUES (?) ON CONFLICT(email) DO NOTHING"
+    ).run(e);
+  }
 }
 
-export function removeSubscriber(email: string): void {
-  db().prepare("DELETE FROM dl_subscribers WHERE email = ?").run(email.toLowerCase());
+export async function removeSubscriber(email: string): Promise<void> {
+  const e = email.toLowerCase();
+  if (PG_URL) {
+    const pool = await getPool();
+    await pool.query("DELETE FROM dl_subscribers WHERE email = $1", [e]);
+  } else {
+    getSqlite().prepare("DELETE FROM dl_subscribers WHERE email = ?").run(e);
+  }
 }
 
-export function listSubscribers(): string[] {
-  const rows = db().prepare(
+export async function listSubscribers(): Promise<string[]> {
+  if (PG_URL) {
+    const pool = await getPool();
+    const { rows } = await pool.query(
+      "SELECT email FROM dl_subscribers ORDER BY granted_at DESC"
+    );
+    return rows.map((r: { email: string }) => r.email);
+  }
+  const rows = getSqlite().prepare(
     "SELECT email FROM dl_subscribers ORDER BY granted_at DESC"
   ).all() as { email: string }[];
   return rows.map(r => r.email);
 }
 
-// ── Daily usage ───────────────────────────────────────────────────────────────
-function todayKey(): string {
-  // YYYY-MM-DD in UTC (consistent with server timezone)
-  return new Date().toISOString().slice(0, 10);
-}
+// ─── Daily usage ──────────────────────────────────────────────────────────────
 
-export function getDailyUsage(ip: string): number {
-  const row = db().prepare(
+export async function getDailyUsage(ip: string): Promise<number> {
+  if (PG_URL) {
+    const pool = await getPool();
+    const { rows } = await pool.query(
+      "SELECT cnt FROM dl_usage WHERE ip = $1 AND date = $2", [ip, todayKey()]
+    );
+    return rows[0]?.cnt ?? 0;
+  }
+  const row = getSqlite().prepare(
     "SELECT cnt FROM dl_usage WHERE ip = ? AND date = ?"
   ).get(ip, todayKey()) as { cnt: number } | undefined;
   return row?.cnt ?? 0;
 }
 
-export function incrementDailyUsage(ip: string): number {
-  db().prepare(`
+export async function incrementDailyUsage(ip: string): Promise<number> {
+  if (PG_URL) {
+    const pool = await getPool();
+    await pool.query(
+      `INSERT INTO dl_usage (ip, date, cnt) VALUES ($1, $2, 1)
+       ON CONFLICT (ip, date) DO UPDATE SET cnt = dl_usage.cnt + 1`,
+      [ip, todayKey()]
+    );
+    return getDailyUsage(ip);
+  }
+  getSqlite().prepare(`
     INSERT INTO dl_usage (ip, date, cnt) VALUES (?, ?, 1)
     ON CONFLICT(ip, date) DO UPDATE SET cnt = cnt + 1
   `).run(ip, todayKey());
-  return getDailyUsage(ip);
+  const row = getSqlite().prepare(
+    "SELECT cnt FROM dl_usage WHERE ip = ? AND date = ?"
+  ).get(ip, todayKey()) as { cnt: number } | undefined;
+  return row?.cnt ?? 0;
 }
