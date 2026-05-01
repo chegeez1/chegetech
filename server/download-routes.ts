@@ -10,7 +10,7 @@
 import type { Express, Request, Response } from "express";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { createWriteStream, createReadStream, existsSync, mkdirSync, chmodSync, unlinkSync } from "fs";
+import { createWriteStream, createReadStream, existsSync, mkdirSync, chmodSync, unlinkSync, writeFileSync } from "fs";
 import https from "https";
 import http from "http";
 import path from "path";
@@ -96,6 +96,28 @@ function ensureYtDlp(): Promise<string> {
 ensureYtDlp().catch((err) =>
   console.error("[downloader] Background yt-dlp download failed:", err.message)
 );
+
+// ── YouTube cookies — written once at startup from YOUTUBE_COOKIES env var ────
+// Set this on Render: Environment → YOUTUBE_COOKIES → paste your cookies.txt content
+// Export from browser using "Get cookies.txt LOCALLY" extension on youtube.com
+
+const COOKIES_FILE = path.join(os.tmpdir(), "yt_cookies.txt");
+let cookiesReady = false;
+
+(function setupCookies() {
+  const raw = process.env.YOUTUBE_COOKIES;
+  if (!raw) {
+    console.log("[downloader] YOUTUBE_COOKIES not set — YouTube downloads may be blocked by bot detection");
+    return;
+  }
+  try {
+    writeFileSync(COOKIES_FILE, raw, "utf8");
+    cookiesReady = true;
+    console.log("[downloader] YouTube cookies loaded from YOUTUBE_COOKIES env var");
+  } catch (e: any) {
+    console.error("[downloader] Failed to write cookies file:", e.message);
+  }
+})();
 
 // ── Run yt-dlp ────────────────────────────────────────────────────────────────
 async function ytdlp(args: string[]): Promise<string> {
@@ -244,10 +266,12 @@ export function registerDownloadRoutes(app: Express) {
         "--add-header", "Accept-Language:en-US,en;q=0.9",
       ];
 
-      // YouTube bot detection bypass:
-      // Android/iOS app clients are not subject to the same bot checks as web.
-      // Try android first (no sign-in required for public videos), then ios, then mweb.
+      // YouTube bot detection bypass.
+      // Datacenter IPs are flagged — cookies from a real logged-in account are required.
       if (isYouTube) {
+        if (cookiesReady) {
+          args.push("--cookies", COOKIES_FILE);
+        }
         args.push(
           "--extractor-args", "youtube:player_client=android,ios,mweb",
           "--socket-timeout", "30",
@@ -275,7 +299,9 @@ export function registerDownloadRoutes(app: Express) {
       const error = notReady  ? "Downloader is still initialising — please wait 30 seconds and try again."
                   : notFound  ? "Video unavailable or private. Check the URL and try again."
                   : ageGate   ? "Age-restricted video — cannot download without account login."
-                  : botBlock  ? "YouTube is temporarily blocking this server. Please try a TikTok or Instagram link instead."
+                  : botBlock  ? (cookiesReady
+                      ? "YouTube is blocking this server even with cookies. The cookies may have expired — please refresh them in the admin panel."
+                      : "YouTube requires browser cookies to download from this server. Ask the admin to set the YOUTUBE_COOKIES environment variable.")
                   : "Could not fetch video info. Check the URL and try again.";
 
       res.status(500).json({ error });
@@ -332,8 +358,11 @@ export function registerDownloadRoutes(app: Express) {
         "--add-header", "Accept-Language:en-US,en;q=0.9",
         "-o", tmpFile,
       ];
-      // YouTube bot detection bypass — android/ios clients bypass bot checks
+      // YouTube bot detection bypass — cookies + android/ios clients
       if (isYouTube) {
+        if (cookiesReady) {
+          dlArgs.push("--cookies", COOKIES_FILE);
+        }
         dlArgs.push(
           "--extractor-args", "youtube:player_client=android,ios,mweb",
           "--socket-timeout", "30",
@@ -399,16 +428,33 @@ export function registerDownloadRoutes(app: Express) {
     res.json({ success: true, message: `${email} revoked` });
   });
 
-  // GET /api/dl/admin/status — yt-dlp health + subscriber count
+  // GET /api/dl/admin/status — yt-dlp health + subscriber count + cookie status
   app.get("/api/dl/admin/status", async (req: Request, res: Response) => {
     if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
     try {
       const bin = await ensureYtDlp();
       const subs = await listSubscribers();
-      res.json({ ready: true, path: bin, subscribers: subs.length });
+      res.json({ ready: true, path: bin, subscribers: subs.length, cookiesReady });
     } catch {
       const subs = await listSubscribers().catch(() => []);
-      res.json({ ready: false, path: "", subscribers: subs.length });
+      res.json({ ready: false, path: "", subscribers: subs.length, cookiesReady });
+    }
+  });
+
+  // POST /api/dl/admin/set-cookies — update YouTube cookies without redeploy
+  app.post("/api/dl/admin/set-cookies", (req: Request, res: Response) => {
+    if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
+    const { cookies } = req.body as { cookies?: string };
+    if (!cookies || cookies.trim().length < 20) {
+      return res.status(400).json({ error: "Cookies content too short or empty" });
+    }
+    try {
+      writeFileSync(COOKIES_FILE, cookies.trim(), "utf8");
+      cookiesReady = true;
+      console.log("[downloader] YouTube cookies updated via admin API");
+      res.json({ success: true, message: "YouTube cookies updated — downloads will use these immediately" });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to write cookies file: " + e.message });
     }
   });
 }
