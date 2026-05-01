@@ -11077,11 +11077,14 @@ function ChegeBotSubsAdminTab() {
 // ═══════════════════════════════════════════════════════════════
 function DownloaderAdminTab() {
   const [subscribers, setSubscribers] = useState<string[]>([]);
-  const [status, setStatus]           = useState<{ ready: boolean; path: string } | null>(null);
+  const [status, setStatus]           = useState<{ ready: boolean; path: string; cookiesReady?: boolean } | null>(null);
   const [loading, setLoading]         = useState(true);
   const [grantEmail, setGrantEmail]   = useState("");
   const [granting, setGranting]       = useState(false);
   const [revoking, setRevoking]       = useState<string | null>(null);
+  const [cookieText, setCookieText]   = useState("");
+  const [savingCookies, setSavingCookies] = useState(false);
+  const [showCookieInput, setShowCookieInput] = useState(false);
   const { toast } = useToast();
 
   async function load() {
@@ -11140,6 +11143,29 @@ function DownloaderAdminTab() {
     }
   }
 
+  async function handleSaveCookies() {
+    if (!cookieText.trim()) return;
+    setSavingCookies(true);
+    try {
+      const r = await fetch("/api/dl/admin/set-cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": "chegetech-admin" },
+        body: JSON.stringify({ cookies: cookieText.trim() }),
+      });
+      const data = await r.json();
+      if (r.ok) {
+        toast({ title: "Cookies updated", description: "YouTube downloads will now use these cookies." });
+        setCookieText("");
+        setShowCookieInput(false);
+        load();
+      } else {
+        toast({ title: "Error", description: data.error, variant: "destructive" });
+      }
+    } finally {
+      setSavingCookies(false);
+    }
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-3">
@@ -11167,6 +11193,61 @@ function DownloaderAdminTab() {
         <button onClick={load} className="text-xs text-gray-500 hover:text-white px-2 py-1 rounded-lg border border-white/10 hover:border-white/20 transition-colors flex-shrink-0">
           Refresh
         </button>
+      </div>
+
+      {/* YouTube Cookies */}
+      <div className={`rounded-2xl border p-5 space-y-3 ${status?.cookiesReady ? "border-green-500/20 bg-green-500/5" : "border-red-500/20 bg-red-500/5"}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${status?.cookiesReady ? "bg-green-400" : "bg-red-400 animate-pulse"}`} />
+              YouTube Cookies
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {status?.cookiesReady
+                ? "Cookies are active — YouTube downloads should work."
+                : "No cookies set — YouTube will block server downloads."}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowCookieInput(v => !v)}
+            className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
+          >
+            {showCookieInput ? "Cancel" : status?.cookiesReady ? "Update" : "Set Cookies"}
+          </button>
+        </div>
+
+        {!status?.cookiesReady && !showCookieInput && (
+          <div className="text-xs text-red-300 bg-red-500/10 rounded-xl p-3 space-y-1">
+            <p className="font-semibold">How to fix YouTube downloads:</p>
+            <ol className="list-decimal list-inside space-y-0.5 text-red-200/80">
+              <li>Install <strong>"Get cookies.txt LOCALLY"</strong> Chrome extension</li>
+              <li>Go to <strong>youtube.com</strong> while logged into your Google account</li>
+              <li>Click the extension → Export → <strong>Cookies for this site</strong></li>
+              <li>Paste the file content below and click Save</li>
+            </ol>
+          </div>
+        )}
+
+        {showCookieInput && (
+          <div className="space-y-2">
+            <textarea
+              value={cookieText}
+              onChange={e => setCookieText(e.target.value)}
+              placeholder={"# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\t..."}
+              rows={6}
+              className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 font-mono focus:outline-none focus:border-red-500/40 resize-none"
+            />
+            <button
+              onClick={handleSaveCookies}
+              disabled={savingCookies || !cookieText.trim()}
+              className="w-full h-9 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm font-semibold transition-all flex items-center justify-center gap-2"
+            >
+              {savingCookies ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Save Cookies
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Grant unlimited access */}
