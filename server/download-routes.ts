@@ -28,7 +28,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 // ── Initialise DB tables at startup ──────────────────────────────────────────
-initDlDb();
+initDlDb().catch((err: Error) => console.error("[dl-db] init error:", err.message));
 
 // ── yt-dlp binary location & auto-download ───────────────────────────────────
 const BIN_DIR  = path.join(process.cwd(), "node_modules", "youtube-dl-exec", "bin");
@@ -212,9 +212,9 @@ function isAdminRequest(req: Request): boolean {
 export function registerDownloadRoutes(app: Express) {
 
   // GET /api/dl/quota — remaining free downloads today
-  app.get("/api/dl/quota", (req, res) => {
+  app.get("/api/dl/quota", async (req, res) => {
     const ip   = getClientIp(req);
-    const used = getDailyUsage(ip);
+    const used = await getDailyUsage(ip);
     res.json({
       used,
       limit:     FREE_LIMIT,
@@ -284,10 +284,10 @@ export function registerDownloadRoutes(app: Express) {
     }
 
     const ip         = getClientIp(req);
-    const subscribed = !!(email && isSubscriber(email));
+    const subscribed = !!(email && await isSubscriber(email));
 
     if (!subscribed) {
-      const used = getDailyUsage(ip);
+      const used = await getDailyUsage(ip);
       if (used >= FREE_LIMIT) {
         return res.status(402).json({
           error:    "daily_limit_reached",
@@ -334,7 +334,7 @@ export function registerDownloadRoutes(app: Express) {
       if (!existsSync(tmpFile)) throw new Error("yt-dlp produced no output file");
 
       // Quota consumed only after successful download
-      if (!subscribed) incrementDailyUsage(ip);
+      if (!subscribed) await incrementDailyUsage(ip);
 
       const filename = safeFilename(title || "video");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -360,32 +360,32 @@ export function registerDownloadRoutes(app: Express) {
   });
 
   // POST /api/dl/admin/grant — give an email unlimited access
-  app.post("/api/dl/admin/grant", (req: Request, res: Response) => {
+  app.post("/api/dl/admin/grant", async (req: Request, res: Response) => {
     if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
     const { email } = req.body as { email?: string };
     if (!email) return res.status(400).json({ error: "Email required" });
-    addSubscriber(email);
+    await addSubscriber(email);
     res.json({ success: true, message: `${email} granted unlimited downloads` });
   });
 
   // GET /api/dl/check-sub?email=x
-  app.get("/api/dl/check-sub", (req: Request, res: Response) => {
+  app.get("/api/dl/check-sub", async (req: Request, res: Response) => {
     const email = (req.query.email as string || "").toLowerCase();
-    res.json({ subscribed: isSubscriber(email) });
+    res.json({ subscribed: await isSubscriber(email) });
   });
 
   // GET /api/dl/admin/subscribers
-  app.get("/api/dl/admin/subscribers", (req: Request, res: Response) => {
+  app.get("/api/dl/admin/subscribers", async (req: Request, res: Response) => {
     if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
-    res.json({ subscribers: listSubscribers() });
+    res.json({ subscribers: await listSubscribers() });
   });
 
   // POST /api/dl/admin/revoke
-  app.post("/api/dl/admin/revoke", (req: Request, res: Response) => {
+  app.post("/api/dl/admin/revoke", async (req: Request, res: Response) => {
     if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
     const { email } = req.body as { email?: string };
     if (!email) return res.status(400).json({ error: "Email required" });
-    removeSubscriber(email);
+    await removeSubscriber(email);
     res.json({ success: true, message: `${email} revoked` });
   });
 
@@ -394,9 +394,11 @@ export function registerDownloadRoutes(app: Express) {
     if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
     try {
       const bin = await ensureYtDlp();
-      res.json({ ready: true, path: bin, subscribers: listSubscribers().length });
+      const subs = await listSubscribers();
+      res.json({ ready: true, path: bin, subscribers: subs.length });
     } catch {
-      res.json({ ready: false, path: "", subscribers: listSubscribers().length });
+      const subs = await listSubscribers().catch(() => []);
+      res.json({ ready: false, path: "", subscribers: subs.length });
     }
   });
 }
