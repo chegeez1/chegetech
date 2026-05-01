@@ -15,9 +15,13 @@ interface SmsMessage {
 }
 
 const SOURCE_LABEL: Record<string, string> = {
+  esimplus: "eSIMplus",
   "sms-online": "Live SMS",
   rsoi: "Sweden/EU",
   rscc: "US/UK",
+  rscc2: "US/UK",
+  quackr: "Quackr",
+  tmpph: "TempPhone",
 };
 
 export default function TempNumbersPage() {
@@ -210,8 +214,9 @@ export default function TempNumbersPage() {
         <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
           {[
             { key: "all", label: `All (${numbers.length})` },
+            { key: "esimplus", label: "eSIMplus" },
             { key: "sms-online", label: "Live SMS" },
-            { key: "rsoi", label: "Sweden/EU" },
+            { key: "rsoi", label: "EU" },
             { key: "rscc", label: "US/UK" },
           ].map(tab => (
             <button key={tab.key} onClick={() => setFilter(tab.key)}
