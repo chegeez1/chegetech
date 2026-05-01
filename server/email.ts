@@ -299,7 +299,7 @@ export async function sendPasswordResetLinkEmail(
   if (!resend) return { success: false, error: "Email service not configured" };
 
   const siteUrl = process.env.SITE_URL || "https://streamvault-premium.site";
-  const resetUrl = `${siteUrl}/reset-password?token=${token}`;
+  const resetUrl = `${siteUrl}/reset-password?token=${token}&email=${encodeURIComponent(customerEmail)}`;
   const displayName = name || "Customer";
 
   const html = `<!DOCTYPE html>
