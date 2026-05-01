@@ -6,6 +6,7 @@ interface FreeNumber {
   country: string;
   digits: string;
   source: string;
+  slug?: string;
 }
 
 interface SmsMessage {
@@ -15,13 +16,9 @@ interface SmsMessage {
 }
 
 const SOURCE_LABEL: Record<string, string> = {
-  esimplus: "eSIMplus",
-  "sms-online": "Live SMS",
-  rsoi: "Sweden/EU",
-  rscc: "US/UK",
-  rscc2: "US/UK",
-  quackr: "Quackr",
-  tmpph: "TempPhone",
+  "sms-online":  "SMS Online",
+  "rsoi":        "EU Numbers",
+  "sms-receive": "UK/Int'l",
 };
 
 export default function TempNumbersPage() {
@@ -90,7 +87,8 @@ export default function TempNumbersPage() {
     setSmsLoading(true);
     setSms([]);
     try {
-      const res = await fetch(`/api/free-numbers/${num.digits}/sms?source=${num.source}`);
+      const slug = num.slug ?? num.digits;
+      const res = await fetch(`/api/free-numbers/${num.digits}/sms?source=${num.source}&slug=${encodeURIComponent(slug)}`);
       const data = await res.json();
       if (data.success) setSms(data.messages);
     } catch {}
