@@ -11172,7 +11172,7 @@ function DownloaderAdminTab() {
       {/* Grant unlimited access */}
       <div className="rounded-2xl border border-white/8 bg-white/3 p-5 space-y-3">
         <h3 className="text-sm font-semibold text-white">Grant Unlimited Access</h3>
-        <p className="text-xs text-gray-400">Bypasses the 2 free downloads/month limit for this email.</p>
+        <p className="text-xs text-gray-400">Bypasses the 2 free downloads/day limit for this email.</p>
         <div className="flex gap-2">
           <input
             value={grantEmail}
