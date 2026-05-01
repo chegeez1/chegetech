@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import path from "path";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
 import axios from "axios";
@@ -1886,6 +1887,53 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
+  });
+
+
+  // ─── /advideo promo page ───────────────────────────────────────────────
+  app.get('/advideo/video.mp4', (req, res) => {
+    const candidates = [
+      path.resolve(process.cwd(), 'streamvault-premium-site.mp4'),
+      path.resolve(process.cwd(), 'Subscription-Hub-Apr-28-15-27-41.mp4'),
+    ];
+    const fs = require('fs');
+    const file = candidates.find(f => fs.existsSync(f));
+    if (!file) return res.status(404).send('Video not found');
+    res.sendFile(file);
+  });
+
+  app.get(['/advideo', '/advideo/'], (_req, res) => {
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StreamVault Premium – Watch Our Promo</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}
+    h1{font-size:2.5rem;font-weight:900;background:linear-gradient(135deg,#22c55e,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem;text-align:center}
+    .sub{color:#9ca3af;margin-bottom:2rem;text-align:center;font-size:1.1rem}
+    video{width:100%;max-width:900px;border-radius:16px;box-shadow:0 0 60px rgba(124,58,237,.4);background:#111}
+    .actions{display:flex;gap:1rem;margin-top:2rem;flex-wrap:wrap;justify-content:center}
+    .btn{display:inline-block;padding:.75rem 2rem;background:linear-gradient(135deg,#22c55e,#7c3aed);color:#fff;text-decoration:none;border-radius:9999px;font-weight:700;font-size:1rem}
+    .btn-outline{background:transparent;border:2px solid #7c3aed;color:#a78bfa}
+    a.btn-outline:hover{background:#7c3aed22}
+  </style>
+</head>
+<body>
+  <h1>StreamVault Premium</h1>
+  <p class="sub">Your all-in-one premium subscription store</p>
+  <video controls autoplay muted playsinline>
+    <source src="/advideo/video.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+  <div class="actions">
+    <a class="btn" href="/">Get Started &rarr;</a>
+    <a class="btn btn-outline" href="/advideo/video.mp4" download>Download Video</a>
+  </div>
+</body>
+</html>`);
   });
 
   return httpServer;
