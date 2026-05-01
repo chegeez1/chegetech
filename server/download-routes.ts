@@ -10,10 +10,11 @@
 import type { Express, Request, Response } from "express";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { createWriteStream, existsSync, mkdirSync, chmodSync } from "fs";
+import { createWriteStream, createReadStream, existsSync, mkdirSync, chmodSync, unlinkSync } from "fs";
 import https from "https";
 import http from "http";
 import path from "path";
+import os from "os";
 import {
   initDlDb,
   isSubscriber,
@@ -259,7 +260,7 @@ export function registerDownloadRoutes(app: Express) {
     }
   });
 
-  // GET /api/dl/stream — stream video through the server (quota enforced)
+  // GET /api/dl/stream — yt-dlp downloads to temp file, server streams it (quota enforced)
   app.get("/api/dl/stream", async (req: Request, res: Response) => {
     const { url, email, title } = req.query as { url?: string; email?: string; title?: string };
 
@@ -267,26 +268,35 @@ export function registerDownloadRoutes(app: Express) {
       return res.status(400).json({ error: "Invalid or unsupported URL" });
     }
 
-    const ip           = getClientIp(req);
-    const subscribed   = !!(email && isSubscriber(email));
+    const ip         = getClientIp(req);
+    const subscribed = !!(email && isSubscriber(email));
 
     if (!subscribed) {
       const used = getDailyUsage(ip);
       if (used >= FREE_LIMIT) {
         return res.status(402).json({
-          error:   "daily_limit_reached",
-          message: `You've used your ${FREE_LIMIT} free downloads today. They reset at midnight. Subscribe for Ksh 100/month for unlimited downloads.`,
+          error:    "daily_limit_reached",
+          message:  `You've used your ${FREE_LIMIT} free downloads today. They reset at midnight. Subscribe for Ksh 100/month for unlimited downloads.`,
           used,
-          limit:   FREE_LIMIT,
+          limit:    FREE_LIMIT,
           resetsAt: "midnight UTC",
         });
       }
     }
 
+    // Temp file path — yt-dlp writes here, we stream it back, then delete
+    const tmpFile = path.join(os.tmpdir(), `dl_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`);
+
+    function cleanup() {
+      try { unlinkSync(tmpFile); } catch {}
+    }
+
     try {
-      const rawUrl = await ytdlp([
+      // yt-dlp downloads the video itself — it handles all cookies/auth internally
+      // This avoids CDN 403s from IP/cookie mismatch when proxying raw URLs
+      const bin = await ensureYtDlp();
+      await execFileAsync(bin, [
         url,
-        "--print", "urls",
         "--no-playlist",
         "--no-check-certificates",
         "--no-warnings",
@@ -294,22 +304,33 @@ export function registerDownloadRoutes(app: Express) {
         "-f", "best[ext=mp4][height<=720]/best[ext=mp4]/best",
         "--add-header", `User-Agent:${BROWSER_UA}`,
         "--add-header", "Accept-Language:en-US,en;q=0.9",
-      ]);
+        "-o", tmpFile,
+      ], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
 
-      const cdnUrl = rawUrl.split("\n")[0].trim();
-      if (!cdnUrl) throw new Error("yt-dlp returned empty URL");
+      if (!existsSync(tmpFile)) throw new Error("yt-dlp produced no output file");
 
-      // Consume quota before streaming
+      // Quota consumed only after successful download
       if (!subscribed) incrementDailyUsage(ip);
 
-      let referer = "https://www.tiktok.com/";
-      try { referer = new URL(url).origin + "/"; } catch {}
+      const filename = safeFilename(title || "video");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Cache-Control", "no-store");
 
-      proxyVideoStream(cdnUrl, referer, safeFilename(title || "video"), res, req);
+      const stream = createReadStream(tmpFile);
+      stream.pipe(res);
+      stream.on("end", cleanup);
+      stream.on("error", (err) => {
+        cleanup();
+        if (!res.headersSent) res.status(500).json({ error: "Failed to stream file" });
+      });
+      req.on("close", () => { stream.destroy(); cleanup(); });
 
     } catch (err: any) {
+      cleanup();
+      console.error("[downloader] stream error:", String(err?.message || "").slice(0, 300));
       if (!res.headersSent) {
-        res.status(500).json({ error: "Could not generate download. Try again shortly." });
+        res.status(500).json({ error: "Could not download video. Check the URL and try again." });
       }
     }
   });
