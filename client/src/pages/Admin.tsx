@@ -11112,19 +11112,34 @@ function PoTokenInstructions({ onSet }: { onSet: (po: string, vd: string) => voi
 
   return (
     <div className="text-xs bg-orange-500/10 rounded-xl p-3 space-y-2">
-      <p className="font-semibold text-orange-300 text-sm">3-step guide (you're already on YouTube!)</p>
-      <ol className="list-decimal list-inside space-y-1.5 text-orange-200/90">
-        <li>In Chrome DevTools, click the <strong className="text-white">Console</strong> tab (not Elements)</li>
-        <li>Click <strong>Copy Script</strong> below, paste it in the Console, press Enter</li>
-        <li>Reload YouTube — the Console will print your <code className="bg-black/30 px-1 rounded">visitorData</code> and <code className="bg-black/30 px-1 rounded">poToken</code></li>
-      </ol>
-      <button
-        onClick={copyScript}
-        className={`w-full h-8 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${copied ? "bg-green-600 text-white" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
-      >
-        {copied ? "✓ Copied!" : "Copy Script"}
-      </button>
-      <p className="text-gray-500 text-[10px]">Then click "Set Token" above and paste both values.</p>
+      <p className="font-semibold text-orange-300 text-sm">Get PO Token from YouTube (2 ways)</p>
+
+      <div className="space-y-1">
+        <p className="text-orange-200 font-medium">Method A — Network tab (you can see it now!):</p>
+        <ol className="list-decimal list-inside space-y-1 text-orange-200/80">
+          <li>Click any request (e.g. <code className="bg-black/30 px-1 rounded">ad_break</code>) in the Network panel</li>
+          <li>Click the <strong className="text-white">Payload</strong> sub-tab on the right</li>
+          <li>Find <code className="bg-black/30 px-1 rounded">visitorData</code> — copy it</li>
+          <li>Find <code className="bg-black/30 px-1 rounded">poToken</code> — copy it (may be inside <code className="bg-black/30 px-1 rounded">attestationConfig</code>)</li>
+        </ol>
+      </div>
+
+      <div className="border-t border-orange-500/20 pt-2 space-y-1">
+        <p className="text-orange-200 font-medium">Method B — Console script (easier):</p>
+        <ol className="list-decimal list-inside space-y-1 text-orange-200/80">
+          <li>Click the <strong className="text-white">Console</strong> tab in DevTools</li>
+          <li>Click <strong>Copy Script</strong> below, paste it, press Enter</li>
+          <li>Reload YouTube — both values print automatically in green</li>
+        </ol>
+        <button
+          onClick={copyScript}
+          className={`w-full h-8 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${copied ? "bg-green-600 text-white" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
+        >
+          {copied ? "✓ Copied!" : "Copy Script"}
+        </button>
+      </div>
+
+      <p className="text-gray-500 text-[10px]">After getting both values, click "Set Token" above and paste them in.</p>
     </div>
   );
 }
