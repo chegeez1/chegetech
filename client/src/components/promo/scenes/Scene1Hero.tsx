@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 const signupImg = '/promo/streamvault-premium_site_auth.png';
-import { useCountUp } from '../../hooks/useCountUp';
+import { useCountUp } from '../../../hooks/useCountUp';
 
 const STATS = [
   { label: 'Active Traders', target: 10000, suffix: '+', prefix: '', color: '#22c55e' },

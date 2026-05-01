@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { useCountUp } from '../../hooks/useCountUp';
+import { useCountUp } from '../../../hooks/useCountUp';
 
 const BASE_PRICE = 1842.5;
 const TICK_MS = 140;
