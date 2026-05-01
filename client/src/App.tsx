@@ -32,15 +32,16 @@ import TradingBotPage from "./pages/TradingBotPage";
 import SmsPage from "./pages/SmsPage";
 import TempNumbers from "@/pages/TempNumbers";
 import Downloader from "@/pages/Downloader";
+import BulkWhatsApp from "@/pages/BulkWhatsApp";
 import FaqPage from "@/pages/FaqPage";
 import Shell from "@/components/Shell";
 import ChatWidget from "@/components/ChatWidget";
 import CookieConsent from "@/components/CookieConsent";
 
 const NO_CHAT_PATHS = ["/admin", "/docs", "/privacy", "/track", "/bots"];
-const PUBLIC_PATHS = ["/downloader", "/auth", "/faq", "/admin", "/payment/callback", "/payment/success", "/docs", "/privacy", "/track", "/bots", "/verify-email", "/reset-password", "/smm", "/numbers", "/proxy", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
+const PUBLIC_PATHS = ["/downloader", "/bulk-whatsapp", "/auth", "/faq", "/admin", "/payment/callback", "/payment/success", "/docs", "/privacy", "/track", "/bots", "/verify-email", "/reset-password", "/smm", "/numbers", "/proxy", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
 const NO_COOKIE_PATHS = ["/admin"];
-const SHELL_PATHS = ["/downloader", "/", "/bots", "/faq", "/vps", "/dashboard", "/numbers", "/smm", "/proxy", "/checkout", "/cart-checkout", "/payment", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
+const SHELL_PATHS = ["/downloader", "/bulk-whatsapp", "/", "/bots", "/faq", "/vps", "/dashboard", "/numbers", "/smm", "/proxy", "/checkout", "/cart-checkout", "/payment", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
 
 function Router() {
   const [location] = useLocation();
