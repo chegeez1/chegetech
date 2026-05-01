@@ -1,119 +1,102 @@
 /**
- * esimScraper.ts — Cloudflare bypass for esimplus.me
+ * esimScraper.ts (v3)
+ * Previously used Puppeteer to bypass Cloudflare on esimplus.me.
+ * esimplus.me returns 403 for all non-browser clients — not viable on Render free tier.
  *
- * Uses @sparticuz/chromium (optimised for 512MB RAM containers, same as Lambda)
- * + puppeteer-extra stealth plugin to pass Cloudflare JS challenge.
- *
- * Why sparticuz instead of full puppeteer?
- *  - Render free tier = 512MB RAM. Full Chromium needs ~300MB alone.
- *  - @sparticuz/chromium is a stripped, compressed build (< 50MB) that runs
- *    comfortably within the same 512MB limit used by AWS Lambda functions.
+ * This version scrapes receivesms.co instead:
+ *   - No Cloudflare, no browser, plain HTTPS fetch
+ *   - 20-30 international numbers (EU, Asia, Americas)
+ *   - Full SMS message parsing (sender, body, time)
+ *   - Cached 10 min for numbers, 1 min for messages
  */
 
-import chromium         from '@sparticuz/chromium';
-import puppeteerExtra   from 'puppeteer-extra';
-import StealthPlugin    from 'puppeteer-extra-plugin-stealth';
-import type { Browser, Page } from 'puppeteer-core';
+import * as https from 'https';
 
-puppeteerExtra.use(StealthPlugin());
+const FETCH_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
 
-let browser: Browser | null = null;
-
-async function getBrowser(): Promise<Browser> {
-  if (browser?.connected) return browser;
-
-  const executablePath = await chromium.executablePath();
-  console.log('[esimScraper] chromium path:', executablePath);
-  console.log('[esimScraper] chromium.headless:', chromium.headless);
-
-  browser = await (puppeteerExtra as any).launch({
-    args: [
-      ...chromium.args,
-      '--disable-web-security',
-      '--disable-features=IsolateOrigins,site-per-process',
-    ],
-    defaultViewport: chromium.defaultViewport,
-    executablePath,
-    headless: chromium.headless,
-    ignoreHTTPSErrors: true,
+function fetchHtml(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { timeout: 18000, headers: FETCH_HEADERS }, (res) => {
+      // Follow one redirect (3xx)
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchHtml(res.headers.location).then(resolve).catch(reject);
+      }
+      if (res.statusCode && res.statusCode >= 400) {
+        return reject(new Error(`HTTP ${res.statusCode}`));
+      }
+      let body = '';
+      res.setEncoding('utf-8');
+      res.on('data', (chunk: string) => body += chunk);
+      res.on('end', () => resolve(body));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
   });
-
-  (browser as Browser).on('disconnected', () => {
-    console.log('[esimScraper] browser disconnected — will relaunch on next call');
-    browser = null;
-  });
-
-  return browser as Browser;
 }
 
-async function openPage(url: string): Promise<Page> {
-  const b    = await getBrowser();
-  const page = await b.newPage();
-  await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
-  await page.goto(url, { waitUntil: 'networkidle2', timeout: 50_000 });
-
-  const title = await page.title();
-  if (/just a moment|checking/i.test(title)) {
-    console.log('[esimScraper] CF challenge detected, waiting…');
-    await page.waitForFunction(
-      () => !/just a moment|checking/i.test(document.title),
-      { timeout: 40_000, polling: 1500 }
-    );
-    await page.waitForNetworkIdle({ idleTime: 2000, timeout: 15_000 }).catch(() => {});
-    console.log('[esimScraper] CF passed, title now:', await page.title());
-  }
-  return page;
-}
+const COUNTRY_NAMES: Record<string, string> = {
+  at:'Austria', be:'Belgium', br:'Brazil', ca:'Canada', ch:'Switzerland',
+  cn:'China', cz:'Czech Republic', de:'Germany', dk:'Denmark', ee:'Estonia',
+  es:'Spain', fi:'Finland', fr:'France', gb:'United Kingdom', gr:'Greece',
+  hr:'Croatia', hu:'Hungary', id:'Indonesia', ie:'Ireland', il:'Israel',
+  in:'India', it:'Italy', jp:'Japan', kr:'South Korea', lv:'Latvia',
+  lt:'Lithuania', mx:'Mexico', nl:'Netherlands', no:'Norway', pl:'Poland',
+  pt:'Portugal', ro:'Romania', ru:'Russia', se:'Sweden', si:'Slovenia',
+  sk:'Slovakia', tr:'Turkey', ua:'Ukraine', us:'United States', za:'South Africa',
+};
 
 // ── Number list ──────────────────────────────────────────────────────────────
 let numCache: { data: EsimNumber[]; ts: number } | null = null;
 const NUM_TTL = 10 * 60_000;
 
 export interface EsimNumber {
-  number: string;
+  number:  string;
   country: string;
-  digits: string;
-  slug: string;
-  source: string;
+  digits:  string;
+  slug:    string;
+  source:  string;
 }
 
 export async function scrapeEsimplusNumbers(): Promise<EsimNumber[]> {
   if (numCache && Date.now() - numCache.ts < NUM_TTL) return numCache.data;
-
-  let page: Page | undefined;
   try {
-    page = await openPage('https://esimplus.me/temporary-numbers');
-    await page.waitForSelector('a[href*="/temporary-numbers/"]', { timeout: 25_000 });
+    const html = await fetchHtml('https://receivesms.co/active-numbers');
+    const numbers: EsimNumber[] = [];
+    const seen = new Set<string>();
 
-    const numbers: EsimNumber[] = await page.evaluate(() => {
-      const seen  = new Set<string>();
-      const items: any[] = [];
-      document.querySelectorAll<HTMLAnchorElement>('a[href*="/temporary-numbers/"]').forEach(el => {
-        const href  = el.getAttribute('href') || '';
-        const match = href.match(/\/temporary-numbers\/([a-z-]+)\/(\d{8,15})/);
-        if (!match) return;
-        const digits = match[2];
-        const slug   = `${match[1]}/${digits}`;
-        if (seen.has(digits)) return;
+    // Pattern: href="/cc-phone-number/id/" ... <strong>+number</strong>
+    const blockRx = /href="(\/([a-z]{2})-phone-number\/(\d+)\/)"[\s\S]{1,600}?<strong>(\+[\d\s\-().]+)<\/strong>/g;
+    let m: RegExpExecArray | null;
+    while ((m = blockRx.exec(html)) !== null) {
+      const [, href, cc, id, raw] = m;
+      const digits = raw.replace(/\D/g, '');
+      if (seen.has(digits) || digits.length < 8) continue;
+      seen.add(digits);
+      const country = COUNTRY_NAMES[cc] ?? cc.toUpperCase();
+      numbers.push({ number: raw.trim(), country, digits, slug: `${cc}-phone-number/${id}`, source: 'esimplus' });
+    }
+
+    // Fallback: simpler extraction if block regex fails
+    if (numbers.length === 0) {
+      const numRx = /<strong>(\+[\d\s\-().]{7,20})<\/strong>/g;
+      while ((m = numRx.exec(html)) !== null) {
+        const raw = m[1]; const digits = raw.replace(/\D/g, '');
+        if (seen.has(digits) || digits.length < 8) continue;
         seen.add(digits);
-        const card   = el.closest('div, article, li, section') ?? el.parentElement ?? el;
-        const text   = card?.textContent || '';
-        const numM   = text.match(/\+[\d\s\-().]{7,20}/);
-        const number = numM ? numM[0].trim() : '+' + digits;
-        const country = match[1].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        items.push({ number, country, digits, slug, source: 'esimplus' });
-      });
-      return items;
-    });
+        numbers.push({ number: raw.trim(), country: 'International', digits, slug: digits, source: 'esimplus' });
+      }
+    }
 
-    console.log(`[esimScraper] scraped ${numbers.length} esimplus numbers`);
+    console.log(`[receivesms.co] scraped ${numbers.length} numbers`);
     numCache = { data: numbers, ts: Date.now() };
     return numbers;
   } catch (err: any) {
-    console.error('[esimScraper] scrapeEsimplusNumbers error:', err?.message);
+    console.error('[receivesms.co] scrapeEsimplusNumbers error:', err.message);
     return numCache?.data ?? [];
-  } finally {
-    await page?.close().catch(() => {});
   }
 }
 
@@ -130,41 +113,31 @@ export interface EsimMessage {
 export async function scrapeEsimplusMessages(slug: string): Promise<EsimMessage[]> {
   const cached = msgCache.get(slug);
   if (cached && Date.now() - cached.ts < MSG_TTL) return cached.data;
-
-  let page: Page | undefined;
   try {
-    page = await openPage(`https://esimplus.me/temporary-numbers/${slug}`);
-    await new Promise(r => setTimeout(r, 2000));
+    const html = await fetchHtml(`https://receivesms.co/${slug}/`);
+    const messages: EsimMessage[] = [];
 
-    const messages: EsimMessage[] = await page.evaluate(() => {
-      const msgs: any[] = [];
-      const seen = new Set<string>();
-      document.querySelectorAll('div, p, span').forEach(el => {
-        const text = el.textContent?.trim() || '';
-        if (text.length < 15 || text.length > 600) return;
-        if (seen.has(text)) return;
-        if (!/\d{4,8}|verification|code|confirm|password|otp|pin/i.test(text)) return;
-        const cls = el.className?.toLowerCase() || '';
-        if (/nav|header|footer|button|menu/.test(cls)) return;
-        seen.add(text);
-        const parent   = el.parentElement;
-        const senderEl = parent?.querySelector?.('[class*="sender"],[class*="from"],[class*="number"],[class*="phone"]');
-        const timeEl   = parent?.querySelector?.('[class*="time"],[class*="ago"],[class*="date"]');
-        msgs.push({
-          sender: senderEl?.textContent?.trim() || '',
-          body:   text,
-          time:   timeEl?.textContent?.trim()   || '',
-        });
+    // Each SMS is in <article class="entry-card">
+    const articleRx = /<article[^>]*entry-card[^>]*>([\s\S]*?)<\/article>/g;
+    let m: RegExpExecArray | null;
+    while ((m = articleRx.exec(html)) !== null) {
+      const block = m[1];
+      const senderM  = /class="from-link"[^>]*>([^<]+)<\/a>/i.exec(block);
+      const bodyM    = /class="sms"[^>]*>([\s\S]*?)<\/div>/i.exec(block);
+      const timeM    = /class="muted"[^>]*>([^<]+)<\/span>/i.exec(block);
+      if (!bodyM) continue;
+      messages.push({
+        sender: senderM?.[1]?.trim() ?? '',
+        body:   bodyM[1].replace(/<[^>]*>/g, '').replace(/&#0*39;/g, "'").trim(),
+        time:   timeM?.[1]?.trim() ?? '',
       });
-      return msgs.slice(0, 30);
-    });
+    }
 
+    console.log(`[receivesms.co] messages for ${slug}: ${messages.length}`);
     msgCache.set(slug, { data: messages, ts: Date.now() });
     return messages;
   } catch (err: any) {
-    console.error('[esimScraper] scrapeEsimplusMessages error:', err?.message);
+    console.error('[receivesms.co] scrapeEsimplusMessages error:', err.message);
     return [];
-  } finally {
-    await page?.close().catch(() => {});
   }
 }

@@ -213,7 +213,7 @@ export default function TempNumbersPage() {
         <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
           {[
             { key: "all", label: `All (${numbers.length})` },
-            { key: "esimplus", label: "eSIMplus" },
+            { key: "esimplus", label: "Global" },
             { key: "sms-online", label: "Live SMS" },
             { key: "rsoi", label: "EU" },
             { key: "rscc", label: "US/UK" },
