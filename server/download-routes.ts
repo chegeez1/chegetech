@@ -151,8 +151,8 @@ function buildYouTubeExtractorArgs(): string {
   if (poToken) parts.push(`po_token=web+${poToken}`);
   if (visitorData) parts.push(`visitor_data=${visitorData}`);
   // Use web client when we have po_token (best compatibility), android otherwise
-  // tv_embedded works well with cookies but no poToken; web works with poToken
-  const clients = poToken ? "web,web_creator" : "tv_embedded,ios,mweb";
+  // android client bypasses bot-check best on datacenter IPs; web needs poToken
+  const clients = poToken ? "web,web_creator" : "android,ios,android_embedded";
   parts.push(`player_client=${clients}`);
   return `youtube:${parts.join(",")}`;
 }
@@ -309,7 +309,8 @@ export function registerDownloadRoutes(app: Express) {
         if (cookiesReady) args.push("--cookies", COOKIES_FILE);
         args.push(
           "--extractor-args", buildYouTubeExtractorArgs(),
-          "--socket-timeout", "30",
+        "--socket-timeout", "30",
+        "--extractor-retries", "3",
         );
       }
 
@@ -398,7 +399,8 @@ export function registerDownloadRoutes(app: Express) {
         if (cookiesReady) dlArgs.push("--cookies", COOKIES_FILE);
         dlArgs.push(
           "--extractor-args", buildYouTubeExtractorArgs(),
-          "--socket-timeout", "30",
+        "--socket-timeout", "30",
+        "--extractor-retries", "3",
         );
       }
       await execFileAsync(bin, dlArgs, { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
