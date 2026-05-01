@@ -11243,6 +11243,20 @@ function DownloaderAdminTab() {
     }
   }
 
+  async function handleClearCookies() {
+    if (!confirm("Clear YouTube cookies? Downloads will stop working until you add new ones.")) return;
+    const r = await fetch("/api/dl/admin/clear-cookies", { method: "DELETE", headers: { "x-admin-key": "chegetech-admin" } });
+    if (r.ok) { toast({ title: "Cookies cleared" }); load(); }
+    else toast({ title: "Error", description: "Failed to clear cookies", variant: "destructive" });
+  }
+
+  async function handleClearPoToken() {
+    if (!confirm("Clear PO Token? YouTube will fall back to mobile clients.")) return;
+    const r = await fetch("/api/dl/admin/clear-po-token", { method: "DELETE", headers: { "x-admin-key": "chegetech-admin" } });
+    if (r.ok) { toast({ title: "PO Token cleared" }); load(); }
+    else toast({ title: "Error", description: "Failed to clear PO Token", variant: "destructive" });
+  }
+
   async function handleSaveCookies() {
     if (!cookieText.trim()) return;
     setSavingCookies(true);
@@ -11309,12 +11323,22 @@ function DownloaderAdminTab() {
                 : "No cookies set — YouTube will block server downloads."}
             </p>
           </div>
-          <button
-            onClick={() => setShowCookieInput(v => !v)}
-            className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
-          >
-            {showCookieInput ? "Cancel" : status?.cookiesReady ? "Update" : "Set Cookies"}
-          </button>
+          <div className="flex gap-2">
+            {status?.cookiesReady && (
+              <button
+                onClick={handleClearCookies}
+                className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg border border-red-500/20 hover:border-red-500/40 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+            <button
+              onClick={() => setShowCookieInput(v => !v)}
+              className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
+            >
+              {showCookieInput ? "Cancel" : status?.cookiesReady ? "Update" : "Set Cookies"}
+            </button>
+          </div>
         </div>
 
         {!status?.cookiesReady && !showCookieInput && (
@@ -11364,12 +11388,22 @@ function DownloaderAdminTab() {
                 : "No PO Token — recommended for reliable YouTube access."}
             </p>
           </div>
-          <button
-            onClick={() => setShowPoTokenInput(v => !v)}
-            className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
-          >
-            {showPoTokenInput ? "Cancel" : status?.poTokenReady ? "Update" : "Set Token"}
-          </button>
+          <div className="flex gap-2">
+            {status?.poTokenReady && (
+              <button
+                onClick={handleClearPoToken}
+                className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg border border-red-500/20 hover:border-red-500/40 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+            <button
+              onClick={() => setShowPoTokenInput(v => !v)}
+              className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
+            >
+              {showPoTokenInput ? "Cancel" : status?.poTokenReady ? "Update" : "Set Token"}
+            </button>
+          </div>
         </div>
 
         {!status?.poTokenReady && !showPoTokenInput && (
