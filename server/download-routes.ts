@@ -247,4 +247,39 @@ export function registerDownloadRoutes(app: Express) {
     const email = (req.query.email as string || "").toLowerCase();
     res.json({ subscribed: subscribers.has(email) });
   });
+
+  // GET /api/dl/admin/subscribers — list all unlimited-access emails
+  app.get("/api/dl/admin/subscribers", (req: Request, res: Response) => {
+    const adminKey = req.headers["x-admin-key"];
+    if (adminKey !== process.env.ADMIN_API_KEY && adminKey !== "chegetech-admin") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    res.json({ subscribers: [...subscribers] });
+  });
+
+  // POST /api/dl/admin/revoke — remove unlimited access from an email
+  app.post("/api/dl/admin/revoke", (req: Request, res: Response) => {
+    const adminKey = req.headers["x-admin-key"];
+    if (adminKey !== process.env.ADMIN_API_KEY && adminKey !== "chegetech-admin") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const { email } = req.body as { email?: string };
+    if (!email) return res.status(400).json({ error: "Email required" });
+    subscribers.delete(email.toLowerCase());
+    res.json({ success: true, message: `${email} revoked` });
+  });
+
+  // GET /api/dl/admin/status — check yt-dlp availability
+  app.get("/api/dl/admin/status", async (req: Request, res: Response) => {
+    const adminKey = req.headers["x-admin-key"];
+    if (adminKey !== process.env.ADMIN_API_KEY && adminKey !== "chegetech-admin") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    try {
+      const bin = await ensureYtDlp();
+      res.json({ ready: true, path: bin });
+    } catch {
+      res.json({ ready: false, path: "" });
+    }
+  });
 }
