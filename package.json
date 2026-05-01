@@ -70,6 +70,7 @@
     "express-session": "^1.18.1",
     "@ffmpeg/ffmpeg": "^0.12.10",
     "@ffmpeg/util": "^0.12.1",
+    "youtube-dl-exec": "^3.0.12",
     "html2canvas": "^1.4.1",
     "framer-motion": "^11.13.1",
     "gifted-baileys": "^2.5.8",
