@@ -110,6 +110,13 @@ const FAQS = [
   },
 ];
 
+const PROMO_VIDEO_URL = (() => {
+  try {
+    // Set via window.__ENV__.PROMO_VIDEO_URL in index.html or injected by server
+    const env = (window as any).__ENV__ || {};
+    return env.PROMO_VIDEO_URL || import.meta.env.VITE_PROMO_VIDEO_URL || "";
+  } catch { return ""; }
+})();
 const TELEGRAM = process.env.TELEGRAM_SUPPORT || "https://t.me/chegetech_support";
 const SITE_URL = "https://streamvault-premium.site";
 
@@ -131,7 +138,31 @@ export default function FaqPage() {
           <p className="text-white/50 text-sm">Everything you need to know about StreamVault Premium</p>
         </div>
 
-        {/* FAQ Sections */}
+        
+        {/* Promo Video */}
+        {PROMO_VIDEO_URL && (
+          <div className="mb-10 rounded-2xl overflow-hidden border border-white/10 bg-black shadow-2xl">
+            <div className="px-5 py-3 border-b border-white/10 flex items-center gap-2">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                <div className="w-3 h-3 rounded-full bg-green-500/80" />
+              </div>
+              <span className="text-xs text-white/30 mx-auto">StreamVault Premium — Platform Overview</span>
+            </div>
+            <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+              <iframe
+                src={PROMO_VIDEO_URL}
+                title="StreamVault Premium Promo Video"
+                className="absolute inset-0 w-full h-full border-0"
+                allow="autoplay; fullscreen"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        )}
+
+{/* FAQ Sections */}
         {FAQS.map((section) => (
           <div key={section.category} className="mb-6">
             <h2 className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-3 px-1">{section.category}</h2>
