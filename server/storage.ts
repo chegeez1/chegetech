@@ -866,6 +866,7 @@ function initSqlite() {
     try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN renewal_reminded TEXT").run(); } catch {}
     try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN deployment_log TEXT").run(); } catch {}
     try { sqliteInstance!.prepare("CREATE TABLE IF NOT EXISTS bot_pings (id INTEGER PRIMARY KEY AUTOINCREMENT, bot_order_id INTEGER NOT NULL, pm2_status TEXT NOT NULL, checked_at TEXT DEFAULT (datetime('now')))").run(); } catch {}
+    try { sqliteInstance!.prepare("CREATE TABLE IF NOT EXISTS flash_sales (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, plan_id TEXT, discount_percent INTEGER NOT NULL DEFAULT 10, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))").run(); } catch {}
   console.log("[db] Connected to SQLite");
 }
 
@@ -2173,6 +2174,47 @@ export class DbStorage implements IStorage {
       amount: row.amount, status: row.status, createdAt: row.created_at,
     }));
   }
+
+  // ─── Flash Sales ────────────────────────────────────────────────────────────
+  getActiveFlashSales(): any[] {
+    try {
+      const now = new Date().toISOString();
+      return (sqliteInstance!.prepare(
+        "SELECT * FROM flash_sales WHERE active=1 AND starts_at <= ? AND ends_at >= ? ORDER BY created_at DESC"
+      ).all(now, now) as any[]).map((r: any) => ({
+        id: r.id, label: r.label, planId: r.plan_id,
+        discountPercent: r.discount_percent,
+        startsAt: r.starts_at, endsAt: r.ends_at, active: !!r.active
+      }));
+    } catch { return []; }
+  }
+
+  getAllFlashSales(): any[] {
+    try {
+      return (sqliteInstance!.prepare("SELECT * FROM flash_sales ORDER BY created_at DESC").all() as any[])
+        .map((r: any) => ({ id: r.id, label: r.label, planId: r.plan_id, discountPercent: r.discount_percent, startsAt: r.starts_at, endsAt: r.ends_at, active: !!r.active, createdAt: r.created_at }));
+    } catch { return []; }
+  }
+
+  createFlashSale(data: { label: string; planId?: string; discountPercent: number; startsAt: string; endsAt: string }): any {
+    const result = sqliteInstance!.prepare(
+      "INSERT INTO flash_sales (label, plan_id, discount_percent, starts_at, ends_at) VALUES (?,?,?,?,?)"
+    ).run(data.label, data.planId || null, data.discountPercent, data.startsAt, data.endsAt);
+    return sqliteInstance!.prepare("SELECT * FROM flash_sales WHERE id=?").get(result.lastInsertRowid);
+  }
+
+  updateFlashSale(id: number, data: { label?: string; planId?: string; discountPercent?: number; startsAt?: string; endsAt?: string; active?: boolean }): any {
+    const map: Record<string, string> = { label:'label', planId:'plan_id', discountPercent:'discount_percent', startsAt:'starts_at', endsAt:'ends_at', active:'active' };
+    const sets = Object.keys(data).filter(k => data[k as keyof typeof data] !== undefined).map(k => `${map[k]}=?`).join(',');
+    const vals = [...Object.keys(data).filter(k => data[k as keyof typeof data] !== undefined).map(k => data[k as keyof typeof data]), id];
+    if (sets) sqliteInstance!.prepare(`UPDATE flash_sales SET ${sets} WHERE id=?`).run(...(vals as any[]));
+    return sqliteInstance!.prepare("SELECT * FROM flash_sales WHERE id=?").get(id);
+  }
+
+  deleteFlashSale(id: number): void {
+    sqliteInstance!.prepare("DELETE FROM flash_sales WHERE id=?").run(id);
+  }
+
 }
 
 export const storage = new DbStorage();
