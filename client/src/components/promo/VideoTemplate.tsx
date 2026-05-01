@@ -18,43 +18,47 @@ import SceneBotInAction from './scenes/SceneBotInAction';
 import SceneWhatsAppBot from './scenes/SceneWhatsAppBot';
 import SceneCTA from './scenes/Scene6CTA';
 
+// WhatsApp Bot (the "talking bot") is now scene 1 — hooks viewers immediately
 export const SCENE_DURATIONS: Record<string, number> = {
-  hero: 7000,
-  tradingChart: 8000,
-  freeTools: 7000,
+  whatsappBot:    13000,
+  hero:            7000,
+  tradingChart:    8000,
+  freeTools:       7000,
   premiumAccounts: 8000,
-  aiTools: 9000,
-  vpsHosting: 8000,
-  features: 7000,
-  pricing: 8000,
-  testimonials: 7000,
-  linkShortener: 12000,
-  cardTools: 11000,
-  proxies: 11000,
-  digitalStore: 10000,
-  botInAction: 12000,
-  whatsappBot: 13000,
-  cta: 7000,
+  aiTools:         9000,
+  vpsHosting:      8000,
+  features:        7000,
+  pricing:         8000,
+  testimonials:    7000,
+  linkShortener:  12000,
+  cardTools:      11000,
+  proxies:        11000,
+  digitalStore:   10000,
+  botInAction:    12000,
+  cta:             7000,
 };
 
 const SCENE_COMPONENTS: Record<string, React.ComponentType> = {
-  hero: Scene1Hero,
-  tradingChart: Scene2TradingChart,
-  freeTools: Scene3FreeTools,
-  premiumAccounts: Scene4PremiumAccounts,
-  aiTools: SceneAITools,
-  vpsHosting: SceneVPSHosting,
-  features: SceneFeatures,
-  pricing: ScenePricing,
-  testimonials: SceneTestimonials,
-  linkShortener: SceneLinkShortener,
-  cardTools: SceneCardTools,
-  proxies: SceneProxies,
-  digitalStore: SceneDigitalStore,
-  botInAction: SceneBotInAction,
-  whatsappBot: SceneWhatsAppBot,
-  cta: SceneCTA,
+  whatsappBot:    SceneWhatsAppBot,
+  hero:           Scene1Hero,
+  tradingChart:   Scene2TradingChart,
+  freeTools:      Scene3FreeTools,
+  premiumAccounts:Scene4PremiumAccounts,
+  aiTools:        SceneAITools,
+  vpsHosting:     SceneVPSHosting,
+  features:       SceneFeatures,
+  pricing:        ScenePricing,
+  testimonials:   SceneTestimonials,
+  linkShortener:  SceneLinkShortener,
+  cardTools:      SceneCardTools,
+  proxies:        SceneProxies,
+  digitalStore:   SceneDigitalStore,
+  botInAction:    SceneBotInAction,
+  cta:            SceneCTA,
 };
+
+// Total duration = 145 000 ms (unchanged)
+export const TOTAL_DURATION_MS = Object.values(SCENE_DURATIONS).reduce((a, b) => a + b, 0);
 
 export default function VideoTemplate({
   durations = SCENE_DURATIONS,
