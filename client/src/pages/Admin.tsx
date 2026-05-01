@@ -25,7 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 
-type Tab = "dashboard" | "analytics" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "ratings" | "feature-requests" | "emailblast" | "campaigns" | "logs" | "settings" | "support" | "subadmins" | "super-admins" | "geo-restrict" | "vps" | "vps-sales" | "domains" | "funnel" | "groups" | "flash-sales" | "whatsapp" | "bot-store" | "bot-orders" | "smm-orders" | "proxy-plans" | "proxy-orders" | "digital-products" | "digital-orders" | "free-proxies" | "gift-cards" | "gc-orders" | "sms-plans" | "sms-orders" | "cc-checker" | "email-gen" | "chegebot-subs";
+type Tab = "dashboard" | "analytics" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "ratings" | "feature-requests" | "emailblast" | "campaigns" | "logs" | "settings" | "support" | "subadmins" | "super-admins" | "geo-restrict" | "vps" | "vps-sales" | "domains" | "funnel" | "groups" | "flash-sales" | "whatsapp" | "bot-store" | "bot-orders" | "smm-orders" | "proxy-plans" | "proxy-orders" | "digital-products" | "digital-orders" | "free-proxies" | "gift-cards" | "gc-orders" | "sms-plans" | "sms-orders" | "cc-checker" | "email-gen" | "chegebot-subs" | "downloader";
 
 class SettingsErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
   constructor(props: any) { super(props); this.state = { error: null }; }
@@ -280,6 +280,7 @@ export default function Admin() {
     { id: "cc-checker", label: "CC Checker", icon: CreditCard, alwaysVisible: true },
     { id: "email-gen", label: "Email Generator", icon: Mail, alwaysVisible: true },
     { id: "chegebot-subs", label: "ChegeBot Pro", icon: Zap, alwaysVisible: true },
+    { id: "downloader", label: "Downloader", icon: Download, alwaysVisible: true },
     { id: "logs", label: "Activity Logs", icon: Activity },
     { id: "subadmins", label: "Sub-Admins", icon: Users, superOnly: true },
     { id: "super-admins", label: "Super Admins", icon: Shield, superOnly: true },
@@ -428,6 +429,7 @@ export default function Admin() {
           {activeTab === "cc-checker" && <BulkCcCheckerAdminTab />}
           {activeTab === "email-gen" && <EmailGenAdminTab />}
           {activeTab === "chegebot-subs" && <ChegeBotSubsAdminTab />}
+          {activeTab === "downloader" && <DownloaderAdminTab />}
           {activeTab === "subadmins" && adminRole === "super" && <SubAdminsTab />}
           {activeTab === "super-admins" && adminRole === "super" && isPrimary && <SuperAdminsTab />}
           {activeTab === "geo-restrict" && adminRole === "super" && <GeoRestrictTab />}
@@ -11066,6 +11068,158 @@ function ChegeBotSubsAdminTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOWNLOADER ADMIN TAB
+// ═══════════════════════════════════════════════════════════════
+function DownloaderAdminTab() {
+  const [subscribers, setSubscribers] = useState<string[]>([]);
+  const [status, setStatus]           = useState<{ ready: boolean; path: string } | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [grantEmail, setGrantEmail]   = useState("");
+  const [granting, setGranting]       = useState(false);
+  const [revoking, setRevoking]       = useState<string | null>(null);
+  const { toast } = useToast();
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [subRes, statusRes] = await Promise.all([
+        fetch("/api/dl/admin/subscribers", { headers: { "x-admin-key": "chegetech-admin" } }),
+        fetch("/api/dl/admin/status",      { headers: { "x-admin-key": "chegetech-admin" } }),
+      ]);
+      if (subRes.ok)    setSubscribers((await subRes.json()).subscribers ?? []);
+      if (statusRes.ok) setStatus(await statusRes.json());
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleGrant() {
+    if (!grantEmail.trim()) return;
+    setGranting(true);
+    try {
+      const r = await fetch("/api/dl/admin/grant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": "chegetech-admin" },
+        body: JSON.stringify({ email: grantEmail.trim().toLowerCase() }),
+      });
+      if (r.ok) {
+        toast({ title: "Access granted", description: `${grantEmail} can now download unlimited videos.` });
+        setGrantEmail("");
+        load();
+      } else {
+        toast({ title: "Error", variant: "destructive" });
+      }
+    } finally {
+      setGranting(false);
+    }
+  }
+
+  async function handleRevoke(email: string) {
+    setRevoking(email);
+    try {
+      const r = await fetch("/api/dl/admin/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": "chegetech-admin" },
+        body: JSON.stringify({ email }),
+      });
+      if (r.ok) {
+        toast({ title: "Access revoked", description: `${email} is back to the free tier.` });
+        load();
+      } else {
+        toast({ title: "Error", variant: "destructive" });
+      }
+    } finally {
+      setRevoking(null);
+    }
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+          <Download className="w-5 h-5 text-red-400" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-white">Video Downloader</h2>
+          <p className="text-xs text-gray-400">Manage unlimited-access subscribers and yt-dlp status</p>
+        </div>
+      </div>
+
+      {/* yt-dlp status */}
+      <div className={`rounded-2xl border p-4 flex items-center gap-3 ${status?.ready ? "border-green-500/20 bg-green-500/5" : "border-yellow-500/20 bg-yellow-500/5"}`}>
+        <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${status?.ready ? "bg-green-400" : "bg-yellow-400 animate-pulse"}`} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-white">
+            {status === null ? "Checking yt-dlp…" : status.ready ? "yt-dlp is ready" : "yt-dlp downloading in background…"}
+          </p>
+          {status?.path && <p className="text-xs text-gray-500 mt-0.5 truncate">{status.path}</p>}
+          {status && !status.ready && (
+            <p className="text-xs text-yellow-400 mt-0.5">Should be ready within 60 s of server start.</p>
+          )}
+        </div>
+        <button onClick={load} className="text-xs text-gray-500 hover:text-white px-2 py-1 rounded-lg border border-white/10 hover:border-white/20 transition-colors flex-shrink-0">
+          Refresh
+        </button>
+      </div>
+
+      {/* Grant unlimited access */}
+      <div className="rounded-2xl border border-white/8 bg-white/3 p-5 space-y-3">
+        <h3 className="text-sm font-semibold text-white">Grant Unlimited Access</h3>
+        <p className="text-xs text-gray-400">Bypasses the 2 free downloads/month limit for this email.</p>
+        <div className="flex gap-2">
+          <input
+            value={grantEmail}
+            onChange={e => setGrantEmail(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleGrant()}
+            placeholder="user@example.com"
+            className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 h-10 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-500/40"
+          />
+          <button
+            onClick={handleGrant}
+            disabled={granting || !grantEmail.trim()}
+            className="h-10 px-4 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm font-semibold transition-all flex items-center gap-2"
+          >
+            {granting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Grant
+          </button>
+        </div>
+      </div>
+
+      {/* Subscriber list */}
+      <div className="rounded-2xl border border-white/8 bg-white/3 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white">Unlimited Subscribers</h3>
+          <span className="text-xs text-gray-500 bg-white/5 px-2 py-0.5 rounded-full">{subscribers.length} total</span>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-500" /></div>
+        ) : subscribers.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 text-sm">No unlimited subscribers yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {subscribers.map(email => (
+              <div key={email} className="flex items-center justify-between bg-black/30 rounded-xl px-4 py-2.5 border border-white/5">
+                <span className="text-sm text-white font-mono">{email}</span>
+                <button
+                  onClick={() => handleRevoke(email)}
+                  disabled={revoking === email}
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {revoking === email && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Revoke
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
