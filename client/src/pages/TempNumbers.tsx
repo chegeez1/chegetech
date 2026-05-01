@@ -16,6 +16,7 @@ interface SmsMessage {
 }
 
 const SOURCE_LABEL: Record<string, string> = {
+  "esimplus":    "eSIM Plus",
   "sms-online":  "SMS Online",
   "rsoi":        "EU Numbers",
   "sms-receive": "UK/Int'l",
