@@ -11077,7 +11077,7 @@ function ChegeBotSubsAdminTab() {
 // ═══════════════════════════════════════════════════════════════
 function DownloaderAdminTab() {
   const [subscribers, setSubscribers] = useState<string[]>([]);
-  const [status, setStatus]           = useState<{ ready: boolean; path: string; cookiesReady?: boolean } | null>(null);
+  const [status, setStatus]           = useState<{ ready: boolean; path: string; cookiesReady?: boolean; poTokenReady?: boolean } | null>(null);
   const [loading, setLoading]         = useState(true);
   const [grantEmail, setGrantEmail]   = useState("");
   const [granting, setGranting]       = useState(false);
@@ -11085,6 +11085,10 @@ function DownloaderAdminTab() {
   const [cookieText, setCookieText]   = useState("");
   const [savingCookies, setSavingCookies] = useState(false);
   const [showCookieInput, setShowCookieInput] = useState(false);
+  const [poTokenInput, setPoTokenInput]     = useState("");
+  const [visitorDataInput, setVisitorDataInput] = useState("");
+  const [savingPoToken, setSavingPoToken]   = useState(false);
+  const [showPoTokenInput, setShowPoTokenInput] = useState(false);
   const { toast } = useToast();
 
   async function load() {
@@ -11140,6 +11144,28 @@ function DownloaderAdminTab() {
       }
     } finally {
       setRevoking(null);
+    }
+  }
+
+  async function handleSavePoToken() {
+    if (!poTokenInput.trim()) return;
+    setSavingPoToken(true);
+    try {
+      const r = await fetch("/api/dl/admin/set-po-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": "chegetech-admin" },
+        body: JSON.stringify({ poToken: poTokenInput.trim(), visitorData: visitorDataInput.trim() }),
+      });
+      const data = await r.json();
+      if (r.ok) {
+        toast({ title: "PO Token saved", description: "YouTube will now use the PO Token for downloads." });
+        setPoTokenInput(""); setVisitorDataInput(""); setShowPoTokenInput(false);
+        load();
+      } else {
+        toast({ title: "Error", description: data.error, variant: "destructive" });
+      }
+    } finally {
+      setSavingPoToken(false);
     }
   }
 
@@ -11245,6 +11271,67 @@ function DownloaderAdminTab() {
             >
               {savingCookies ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Save Cookies
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* PO Token */}
+      <div className={`rounded-2xl border p-5 space-y-3 ${status?.poTokenReady ? "border-green-500/20 bg-green-500/5" : "border-orange-500/20 bg-orange-500/5"}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${status?.poTokenReady ? "bg-green-400" : "bg-orange-400 animate-pulse"}`} />
+              PO Token (Recommended)
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {status?.poTokenReady
+                ? "PO Token active — YouTube web client mode enabled."
+                : "No PO Token — recommended for reliable YouTube access."}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowPoTokenInput(v => !v)}
+            className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
+          >
+            {showPoTokenInput ? "Cancel" : status?.poTokenReady ? "Update" : "Set Token"}
+          </button>
+        </div>
+
+        {!status?.poTokenReady && !showPoTokenInput && (
+          <div className="text-xs text-orange-200/80 bg-orange-500/10 rounded-xl p-3 space-y-1">
+            <p className="font-semibold text-orange-300">How to get PO Token (no extension needed):</p>
+            <ol className="list-decimal list-inside space-y-0.5">
+              <li>Open Chrome DevTools (F12) → Network tab</li>
+              <li>Go to <strong>youtube.com</strong>, play any video</li>
+              <li>Filter requests by <strong>"player"</strong></li>
+              <li>Click a player request → Payload → find <code>visitorData</code> and <code>poToken</code></li>
+              <li>Or use: <a href="https://github.com/yt-dlp/yt-dlp/wiki/Extractors#po-token-guide" target="_blank" className="underline text-orange-300">yt-dlp PO Token guide</a></li>
+            </ol>
+          </div>
+        )}
+
+        {showPoTokenInput && (
+          <div className="space-y-2">
+            <input
+              value={poTokenInput}
+              onChange={e => setPoTokenInput(e.target.value)}
+              placeholder="PO Token (required)"
+              className="w-full bg-black/50 border border-white/10 rounded-xl px-3 h-9 text-sm text-white placeholder-gray-600 font-mono focus:outline-none focus:border-orange-500/40"
+            />
+            <input
+              value={visitorDataInput}
+              onChange={e => setVisitorDataInput(e.target.value)}
+              placeholder="visitorData (optional but recommended)"
+              className="w-full bg-black/50 border border-white/10 rounded-xl px-3 h-9 text-sm text-white placeholder-gray-600 font-mono focus:outline-none focus:border-orange-500/40"
+            />
+            <button
+              onClick={handleSavePoToken}
+              disabled={savingPoToken || !poTokenInput.trim()}
+              className="w-full h-9 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-semibold transition-all flex items-center justify-center gap-2"
+            >
+              {savingPoToken ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Save PO Token
             </button>
           </div>
         )}
