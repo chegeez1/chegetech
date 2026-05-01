@@ -317,9 +317,10 @@ export function registerDownloadRoutes(app: Express) {
         "--no-check-certificates",
         "--no-warnings",
         "--quiet",
-        // Prefer H.264 (avc1) — plays natively on Windows/macOS without extra codecs
-        "-f", "bestvideo[vcodec^=avc1][height<=720]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=720]+bestaudio[ext=m4a]/best[vcodec^=avc1][height<=720]/best[ext=mp4][height<=720]/best[ext=mp4]/best",
-        "--merge-output-format", "mp4",
+        // Sort formats: prefer H.264, then 720p max, then mp4/m4a container
+        // Much more reliable than a complex -f expression for cross-platform H.264
+        "-S", "codec:h264,res:720,ext:mp4:m4a",
+        "--remux-video", "mp4",
         "--add-header", `User-Agent:${BROWSER_UA}`,
         "--add-header", "Accept-Language:en-US,en;q=0.9",
         "-o", tmpFile,
