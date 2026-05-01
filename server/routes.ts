@@ -6237,7 +6237,7 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
   });
   registerTradingBotRoutes(app);
   registerBotRoutes(app, adminAuthMiddleware);
-  return httpServer;
+
 
   // ── Free Temp Numbers ──────────────────────────────────────────────────────
   app.get("/api/free-numbers", async (req, res) => {
@@ -6255,12 +6255,17 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
     try {
       const { getNumberMessages } = await import("./tempNumbers");
       const { digits } = req.params;
-      const source = (req.query.source as string) || "rscc";
-      const messages = await getNumberMessages(digits, source);
+      const source = (req.query.source as string) || "sms-online";
+      const slug   = (req.query.slug   as string) || digits;
+      const messages = await getNumberMessages(digits, source, slug);
       res.json({ success: true, messages });
     } catch (e: any) {
-      req.log?.error({ err: e }, "number-messages fetch failed");
+      req.log?.error({ err: e }, "number-sms fetch failed");
       res.json({ success: false, messages: [] });
+    }
+  });
+
+  return httpServer;
     }
   });
 
