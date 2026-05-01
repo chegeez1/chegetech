@@ -6266,7 +6266,4 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
   });
 
   return httpServer;
-    }
-  });
-
 }
