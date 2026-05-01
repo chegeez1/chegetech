@@ -150,9 +150,9 @@ export default function Downloader() {
           ) : (
             <>
               <div className="text-sm text-gray-400">
-                Free downloads this month:
+                Free downloads today:
                 <span className={`ml-2 font-bold ${quota.remaining === 0 ? "text-red-400" : "text-green-400"}`}>
-                  {quota.used}/{quota.limit} used
+                  {quota.used}/{quota.limit} used · resets midnight
                 </span>
               </div>
               <button onClick={() => setShowSubModal(true)}
