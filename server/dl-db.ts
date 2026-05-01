@@ -27,6 +27,11 @@ async function getPool(): Promise<InstanceType<typeof Pool>> {
       email      TEXT PRIMARY KEY,
       granted_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS dl_config (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS dl_usage (
       ip   TEXT    NOT NULL,
       date TEXT    NOT NULL,
@@ -57,6 +62,12 @@ function getSqlite(): ReturnType<typeof Database> {
     CREATE TABLE IF NOT EXISTS dl_subscribers (
       email TEXT PRIMARY KEY,
       granted_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS dl_config (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL DEFAULT '',
+      updated_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS dl_usage (
       ip   TEXT NOT NULL,
@@ -172,4 +183,34 @@ export async function incrementDailyUsage(ip: string): Promise<number> {
     "SELECT cnt FROM dl_usage WHERE ip = ? AND date = ?"
   ).get(ip, todayKey()) as { cnt: number } | undefined;
   return row?.cnt ?? 0;
+}
+
+// ─── Config (cookies, po_token, visitor_data) ────────────────────────────────
+
+/** Persist a config value (upsert) */
+export async function setConfig(key: string, value: string): Promise<void> {
+  if (PG_URL) {
+    const pool = await getPool();
+    await pool.query(
+      `INSERT INTO dl_config (key, value) VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+      [key, value]
+    );
+  } else {
+    getSqlite().prepare(`
+      INSERT INTO dl_config (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')
+    `).run(key, value, value);
+  }
+}
+
+/** Retrieve a config value, returns empty string if missing */
+export async function getConfig(key: string): Promise<string> {
+  if (PG_URL) {
+    const pool = await getPool();
+    const { rows } = await pool.query("SELECT value FROM dl_config WHERE key = $1", [key]);
+    return rows[0]?.value ?? "";
+  }
+  const row = getSqlite().prepare("SELECT value FROM dl_config WHERE key = ?").get(key) as { value: string } | undefined;
+  return row?.value ?? "";
 }
