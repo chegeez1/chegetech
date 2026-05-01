@@ -21,6 +21,8 @@ export const transactions = sqliteTable("transactions", {
   emailSent: integer("email_sent", { mode: "boolean" }).default(false),
   accountAssigned: integer("account_assigned", { mode: "boolean" }).default(false),
   paystackReference: text("paystack_reference"),
+  expiresAt: text("expires_at"),
+  resellerId: integer("reseller_id"),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
   updatedAt: text("updated_at").default(sql`(datetime('now'))`),
 });
@@ -38,6 +40,7 @@ export const customers = sqliteTable("customers", {
   totpEnabled: integer("totp_enabled", { mode: "boolean" }).default(false),
   passwordResetCode: text("password_reset_code"),
   passwordResetExpires: text("password_reset_expires"),
+  avatarUrl: text("avatar_url"),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
 });
 
@@ -47,6 +50,9 @@ export const customerSessions = sqliteTable("customer_sessions", {
   token: text("token").unique().notNull(),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
   expiresAt: text("expires_at").notNull(),
+  ip: text("ip"),
+  userAgent: text("user_agent"),
+  deviceName: text("device_name"),
 });
 
 export const apiKeys = sqliteTable("api_keys", {
@@ -55,6 +61,33 @@ export const apiKeys = sqliteTable("api_keys", {
   key: text("key").unique().notNull(),
   label: text("label").notNull(),
   active: integer("active", { mode: "boolean" }).default(true),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+});
+
+export const wallets = sqliteTable("wallets", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  customerId: integer("customer_id").notNull().unique(),
+  balance: integer("balance").notNull().default(0),
+  updatedAt: text("updated_at").default(sql`(datetime('now'))`),
+});
+
+export const walletTransactions = sqliteTable("wallet_transactions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  customerId: integer("customer_id").notNull(),
+  type: text("type").notNull(),
+  amount: integer("amount").notNull(),
+  description: text("description").notNull(),
+  reference: text("reference"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+});
+
+export const referrals = sqliteTable("referrals", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  referrerId: integer("referrer_id").notNull(),
+  referralCode: text("referral_code").unique().notNull(),
+  refereeEmail: text("referee_email"),
+  status: text("status").default("pending"),
+  rewardAmount: integer("reward_amount").default(0),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
 });
 
@@ -76,6 +109,9 @@ export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Customer = typeof customers.$inferSelect;
 export type CustomerSession = typeof customerSessions.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
+export type Wallet = typeof wallets.$inferSelect;
+export type WalletTransaction = typeof walletTransactions.$inferSelect;
+export type Referral = typeof referrals.$inferSelect;
 
 export interface SubscriptionPlan {
   name: string;
@@ -120,3 +156,57 @@ export interface AccountEntry {
 export interface AccountsData {
   [planId: string]: AccountEntry[];
 }
+
+// ─── WhatsApp Bot Deployment ─────────────────────────────────────────────────
+
+export const bots = sqliteTable("bots", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  repoUrl: text("repo_url").notNull(),
+  imageUrl: text("image_url"),
+  price: integer("price").notNull().default(70),
+  features: text("features").notNull().default("[]"),
+  requiresSessionId: integer("requires_session_id", { mode: "boolean" }).default(true),
+  requiresDbUrl: integer("requires_db_url", { mode: "boolean" }).default(false),
+  active: integer("active", { mode: "boolean" }).default(true),
+  category: text("category").default("general"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+});
+
+export const botOrders = sqliteTable("bot_orders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  reference: text("reference").unique().notNull(),
+  botId: integer("bot_id").notNull(),
+  botName: text("bot_name").notNull(),
+  customerName: text("customer_name").notNull(),
+  customerEmail: text("customer_email").notNull(),
+  customerPhone: text("customer_phone").notNull(),
+  sessionId: text("session_id"),
+  dbUrl: text("db_url"),
+  mode: text("mode").default("public"),
+  timezone: text("timezone").default("Africa/Nairobi"),
+  amount: integer("amount").notNull(),
+  status: text("status").default("pending"),
+  paystackReference: text("paystack_reference"),
+  deploymentNotes: text("deployment_notes"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at").default(sql`(datetime('now'))`),
+});
+
+export type Bot = typeof bots.$inferSelect;
+export type InsertBot = typeof bots.$inferInsert;
+export type BotOrder = typeof botOrders.$inferSelect;
+export type InsertBotOrder = typeof botOrders.$inferInsert;
+
+export const planPreviews = sqliteTable("plan_previews", {
+  planId: text("plan_id").primaryKey(),
+  mediaType: text("media_type").notNull(), // 'image' | 'video'
+  mimeType: text("mime_type").notNull(),
+  mediaData: text("media_data").notNull(), // base64
+  fileName: text("file_name"),
+  sizeBytes: integer("size_bytes").default(0),
+  updatedAt: text("updated_at").default(sql`(datetime('now'))`),
+});
+
+export type PlanPreview = typeof planPreviews.$inferSelect;

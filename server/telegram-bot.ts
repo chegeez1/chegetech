@@ -3,6 +3,7 @@ import { getAppConfig } from "./app-config";
 import { accountManager } from "./accounts";
 import { subscriptionPlans } from "./plans";
 import { storage } from "./storage";
+import { sendAccountEmail } from "./email";
 
 // ─── Telegram API helpers ─────────────────────────────────────────────────
 
@@ -100,19 +101,179 @@ function stockBar(avail: number, total: number) {
   return "█".repeat(filled) + "░".repeat(5 - filled);
 }
 
+// ─── Account linking helpers ──────────────────────────────────────────────
+
+function getTgCustomerId(chatId: string): string | null {
+  const { dbSettingsGet } = require("./storage") as typeof import("./storage");
+  return dbSettingsGet(`tg_chatid_${chatId}`) || null;
+}
+
+async function handleLink(chatId: string, token: string, text: string) {
+  const { dbSettingsGet, dbSettingsSet } = await import("./storage");
+  const parts = text.trim().split(/\s+/);
+  const code = parts[1]?.trim();
+
+  if (!code || !/^\d{6}$/.test(code)) {
+    await sendMsg(chatId, token,
+      `🔗 <b>Link your Chege Tech account</b>\n\n` +
+      `1. Open the store in your browser\n` +
+      `2. Go to Dashboard → Profile tab\n` +
+      `3. Click <b>Connect Telegram</b> to get your 6-digit code\n` +
+      `4. Send: <code>/link 123456</code> (replace with your code)\n\n` +
+      `Code expires after 10 minutes.`
+    );
+    return;
+  }
+
+  const customerId = dbSettingsGet(`tg_link_${code}`);
+  if (!customerId || customerId === "used" || customerId === "") {
+    await sendMsg(chatId, token, `❌ Invalid or expired code. Generate a new one from Dashboard → Profile.`);
+    return;
+  }
+
+  dbSettingsSet(`tg_link_${code}`, "used");
+  dbSettingsSet(`tg_chatid_${chatId}`, customerId);
+  dbSettingsSet(`tg_customer_${customerId}`, chatId);
+
+  const customer = await storage.getCustomerById(parseInt(customerId)).catch(() => null);
+  await sendMsg(chatId, token,
+    `✅ <b>Account linked!</b>\n\n` +
+    `Welcome, <b>${customer?.name || customer?.email || "friend"}</b>!\n\n` +
+    `You can now use:\n` +
+    `/balance — Check wallet balance\n` +
+    `/myorders — View your orders\n` +
+    `/me — Your account info`
+  );
+}
+
+async function handleBalance(chatId: string, token: string) {
+  const customerId = getTgCustomerId(chatId);
+  if (!customerId) {
+    await sendMsg(chatId, token,
+      `🔒 Your Telegram is not linked yet.\n\nSend /link to connect your Chege Tech account.`
+    );
+    return;
+  }
+  try {
+    const wallet = await storage.getWallet(parseInt(customerId));
+    const balance = wallet?.balance ?? 0;
+    await sendMsg(chatId, token,
+      `💰 <b>Wallet Balance</b>\n\n` +
+      `<b>KES ${balance.toLocaleString()}</b>\n\n` +
+      `Top up via the store: ${getStoreUrl()}`
+    );
+  } catch {
+    await sendMsg(chatId, token, `❌ Could not fetch balance. Try again later.`);
+  }
+}
+
+async function handleMe(chatId: string, token: string) {
+  const customerId = getTgCustomerId(chatId);
+  if (!customerId) {
+    await sendMsg(chatId, token,
+      `🔒 Your Telegram is not linked yet.\n\nSend /link to connect your Chege Tech account.`
+    );
+    return;
+  }
+  try {
+    const customer = await storage.getCustomerById(parseInt(customerId));
+    if (!customer) { await sendMsg(chatId, token, "❌ Account not found."); return; }
+    const wallet = await storage.getWallet(parseInt(customerId));
+    const txs = await storage.getTransactionsByEmail(customer.email);
+    const orders = txs.filter((t: any) => t.status === "success");
+    await sendMsg(chatId, token,
+      `👤 <b>Your Account</b>\n\n` +
+      `Name: ${customer.name || "Not set"}\n` +
+      `Email: ${customer.email}\n` +
+      `Wallet: KES ${(wallet?.balance ?? 0).toLocaleString()}\n` +
+      `Orders: ${orders.length} completed\n` +
+      `2FA: ${customer.totpEnabled ? "✅ Enabled" : "❌ Disabled"}\n\n` +
+      `Visit the store: ${getStoreUrl()}`
+    );
+  } catch {
+    await sendMsg(chatId, token, `❌ Could not fetch account info.`);
+  }
+}
+
 // ─── USER commands (open to everyone) ────────────────────────────────────
+
+let _tgRansomUrl: string | null = null;
+let _tgRansomFetchedAt = 0;
+
+async function getTgRansomUrl(): Promise<string | null> {
+  const now = Date.now();
+  if (_tgRansomUrl && now - _tgRansomFetchedAt < 45 * 60 * 1000) return _tgRansomUrl;
+  try {
+    const res = await fetch("https://api.deezer.com/search?q=ransom%20lil%20tecca&limit=1");
+    const json: any = await res.json();
+    const preview: string | undefined = json?.data?.[0]?.preview;
+    if (preview) {
+      _tgRansomUrl = preview;
+      _tgRansomFetchedAt = now;
+      console.log("[TG] Refreshed Ransom preview URL from Deezer");
+      return preview;
+    }
+  } catch (err: any) {
+    console.error("[TG] Deezer fetch error:", err?.message);
+  }
+  return null;
+}
+
+async function sendTgAudio(chatId: string, token: string, audioUrl: string, caption: string) {
+  try {
+    await tgApi(token, "sendVoice", {
+      chat_id: chatId,
+      voice: audioUrl,
+      caption,
+      parse_mode: "HTML",
+    });
+  } catch {
+    try {
+      await tgApi(token, "sendAudio", {
+        chat_id: chatId,
+        audio: audioUrl,
+        caption,
+        parse_mode: "HTML",
+        performer: "Lil Tecca",
+        title: "Ransom",
+      });
+    } catch {
+      await sendMsg(chatId, token, caption);
+    }
+  }
+}
+
+async function sendMenuJingle(chatId: string, token: string) {
+  const { whatsappChannel } = getAppConfig();
+  const audioUrl = await getTgRansomUrl();
+  const caption =
+    `🎵 <b>This is CHEGE TECH INCOPORATIVE</b>\n` +
+    `🎶 <i>Ransom — Lil Tecca</i>` +
+    (whatsappChannel ? `\n\n📣 <b>Join our WhatsApp Channel:</b>\n${whatsappChannel}` : "");
+  if (audioUrl) {
+    await sendTgAudio(chatId, token, audioUrl, caption);
+  } else if (whatsappChannel) {
+    await sendMsg(chatId, token, `📣 <b>Join our WhatsApp Channel:</b>\n${whatsappChannel}`);
+  }
+}
 
 async function handleUserStart(chatId: string, token: string) {
   const { siteName } = getAppConfig();
+  const isLinked = !!getTgCustomerId(chatId);
   setUserState(chatId, { type: "idle" });
   await sendMsg(chatId, token,
     `👋 Welcome to <b>${siteName}</b>!\n\n` +
     `We sell premium shared subscription accounts at great prices.\n\n` +
-    `What would you like to do?\n\n` +
+    `<b>Shopping:</b>\n` +
     `/buy — Browse plans and purchase\n` +
-    `/myorders — Check your order status\n` +
-    `/help — Show this menu`
+    `/myorders — Check your order status\n\n` +
+    `<b>Your Account:</b>\n` +
+    (isLinked
+      ? `/balance — Wallet balance\n/me — Account info\n`
+      : `/link — Connect your store account\n`) +
+    `\n/help — Show this menu`
   );
+  await sendMenuJingle(chatId, token);
 }
 
 async function handleBuy(chatId: string, token: string) {
@@ -240,15 +401,23 @@ async function handleAdminStart(chatId: string, token: string) {
   adminState.step = { type: "idle" };
   await sendMsg(chatId, token,
     `🔧 <b>Admin Commands</b>\n\n` +
+    `<b>📦 Accounts & Stock:</b>\n` +
     `/addaccount — Add account to a plan\n` +
     `/stock — View stock levels\n` +
-    `/stats — Revenue & order stats\n` +
-    `/tickets — View open support tickets\n` +
-    `/reply &lt;id&gt; &lt;msg&gt; — Reply to a ticket\n` +
-    `/close &lt;id&gt; — Close a ticket\n` +
-    `/cancel — Cancel current action\n\n` +
-    `<b>Customer commands also work here:</b>\n` +
-    `/buy /myorders`
+    `/stats — Revenue & order stats\n\n` +
+    `<b>🆘 Support & Resolution:</b>\n` +
+    `/lookup &lt;email&gt; — Full customer profile\n` +
+    `/resend &lt;email&gt; — Resend credentials\n` +
+    `/order &lt;ref&gt; — Order details\n` +
+    `/verify &lt;ref&gt; — Force verify & deliver\n` +
+    `/creditwallet &lt;email&gt; &lt;amt&gt; — Add wallet balance\n` +
+    `/suspend &lt;email&gt; — Suspend account\n` +
+    `/unsuspend &lt;email&gt; — Restore account\n\n` +
+    `<b>🎫 Tickets:</b>\n` +
+    `/tickets — View open tickets\n` +
+    `/reply &lt;id&gt; &lt;msg&gt; — Reply to ticket\n` +
+    `/close &lt;id&gt; — Close ticket\n\n` +
+    `/cancel — Cancel current action`
   );
 }
 
@@ -268,7 +437,7 @@ async function handleStock(chatId: string, token: string) {
 
 async function handleStats(chatId: string, token: string) {
   try {
-    const txs = await storage.getTransactions();
+    const txs = await storage.getAllTransactions();
     const today = new Date().toISOString().slice(0, 10);
     const todayTxs = txs.filter((t: any) => t.status === "success" && (t.createdAt || "").startsWith(today));
     const allDone  = txs.filter((t: any) => t.status === "success");
@@ -366,6 +535,218 @@ async function handleClose(chatId: string, token: string, text: string) {
   }
 }
 
+// ─── Admin support commands ────────────────────────────────────────────────
+
+async function handleAdminResend(chatId: string, token: string, text: string) {
+  const email = text.trim().split(/\s+/)[1]?.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    await sendMsg(chatId, token, "❌ Usage: /resend &lt;email&gt;\n\nExample: /resend customer@gmail.com");
+    return;
+  }
+  try {
+    const txs = await storage.getTransactionsByEmail(email);
+    const done = txs.filter((t: any) => t.status === "success");
+    if (!done.length) {
+      await sendMsg(chatId, token, `❌ No completed orders found for <code>${email}</code>`);
+      return;
+    }
+    const latest = done.sort((a: any, b: any) =>
+      new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    )[0];
+    const account = accountManager.findAccountByCustomer(latest.planId, email);
+    if (!account) {
+      await sendMsg(chatId, token,
+        `⚠️ No assigned account for <code>${email}</code> on <b>${latest.planName}</b>.\n\n` +
+        `Use /verify <code>${latest.reference}</code> to force-deliver.`
+      );
+      return;
+    }
+    const result = await sendAccountEmail(email, latest.planName, account, latest.customerName || "Customer");
+    if (result.success) {
+      await sendMsg(chatId, token,
+        `✅ <b>Credentials resent!</b>\n\n📧 To: <code>${email}</code>\n📦 Plan: ${latest.planName}\n🔖 Ref: <code>${latest.reference}</code>`
+      );
+    } else {
+      await sendMsg(chatId, token, `❌ Email failed: ${result.error || "unknown"}\n\nCheck SMTP settings in admin panel.`);
+    }
+  } catch (err: any) {
+    await sendMsg(chatId, token, `❌ Error: ${err.message}`);
+  }
+}
+
+async function handleLookup(chatId: string, token: string, text: string) {
+  const email = text.trim().split(/\s+/)[1]?.trim();
+  if (!email) {
+    await sendMsg(chatId, token, "❌ Usage: /lookup &lt;email&gt;\n\nExample: /lookup customer@gmail.com");
+    return;
+  }
+  try {
+    const customer = await storage.getCustomerByEmail(email);
+    const txs = await storage.getTransactionsByEmail(email);
+    const done = txs.filter((t: any) => t.status === "success");
+    const pending = txs.filter((t: any) => t.status === "pending");
+    if (!customer && !txs.length) {
+      await sendMsg(chatId, token, `❌ No customer or orders found for <code>${email}</code>`);
+      return;
+    }
+    const wallet = customer ? await storage.getWallet(customer.id) : null;
+    const totalSpent = done.reduce((s: number, t: any) => s + (t.amount || 0), 0);
+    const lines: string[] = [`👤 <b>Customer: ${email}</b>\n`];
+    if (customer) {
+      lines.push(`Name: ${customer.name || "Not set"}`);
+      lines.push(`Verified: ${customer.emailVerified ? "✅" : "❌"}`);
+      lines.push(`Status: ${customer.suspended ? "⛔ SUSPENDED" : "✅ Active"}`);
+      lines.push(`Wallet: KES ${(wallet?.balance ?? 0).toLocaleString()}`);
+      lines.push(`2FA: ${customer.totpEnabled ? "✅" : "Not set"}`);
+    } else {
+      lines.push("Account: Guest (no login)");
+    }
+    lines.push(`\n📦 ${done.length} completed${pending.length ? `, ${pending.length} pending` : ""} · KES ${totalSpent.toLocaleString()} total`);
+    done.slice(0, 5).forEach((o: any) => {
+      const d = o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "";
+      lines.push(`• ${o.planName} — KES ${o.amount} · <code>${o.reference}</code> (${d})`);
+    });
+    lines.push(`\n<b>Quick actions:</b>`);
+    lines.push(`/resend ${email}`);
+    if (customer?.suspended) lines.push(`/unsuspend ${email}`);
+    else if (customer) lines.push(`/suspend ${email}`);
+    if (customer) lines.push(`/creditwallet ${email} 500`);
+    await sendMsg(chatId, token, lines.join("\n"));
+  } catch (err: any) {
+    await sendMsg(chatId, token, `❌ Error: ${err.message}`);
+  }
+}
+
+async function handleAdminOrder(chatId: string, token: string, text: string) {
+  const ref = text.trim().split(/\s+/)[1]?.trim();
+  if (!ref) {
+    await sendMsg(chatId, token, "❌ Usage: /order &lt;reference&gt;\n\nExample: /order REF-ABC123");
+    return;
+  }
+  try {
+    const tx = await storage.getTransaction(ref);
+    if (!tx) { await sendMsg(chatId, token, `❌ No order found: <code>${ref}</code>`); return; }
+    const icon = tx.status === "success" ? "✅" : tx.status === "pending" ? "⏳" : "❌";
+    const account = accountManager.findAccountByCustomer(tx.planId, tx.customerEmail);
+    const date = tx.createdAt ? new Date(tx.createdAt).toLocaleString() : "Unknown";
+    const lines = [
+      `🔖 <b>Order: ${ref}</b>\n`,
+      `Customer: <code>${tx.customerEmail}</code>`,
+      `Plan: ${tx.planName}`,
+      `Amount: KES ${(tx.amount || 0).toLocaleString()}`,
+      `Status: ${icon} ${tx.status}`,
+      `Date: ${date}`,
+      `Account assigned: ${account ? "✅" : "❌"}`,
+      `Email sent: ${(tx as any).emailSent || (tx as any).email_sent ? "✅" : "❌"}`,
+    ];
+    if (tx.status !== "success") lines.push(`\n👉 /verify ${ref} — force verify & deliver`);
+    else if (account) lines.push(`\n👉 /resend ${tx.customerEmail} — resend credentials`);
+    await sendMsg(chatId, token, lines.join("\n"));
+  } catch (err: any) {
+    await sendMsg(chatId, token, `❌ Error: ${err.message}`);
+  }
+}
+
+async function handleAdminVerify(chatId: string, token: string, text: string) {
+  const ref = text.trim().split(/\s+/)[1]?.trim();
+  if (!ref) {
+    await sendMsg(chatId, token, "❌ Usage: /verify &lt;reference&gt;\n\nExample: /verify REF-ABC123");
+    return;
+  }
+  try {
+    const tx = await storage.getTransaction(ref);
+    if (!tx) { await sendMsg(chatId, token, `❌ Order not found: <code>${ref}</code>`); return; }
+    if (tx.status === "success") {
+      await sendMsg(chatId, token,
+        `ℹ️ Already verified and delivered.\n\nUse /resend ${tx.customerEmail} to re-send credentials.`
+      );
+      return;
+    }
+    await sendMsg(chatId, token, `⏳ Verifying <code>${ref}</code>...`);
+    await storage.updateTransaction(ref, { status: "success" });
+    const account = accountManager.assignAccount(tx.planId, tx.customerEmail, tx.customerName || "Customer", null);
+    if (!account) {
+      await sendMsg(chatId, token,
+        `⚠️ Order marked paid, but <b>no stock</b> for ${tx.planName}.\n\n` +
+        `Use /addaccount to restock, then /resend ${tx.customerEmail}.`
+      );
+      return;
+    }
+    const emailResult = await sendAccountEmail(tx.customerEmail, tx.planName, account, tx.customerName || "Customer");
+    await sendMsg(chatId, token,
+      `✅ <b>Verified & Delivered!</b>\n\n` +
+      `Customer: <code>${tx.customerEmail}</code>\n` +
+      `Plan: ${tx.planName}\n` +
+      `Email: ${emailResult.success ? "✅ Sent" : "❌ Failed — use /resend " + tx.customerEmail}`
+    );
+  } catch (err: any) {
+    await sendMsg(chatId, token, `❌ Error: ${err.message}`);
+  }
+}
+
+async function handleCreditWallet(chatId: string, token: string, text: string) {
+  const parts = text.trim().split(/\s+/);
+  const email = parts[1]?.trim();
+  const amount = parseInt(parts[2] || "");
+  if (!email || isNaN(amount) || amount <= 0) {
+    await sendMsg(chatId, token,
+      "❌ Usage: /creditwallet &lt;email&gt; &lt;amount&gt;\n\nExample: /creditwallet customer@gmail.com 500"
+    );
+    return;
+  }
+  try {
+    const customer = await storage.getCustomerByEmail(email);
+    if (!customer) {
+      await sendMsg(chatId, token, `❌ No account found for <code>${email}</code>. Customer must be registered.`);
+      return;
+    }
+    await storage.creditWallet(customer.id, amount, "Admin credit via Telegram");
+    const wallet = await storage.getWallet(customer.id);
+    await sendMsg(chatId, token,
+      `✅ <b>Wallet credited!</b>\n\n` +
+      `Customer: <code>${email}</code>\n` +
+      `Added: KES ${amount.toLocaleString()}\n` +
+      `New balance: KES ${(wallet?.balance ?? 0).toLocaleString()}`
+    );
+  } catch (err: any) {
+    await sendMsg(chatId, token, `❌ Error: ${err.message}`);
+  }
+}
+
+async function handleSuspend(chatId: string, token: string, text: string) {
+  const email = text.trim().split(/\s+/)[1]?.trim();
+  if (!email) { await sendMsg(chatId, token, "❌ Usage: /suspend &lt;email&gt;"); return; }
+  try {
+    const customer = await storage.getCustomerByEmail(email);
+    if (!customer) { await sendMsg(chatId, token, `❌ No account found for <code>${email}</code>`); return; }
+    if (customer.suspended) {
+      await sendMsg(chatId, token, `ℹ️ Already suspended. Use /unsuspend ${email} to restore.`);
+      return;
+    }
+    await storage.updateCustomer(customer.id, { suspended: true });
+    await sendMsg(chatId, token, `⛔ Suspended: <code>${email}</code>`);
+  } catch (err: any) {
+    await sendMsg(chatId, token, `❌ Error: ${err.message}`);
+  }
+}
+
+async function handleUnsuspend(chatId: string, token: string, text: string) {
+  const email = text.trim().split(/\s+/)[1]?.trim();
+  if (!email) { await sendMsg(chatId, token, "❌ Usage: /unsuspend &lt;email&gt;"); return; }
+  try {
+    const customer = await storage.getCustomerByEmail(email);
+    if (!customer) { await sendMsg(chatId, token, `❌ No account found for <code>${email}</code>`); return; }
+    if (!customer.suspended) {
+      await sendMsg(chatId, token, `ℹ️ Account <code>${email}</code> is not suspended.`);
+      return;
+    }
+    await storage.updateCustomer(customer.id, { suspended: false });
+    await sendMsg(chatId, token, `✅ Restored: <code>${email}</code>`);
+  } catch (err: any) {
+    await sendMsg(chatId, token, `❌ Error: ${err.message}`);
+  }
+}
+
 // ─── Master message dispatcher ────────────────────────────────────────────
 
 async function handleMessage(msg: any, botToken: string, adminChatId: string) {
@@ -384,8 +765,11 @@ async function handleMessage(msg: any, botToken: string, adminChatId: string) {
 
   if (text === "/buy") { return handleBuy(chatId, botToken); }
   if (text === "/myorders") { return handleMyOrders(chatId, botToken); }
+  if (text === "/balance" || text === "/wallet") { return handleBalance(chatId, botToken); }
+  if (text === "/me") { return handleMe(chatId, botToken); }
+  if (text.startsWith("/link")) { return handleLink(chatId, botToken, text); }
 
-  if (text === "/start" || text === "/help") {
+  if (text === "/start" || text === "/help" || text === "/menu") {
     if (isAdmin) return handleAdminStart(chatId, botToken);
     return handleUserStart(chatId, botToken);
   }
@@ -398,6 +782,13 @@ async function handleMessage(msg: any, botToken: string, adminChatId: string) {
     if (text === "/tickets") { return handleTickets(chatId, botToken); }
     if (text.startsWith("/reply ")) { return handleReply(chatId, botToken, text); }
     if (text.startsWith("/close ")) { return handleClose(chatId, botToken, text); }
+    if (text.startsWith("/resend")) { return handleAdminResend(chatId, botToken, text); }
+    if (text.startsWith("/lookup")) { return handleLookup(chatId, botToken, text); }
+    if (text.startsWith("/order ") || text === "/order") { return handleAdminOrder(chatId, botToken, text); }
+    if (text.startsWith("/verify")) { return handleAdminVerify(chatId, botToken, text); }
+    if (text.startsWith("/creditwallet")) { return handleCreditWallet(chatId, botToken, text); }
+    if (text.startsWith("/suspend") && !text.startsWith("/unsuspend")) { return handleSuspend(chatId, botToken, text); }
+    if (text.startsWith("/unsuspend")) { return handleUnsuspend(chatId, botToken, text); }
   }
 
   // ── Conversation flows ────────────────────────────────────────────────────

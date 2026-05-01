@@ -7,6 +7,8 @@ export interface CredentialsOverride {
   paystackSecretKey?: string;
   emailUser?: string;
   emailPass?: string;
+  resendApiKey?: string;
+  resendFrom?: string;
   adminEmail?: string;
   adminPassword?: string;
   telegramBotToken?: string;
@@ -16,6 +18,8 @@ export interface CredentialsOverride {
   whatsappVerifyToken?: string;
   whatsappAdminPhone?: string;
   openaiApiKey?: string;
+  externalDatabaseUrl?: string;
+  cloudflareApiToken?: string;
 }
 
 export function getCredentialsOverride(): CredentialsOverride {

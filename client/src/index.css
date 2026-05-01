@@ -319,3 +319,54 @@
     inset: -1px;
   }
 }
+
+/* ── Storefront Light Mode ── */
+.ct-light {
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.ct-light .glass-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  backdrop-filter: none;
+}
+
+.ct-light .glass,
+.ct-light [class*="glass"] {
+  background: rgba(255,255,255,0.85);
+  border-color: #e2e8f0;
+  backdrop-filter: blur(8px);
+}
+
+.ct-light .glass-nav {
+  background: rgba(255,255,255,0.92);
+  border-bottom: 1px solid #e2e8f0;
+  backdrop-filter: blur(16px);
+}
+
+.ct-light .text-white { color: #1e293b !important; }
+.ct-light .text-white\/40 { color: #64748b !important; }
+.ct-light .text-white\/50 { color: #475569 !important; }
+.ct-light .text-white\/60 { color: #334155 !important; }
+.ct-light .text-white\/70 { color: #1e293b !important; }
+.ct-light .text-white\/80 { color: #0f172a !important; }
+.ct-light .text-muted-foreground { color: #94a3b8; }
+
+.ct-light .border-white\/10 { border-color: #e2e8f0 !important; }
+.ct-light .border-white\/8 { border-color: #e2e8f0 !important; }
+
+.ct-light .bg-white\/3 { background: #f1f5f9 !important; }
+.ct-light .bg-white\/5 { background: #f8fafc !important; }
+.ct-light .bg-white\/10 { background: #f1f5f9 !important; }
+.ct-light .bg-background { background: #f8fafc !important; }
+
+.ct-light input, .ct-light textarea {
+  color: #1e293b;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.ct-light input::placeholder, .ct-light textarea::placeholder {
+  color: #94a3b8;
+}

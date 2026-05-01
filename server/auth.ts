@@ -88,6 +88,7 @@ export function verifyTotpWithSecret(token: string, secret: string): boolean {
 export interface AdminTokenPayload {
   role: "super" | "subadmin";
   subAdminId?: number;
+  secondaryId?: number;
   permissions?: string[];
 }
 
@@ -107,6 +108,11 @@ export function createAdminToken(payload?: AdminTokenPayload): string {
     const sig = hmacSign(data);
     return Buffer.from(`${data}:${sig}`).toString("base64");
   }
+  if (payload && payload.role === "super" && payload.secondaryId) {
+    const data = `superadmin2:${payload.secondaryId}:${timestamp}`;
+    const sig = hmacSign(data);
+    return Buffer.from(`${data}:${sig}`).toString("base64");
+  }
   const data = `admin:${timestamp}`;
   const sig = hmacSign(data);
   return Buffer.from(`${data}:${sig}`).toString("base64");
@@ -115,7 +121,7 @@ export function createAdminToken(payload?: AdminTokenPayload): string {
 export function validateAdminToken(token: string): AdminTokenPayload | false {
   try {
     const decoded = Buffer.from(token, "base64").toString("utf8");
-    const maxAge = 24 * 60 * 60 * 1000;
+    const maxAge = 3 * 24 * 60 * 60 * 1000;
 
     if (decoded.startsWith("subadmin:")) {
       const parts = decoded.split(":");
@@ -126,6 +132,17 @@ export function validateAdminToken(token: string): AdminTokenPayload | false {
       if (hmacSign(data) !== sig) return false;
       if (Date.now() - timestamp >= maxAge) return false;
       return { role: "subadmin", subAdminId };
+    }
+
+    if (decoded.startsWith("superadmin2:")) {
+      const parts = decoded.split(":");
+      const secondaryId = parseInt(parts[1]);
+      const timestamp = parseInt(parts[2]);
+      const sig = parts[3];
+      const data = `superadmin2:${secondaryId}:${timestamp}`;
+      if (hmacSign(data) !== sig) return false;
+      if (Date.now() - timestamp >= maxAge) return false;
+      return { role: "super", secondaryId };
     }
 
     if (decoded.startsWith("admin:")) {
@@ -143,6 +160,55 @@ export function validateAdminToken(token: string): AdminTokenPayload | false {
     return false;
   }
 }
+
+// ─── Customer JWT ─────────────────────────────────────────────────────────────
+
+const CUSTOMER_JWT_EXPIRY_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+function getCustomerJwtSecret(): string {
+  const { password } = getAdminCredentials();
+  return (process.env.SESSION_SECRET || password) + "_customer_jwt_v1";
+}
+
+function b64url(str: string): string {
+  return Buffer.from(str).toString("base64url");
+}
+
+function hmacCustomer(data: string): string {
+  return crypto.createHmac("sha256", getCustomerJwtSecret()).update(data).digest("base64url");
+}
+
+export function createCustomerJwt(customerId: number, email: string): string {
+  const header  = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const nowSec  = Math.floor(Date.now() / 1000);
+  const payload = b64url(JSON.stringify({
+    sub: customerId,
+    email,
+    iat: nowSec,
+    exp: nowSec + Math.floor(CUSTOMER_JWT_EXPIRY_MS / 1000),
+  }));
+  const sig = hmacCustomer(`${header}.${payload}`);
+  return `${header}.${payload}.${sig}`;
+}
+
+export function verifyCustomerJwt(token: string): { customerId: number; email: string } | null {
+  try {
+    if (!token || !token.includes(".")) return null;
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const [header, payload, sig] = parts;
+    const expected = hmacCustomer(`${header}.${payload}`);
+    if (sig !== expected) return null;
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!data.exp || Math.floor(Date.now() / 1000) > data.exp) return null;
+    if (!data.sub || typeof data.sub !== "number") return null;
+    return { customerId: data.sub, email: data.email || "" };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Refs ──────────────────────────────────────────────────────────────────────
 
 let _storageRef: any = null;
 export function setStorageRef(s: any) { _storageRef = s; }
@@ -164,12 +230,20 @@ export async function adminAuthMiddleware(req: any, res: any, next: any) {
 
   req.adminRole = payload.role;
   req.subAdminId = payload.subAdminId;
+  req.secondaryId = payload.secondaryId;
   next();
 }
 
 export function superAdminOnly(req: any, res: any, next: any) {
   if (req.adminRole !== "super") {
     return res.status(403).json({ success: false, error: "Super admin access required" });
+  }
+  next();
+}
+
+export function primarySuperAdminOnly(req: any, res: any, next: any) {
+  if (req.adminRole !== "super" || req.secondaryId) {
+    return res.status(403).json({ success: false, error: "Primary super admin access required" });
   }
   next();
 }
@@ -182,3 +256,36 @@ export function requirePermission(...perms: string[]) {
     next();
   };
 }
+
+export async function customerAuthMiddleware(req: any, res: any, next: any) {
+  // Cookie-first; fall back to Bearer header for API clients
+  const token: string =
+    req.cookies?.customer_token ||
+    (req.headers.authorization ? req.headers.authorization.replace("Bearer ", "") : "");
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  if (!_storageRef) return res.status(500).json({ error: "Server not ready" });
+
+  // ── JWT path (fast — no DB lookup for token) ──
+  const jwtPayload = verifyCustomerJwt(token);
+  if (jwtPayload) {
+    const customer = await _storageRef.getCustomerById(jwtPayload.customerId);
+    if (!customer) return res.status(401).json({ error: "Unauthorized" });
+    if (customer.suspended) return res.status(403).json({ error: "Account suspended. Contact support." });
+    req.customer = customer;
+    return next();
+  }
+
+  // ── Legacy UUID session fallback (for existing logged-in users) ──
+  const session = await _storageRef.getCustomerSession(token);
+  if (!session) return res.status(401).json({ error: "Unauthorized" });
+  if (new Date(session.expiresAt) < new Date()) {
+    await _storageRef.deleteCustomerSession(token);
+    return res.status(401).json({ error: "Session expired" });
+  }
+  const customer = await _storageRef.getCustomerById(session.customerId);
+  if (!customer) return res.status(401).json({ error: "Unauthorized" });
+  if (customer.suspended) return res.status(403).json({ error: "Account suspended. Contact support." });
+  req.customer = customer;
+  next();
+}
+  

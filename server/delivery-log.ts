@@ -65,7 +65,7 @@ export function getDeliveryProof(reference: string): {
   const logs = getDeliveryLogs(reference);
   const successful = logs.filter(l => l.status === "success");
   const failed = logs.filter(l => l.status === "failed");
-  const methods = [...new Set(logs.map(l => l.method))];
+  const methods = Array.from(new Set(logs.map(l => l.method)));
 
   return {
     reference,

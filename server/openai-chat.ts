@@ -1,15 +1,23 @@
 import OpenAI from "openai";
 import { subscriptionPlans } from "./plans";
 import { planOverridesManager } from "./plan-overrides";
-import { getCredentialsOverride } from "./credentials-store";
 
 const conversationHistory: Map<string, Array<{ role: "system" | "user" | "assistant"; content: string }>> = new Map();
 
+function getOpenAIClient(): OpenAI | null {
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (baseURL && apiKey) {
+    return new OpenAI({ apiKey, baseURL });
+  }
+  return null;
+}
+
 function buildSystemPrompt(): string {
   const planInfo: string[] = [];
-  for (const [categoryKey, category] of Object.entries(subscriptionPlans)) {
+  for (const [, category] of Object.entries(subscriptionPlans)) {
     const planNames = Object.entries(category.plans).map(
-      ([id, plan]) => `${plan.name} (${plan.duration}) - KES ${plan.price}`
+      ([, plan]) => `${plan.name} (${plan.duration}) - KES ${plan.price}`
     );
     planInfo.push(`${category.category}: ${planNames.join(", ")}`);
   }
@@ -31,7 +39,10 @@ Key Information:
 - Payments are processed via Paystack (M-Pesa, card, etc.)
 - After payment, account credentials are delivered via email automatically
 - Shared accounts mean multiple users share one subscription
-- Customers can create accounts to track their orders
+- Customers can create accounts to track their orders and view their wallet balance
+- Customers earn KES 100 wallet credit for each successful referral (when the referee makes their first purchase)
+- Referred customers get KES 50 wallet credit on their first purchase
+- Wallet balance can be used to pay for subscriptions
 - If a customer has activation issues, they should check their email (including spam folder) for credentials
 - For payment issues, customers should verify the transaction reference
 - For refund requests or complex issues, suggest escalating to a human support agent
@@ -44,61 +55,50 @@ Guidelines:
 - Keep responses brief and to the point`;
 }
 
-export function getAIChatResponse(sessionId: string, userMessage: string): Promise<{ response: string; sessionId: string }> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const override = getCredentialsOverride();
-      const apiKey = override.openaiApiKey || process.env.OPENAI_API_KEY;
-      if (!apiKey) {
-        return resolve({
-          response: "AI support is currently unavailable. Please try talking to a human agent instead.",
-          sessionId,
-        });
-      }
-      const openai = new OpenAI({ apiKey });
+export async function getAIChatResponse(sessionId: string, userMessage: string): Promise<{ response: string; sessionId: string }> {
+  const client = getOpenAIClient();
+  if (!client) {
+    return {
+      response: "Our AI assistant is being set up. Please use the **Talk to human** button to speak with our support team directly.",
+      sessionId,
+    };
+  }
 
-      if (!conversationHistory.has(sessionId)) {
-        conversationHistory.set(sessionId, [
-          { role: "system", content: buildSystemPrompt() }
-        ]);
-      }
-
-      const messages = conversationHistory.get(sessionId)!;
-      messages.push({ role: "user", content: userMessage });
-
-      if (messages.length > 21) {
-        const systemMsg = messages[0];
-        const recentMessages = messages.slice(-20);
-        messages.length = 0;
-        messages.push(systemMsg, ...recentMessages);
-      }
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: messages,
-        max_tokens: 500,
-        temperature: 0.7,
-      });
-
-      const assistantMessage = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response. Please try again.";
-      messages.push({ role: "assistant", content: assistantMessage });
-
-      resolve({ response: assistantMessage, sessionId });
-    } catch (error: any) {
-      console.error("[openai-chat] Error:", error.message);
-      if (error.status === 401 || error.code === "invalid_api_key") {
-        resolve({
-          response: "AI support is currently unavailable. Please try talking to a human agent instead.",
-          sessionId,
-        });
-      } else {
-        resolve({
-          response: "I'm having trouble processing your request right now. Please try again or talk to a human agent.",
-          sessionId,
-        });
-      }
+  try {
+    if (!conversationHistory.has(sessionId)) {
+      conversationHistory.set(sessionId, [
+        { role: "system", content: buildSystemPrompt() }
+      ]);
     }
-  });
+
+    const messages = conversationHistory.get(sessionId)!;
+    messages.push({ role: "user", content: userMessage });
+
+    if (messages.length > 21) {
+      const systemMsg = messages[0];
+      const recentMessages = messages.slice(-20);
+      messages.length = 0;
+      messages.push(systemMsg, ...recentMessages);
+    }
+
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: messages,
+      max_tokens: 500,
+      temperature: 0.7,
+    });
+
+    const assistantMessage = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response. Please try again.";
+    messages.push({ role: "assistant", content: assistantMessage });
+
+    return { response: assistantMessage, sessionId };
+  } catch (error: any) {
+    console.error("[ai-chat] Error:", error.message);
+    return {
+      response: "I'm having trouble right now. Please try again or tap **Talk to human** to speak with our team.",
+      sessionId,
+    };
+  }
 }
 
 export function clearSession(sessionId: string): void {

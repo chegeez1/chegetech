@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Mail, Lock, User, ShieldCheck, ArrowLeft, Loader2, KeyRound, RotateCcw } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, ShieldCheck, ArrowLeft, Loader2, KeyRound, RotateCcw, Gift } from "lucide-react";
 
 function setCustomerToken(t: string) { localStorage.setItem("customer_token", t); }
 function setCustomerData(c: any) { localStorage.setItem("customer_data", JSON.stringify(c)); }
 
-type Mode = "login" | "signup" | "verify" | "forgot" | "reset";
+type Mode = "login" | "signup" | "verify" | "forgot" | "forgotSent" | "reset";
 
 export default function Auth() {
   const [mode, setMode] = useState<Mode>("login");
@@ -24,7 +24,41 @@ export default function Auth() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [suspended, setSuspended] = useState(false);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [referralCode, setReferralCode] = useState(() => {
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    return params.get("ref") || "";
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (ref) { setReferralCode(ref); setMode("signup"); return; }
+
+    // Already logged in — check localStorage first, then fall back to cookie session
+    const token = localStorage.getItem("customer_token");
+    const cachedData = localStorage.getItem("customer_data");
+    if (token && cachedData) { setLocation("/"); return; }
+
+    // Either no localStorage token, or token exists but no cached data —
+    // ask the server (cookie will be sent automatically for same-origin requests)
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch("/api/auth/me", { headers, credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          if (d.token) localStorage.setItem("customer_token", d.token);
+          localStorage.setItem("customer_data", JSON.stringify(d.customer));
+          setLocation("/");
+        } else {
+          localStorage.removeItem("customer_token");
+          localStorage.removeItem("customer_data");
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
@@ -45,17 +79,14 @@ export default function Auth() {
     if (resendCooldown > 0) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/register", {
+      const res = await fetch("/api/auth/resend-verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, password }),
+        body: JSON.stringify({ email }),
       });
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Code resent!", description: "Check your email for a new verification code" });
-        startCooldown();
-      } else {
-        toast({ title: "Resend failed", description: data.error, variant: "destructive" });
+        toast({ title: "Link resent!", description: "Check your inbox for a new verification link" });
       }
     } catch {
       toast({ title: "Error", description: "Connection failed", variant: "destructive" });
@@ -73,10 +104,7 @@ export default function Auth() {
       });
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Code resent!", description: "Check your email for a new reset code" });
-        startCooldown();
-      } else {
-        toast({ title: "Resend failed", description: data.error, variant: "destructive" });
+        toast({ title: "Link resent!", description: "Check your inbox for a new verification link" });
       }
     } catch {
       toast({ title: "Error", description: "Connection failed", variant: "destructive" });
@@ -111,6 +139,9 @@ export default function Auth() {
       } else if (data.needsVerification) {
         setMode("verify");
         toast({ title: "Verify your email", description: "Enter the code sent to your email" });
+      } else if (data.suspended) {
+        toast({ title: "Account Suspended", description: "Your account has been suspended. Please contact support to resolve this.", variant: "destructive" });
+        setSuspended(true);
       } else {
         toast({ title: "Login failed", description: data.error, variant: "destructive" });
       }
@@ -132,12 +163,12 @@ export default function Auth() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, password }),
+        body: JSON.stringify({ email, name, password, referralCode: referralCode.trim() || undefined }),
       });
       const data = await res.json();
       if (data.success) {
         setMode("verify");
-        toast({ title: "Check your email!", description: "We sent a 6-digit verification code" });
+        toast({ title: "Check your email!", description: "Click the verification link we sent you" });
       } else {
         toast({ title: "Registration failed", description: data.error, variant: "destructive" });
       }
@@ -148,12 +179,17 @@ export default function Auth() {
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
+    const cleanCode = verifyCode.replace(/\D/g, "").trim();
+    if (cleanCode.length !== 6) {
+      toast({ title: "Enter the 6-digit code", description: "Check your email inbox or spam folder", variant: "destructive" });
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/verify-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: verifyCode }),
+        body: JSON.stringify({ email, code: cleanCode }),
       });
       const data = await res.json();
       if (data.success) {
@@ -180,8 +216,8 @@ export default function Auth() {
       });
       const data = await res.json();
       if (data.success) {
-        setMode("reset");
-        toast({ title: "Reset code sent!", description: "Check your email for a 6-digit code" });
+        setMode("forgotSent");
+        toast({ title: "Reset link sent!", description: "Check your inbox for a password reset link" });
       } else {
         toast({ title: "Failed", description: data.error, variant: "destructive" });
       }
@@ -222,6 +258,7 @@ export default function Auth() {
     signup: "Create Account",
     verify: "Verify Email",
     forgot: "Forgot Password",
+    forgotSent: "Check your email",
     reset: "Reset Password",
   };
 
@@ -229,7 +266,8 @@ export default function Auth() {
     login: "Sign in to your Chege Tech account",
     signup: "Join Chege Tech for exclusive access",
     verify: `Enter the code sent to ${email}`,
-    forgot: "Enter your email to receive a reset code",
+    forgot: "Enter your email to get a reset link",
+    forgotSent: "Reset link sent to your inbox",
     reset: `Enter the code sent to ${email}`,
   };
 
@@ -309,24 +347,22 @@ export default function Auth() {
 
           {/* VERIFY FORM */}
           {mode === "verify" && (
-            <form onSubmit={handleVerify} className="space-y-4">
-              <div>
-                <label className="text-xs text-white/60 block mb-1.5">Verification Code</label>
-                <NeonInput
-                  icon={<ShieldCheck className="w-4 h-4" />}
-                  type="text"
-                  placeholder="123456"
-                  value={verifyCode}
-                  onChange={(e) => setVerifyCode(e.target.value)}
-                  maxLength={6}
-                  testId="input-verify-code"
-                />
+            <div className="space-y-4">
+              <div className="rounded-xl p-5 text-center" style={{ background: "rgba(99,102,241,.1)", border: "1px solid rgba(99,102,241,.2)" }}>
+                <div className="w-14 h-14 rounded-full bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center mx-auto mb-3">
+                  <Mail className="w-6 h-6 text-indigo-300" />
+                </div>
+                <p className="text-white font-semibold text-sm mb-1">Check your inbox</p>
+                <p className="text-white/60 text-xs leading-relaxed">
+                  We sent a verification link to{" "}
+                  <span className="text-indigo-300 font-semibold">{email}</span>.<br />
+                  Click the button in the email to confirm your account.
+                </p>
+                <p className="text-white/35 text-[11px] mt-3">Don't see it? Check your spam folder.</p>
               </div>
-              <NeonButton type="submit" loading={loading} testId="button-verify">
-                Verify Email
-              </NeonButton>
-              <p className="text-center text-white/30 text-xs">
-                Didn't receive the code? Check your spam folder or{" "}
+
+              <p className="text-center text-white/40 text-xs">
+                Didn't get it?{" "}
                 <button
                   type="button"
                   onClick={handleResendVerification}
@@ -334,13 +370,36 @@ export default function Auth() {
                   className="text-indigo-400 font-bold hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-resend-verify"
                 >
-                  {resendCooldown > 0 ? `resend (${resendCooldown}s)` : "resend"}
+                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend link"}
                 </button>
+                {" "}· valid for 30 min
               </p>
+
               <button type="button" onClick={() => switchMode("login")} className="w-full text-center text-white/40 text-sm hover:text-white/70 transition-colors mt-2">
-                Back to login
+                <ArrowLeft className="w-3.5 h-3.5 inline mr-1" />Back to login
               </button>
-            </form>
+            </div>
+          )}
+
+          {/* FORGOT PASSWORD: link sent confirmation */}
+          {mode === "forgotSent" && (
+            <div className="space-y-4">
+              <div className="rounded-xl p-5 text-center" style={{ background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)" }}>
+                <div className="w-14 h-14 rounded-full bg-red-500/20 border border-red-400/40 flex items-center justify-center mx-auto mb-3">
+                  <Mail className="w-6 h-6 text-red-300" />
+                </div>
+                <p className="text-white font-semibold text-sm mb-1">Check your inbox</p>
+                <p className="text-white/60 text-xs leading-relaxed">
+                  We sent a password reset link to{" "}
+                  <span className="text-red-300 font-semibold">{email}</span>.<br />
+                  Click the button in the email to choose a new password.
+                </p>
+                <p className="text-white/35 text-[11px] mt-3">Don't see it? Check your spam folder. Link expires in 30 min.</p>
+              </div>
+              <button type="button" onClick={() => switchMode("login")} className="w-full text-center text-white/40 text-sm hover:text-white/70 transition-colors mt-2">
+                <ArrowLeft className="w-3.5 h-3.5 inline mr-1" />Back to login
+              </button>
+            </div>
           )}
 
           {/* FORGOT PASSWORD FORM */}
@@ -427,6 +486,19 @@ export default function Auth() {
           {/* LOGIN FORM */}
           {mode === "login" && (
             <form onSubmit={handleLogin} className="space-y-4">
+              {suspended && (
+                <div className="rounded-xl p-4 border border-red-500/30" style={{ background: "rgba(239,68,68,.1)" }}>
+                  <p className="text-red-400 text-sm font-semibold mb-1">Account Suspended</p>
+                  <p className="text-red-300/80 text-xs">Your account has been suspended. Please contact our support team to resolve this issue.</p>
+                  <button
+                    type="button"
+                    onClick={() => window.open("https://wa.me/" + "254114291301", "_blank")}
+                    className="mt-2 text-xs text-red-300 underline hover:text-red-200"
+                  >
+                    Contact Support on WhatsApp →
+                  </button>
+                </div>
+              )}
               <div>
                 <label className="text-xs text-white/60 block mb-1.5">Email Address</label>
                 <NeonInput icon={<Mail className="w-4 h-4" />} type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required testId="input-login-email" />
@@ -501,6 +573,10 @@ export default function Auth() {
               <div>
                 <label className="text-xs text-white/60 block mb-1.5">Confirm Password</label>
                 <NeonInput icon={<Lock className="w-4 h-4" />} type="password" placeholder="Same password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required testId="input-signup-confirm" />
+              </div>
+              <div>
+                <label className="text-xs text-white/60 block mb-1.5">Referral Code <span className="text-white/30">(optional)</span></label>
+                <NeonInput icon={<Gift className="w-4 h-4" />} type="text" placeholder="e.g. REF1A2B3" value={referralCode} onChange={(e) => setReferralCode(e.target.value.toUpperCase())} testId="input-signup-referral" />
               </div>
               <NeonButton type="submit" loading={loading} testId="button-signup">
                 Create Account

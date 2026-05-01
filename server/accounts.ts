@@ -57,7 +57,7 @@ export class AccountManager {
     return { available: false, message: "All accounts are currently full" };
   }
 
-  assignAccount(planId: string, customerEmail: string, customerName: string): AccountEntry | null {
+  assignAccount(planId: string, customerEmail: string, customerName: string, expiresAt?: string | null): AccountEntry | null {
     this.loadAccounts();
     if (!this.accounts[planId] || this.accounts[planId].length === 0) return null;
     const account = this.accounts[planId].find(
@@ -71,6 +71,7 @@ export class AccountManager {
       customerEmail,
       customerName: customerName || "Customer",
       assignedAt: new Date().toISOString(),
+      ...(expiresAt ? { expiresAt } : {}),
     });
 
     if (account.currentUsers >= account.maxUsers) {

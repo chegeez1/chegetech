@@ -1,4 +1,15 @@
 import { dbSettingsGet, dbSettingsSet } from "./storage";
+import { subscriptionPlans } from "./plans";
+
+// Build a flat map of planId → plan name for error messages
+function getPlanName(planId: string): string {
+  for (const cat of Object.values(subscriptionPlans)) {
+    if (cat.plans && planId in cat.plans) {
+      return (cat.plans as any)[planId].name;
+    }
+  }
+  return planId;
+}
 
 const SETTINGS_KEY = "promo_codes";
 
@@ -12,6 +23,7 @@ export interface PromoCode {
   expiresAt: string | null;
   active: boolean;
   applicablePlans: string[] | null;
+  applicableTo: "subscriptions" | "bots" | "all";
   createdAt: string;
 }
 
@@ -49,20 +61,29 @@ export class PromoManager {
     return this.codes.find((c) => c.code.toUpperCase() === code.toUpperCase());
   }
 
-  validate(code: string, planId?: string): { valid: boolean; error?: string; promo?: PromoCode } {
+  validate(code: string, planId?: string, context?: "subscription" | "bot"): { valid: boolean; error?: string; promo?: PromoCode } {
     this.load();
     const promo = this.codes.find((c) => c.code.toUpperCase() === code.toUpperCase());
     if (!promo) return { valid: false, error: "Invalid promo code" };
-    if (!promo.active) return { valid: false, error: "This promo code is inactive" };
+    if (promo.active === false) return { valid: false, error: "This promo code is inactive" };
     if (promo.expiresAt && new Date(promo.expiresAt) < new Date()) {
       return { valid: false, error: "This promo code has expired" };
     }
     if (promo.maxUses !== null && promo.uses >= promo.maxUses) {
       return { valid: false, error: "This promo code has reached its usage limit" };
     }
-    if (promo.applicablePlans && promo.applicablePlans.length > 0 && planId) {
-      if (!promo.applicablePlans.includes(planId)) {
-        return { valid: false, error: "This promo code is not valid for this plan" };
+    // Check applicableTo restriction
+    const applicableTo = promo.applicableTo || "all";
+    if (applicableTo === "bots" && context !== "bot") {
+      return { valid: false, error: "This promo code is only valid for bot deployments" };
+    }
+    if (applicableTo === "subscriptions" && context === "bot") {
+      return { valid: false, error: "This promo code is not valid for bot deployments" };
+    }
+    if (promo.applicablePlans && promo.applicablePlans.length > 0) {
+      if (planId && !promo.applicablePlans.includes(planId)) {
+        const names = promo.applicablePlans.map(getPlanName).join(", ");
+        return { valid: false, error: `This promo code is only valid for: ${names}` };
       }
     }
     return { valid: true, promo };
@@ -83,8 +104,10 @@ export class PromoManager {
     if (existing) throw new Error("Promo code already exists");
 
     const promo: PromoCode = {
+      active: true,           // always active by default
       ...data,
       code: data.code.toUpperCase(),
+      applicableTo: data.applicableTo || "all",
       uses: 0,
       createdAt: new Date().toISOString(),
     };

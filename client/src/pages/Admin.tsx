@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import React, { useState, useEffect, useRef, useCallback, Component } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
@@ -11,7 +12,10 @@ import {
   CreditCard, AlertTriangle, Lock, Unlock, Copy, Activity,
   Terminal, Info, TriangleAlert, Filter, Upload, Download,
   Search, BarChart2, Loader2, FileCheck, ClipboardCheck, Send,
-  MessageCircle
+  MessageCircle, Globe, Server, RotateCw, Play, MapPin, Ban,
+  Wifi, HardDrive, Cpu, MemoryStick, Link2, ExternalLink, CheckCircle2, Camera,
+  Bot, Sparkles, Minimize2, Database, UserCircle, Wallet, Pencil,
+  MinusCircle, History, ArrowUpCircle, ArrowDownCircle, Bell, ShoppingBag
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +25,26 @@ import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 
-type Tab = "dashboard" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "emailblast" | "logs" | "settings" | "support" | "subadmins";
+type Tab = "dashboard" | "analytics" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "ratings" | "feature-requests" | "emailblast" | "campaigns" | "logs" | "settings" | "support" | "subadmins" | "super-admins" | "geo-restrict" | "vps" | "vps-sales" | "domains" | "funnel" | "groups" | "flash-sales" | "whatsapp" | "bot-store" | "bot-orders";
+
+class SettingsErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
+  constructor(props: any) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e: any) { return { error: e?.message || "Unknown error" }; }
+  componentDidCatch(e: any, info: any) { console.error("[Settings crash]", e, info); }
+  render() {
+    if (this.state.error) return (
+      <div className="p-6 rounded-2xl bg-red-500/10 border border-red-500/25 space-y-3">
+        <p className="text-red-400 font-semibold">Settings failed to load</p>
+        <p className="text-red-300/70 text-sm font-mono break-all">{this.state.error}</p>
+        <button onClick={() => this.setState({ error: null })}
+          className="text-xs px-3 py-1.5 rounded-lg bg-red-600/30 hover:bg-red-600/50 text-red-300 transition-colors">
+          Retry
+        </button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 
 const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
   success: { label: "Completed", icon: CheckCircle, color: "text-emerald-400" },
@@ -37,13 +60,22 @@ function authHeaders() {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-// authFetch: for authenticated admin API calls (auto-logout on 401)
+// Module-level callback so authFetch can trigger graceful logout without reloading
+let _onSessionExpired: (() => void) | null = null;
+function registerSessionExpiredHandler(fn: () => void) { _onSessionExpired = fn; }
+
+// authFetch: for authenticated admin API calls (graceful logout on 401)
 async function authFetch(url: string, options: RequestInit = {}) {
   const res = await fetch(url, {
     ...options,
-    headers: { "Content-Type": "application/json", ...authHeaders(), ...(options.headers || {}) },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...(options.headers || {}) } as HeadersInit,
   });
-  if (res.status === 401) { clearToken(); window.location.reload(); }
+  if (res.status === 401) {
+    clearToken();
+    if (_onSessionExpired) _onSessionExpired();
+    else window.location.reload();
+    return {};
+  }
   return res.json();
 }
 
@@ -62,20 +94,145 @@ async function plainFetch(url: string, body: any) {
 // ═══════════════════════════════════════════════════════════════
 const SENSITIVE_TABS: Tab[] = ["settings", "subadmins"];
 
+// ─── Analytics Tab ─────────────────────────────────────────────────────────
+function AnalyticsTab() {
+  const { toast } = useToast();
+  const [range, setRange] = useState<"7"|"14"|"30">("30");
+
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/analytics"],
+    queryFn: () => authFetch("/api/admin/analytics"),
+    staleTime: 60000,
+  });
+
+  const days: any[] = data?.days ?? [];
+  const filtered = range === "30" ? days : range === "14" ? days.slice(-14) : days.slice(-7);
+
+  const totalRevenue = filtered.reduce((s: number, d: any) => s + (d.revenue || 0), 0);
+  const totalOrders = filtered.reduce((s: number, d: any) => s + (d.orders || 0), 0);
+  const totalBots = filtered.reduce((s: number, d: any) => s + (d.botRevenue || 0), 0);
+  const avgPerDay = filtered.length ? Math.round(totalRevenue / filtered.length) : 0;
+
+  const chartData = filtered.map((d: any) => ({
+    date: d.date?.slice(5) ?? "",
+    Revenue: d.revenue || 0,
+    Subscriptions: (d.revenue || 0) - (d.botRevenue || 0),
+    Bots: d.botRevenue || 0,
+    Orders: d.orders || 0,
+  }));
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-white">Revenue Analytics</h1>
+          <p className="text-xs text-white/40 mt-0.5">Track daily revenue and order trends</p>
+        </div>
+        <div className="flex gap-1">
+          {(["7","14","30"] as const).map(r => (
+            <button key={r} onClick={() => setRange(r)}
+              className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${range === r ? "bg-indigo-600 text-white" : "bg-white/5 text-white/60 hover:bg-white/10"}`}>
+              {r}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: "Total Revenue", value: `KES ${totalRevenue.toLocaleString()}`, color: "from-indigo-600 to-violet-600" },
+          { label: "Total Orders", value: totalOrders.toLocaleString(), color: "from-emerald-600 to-teal-600" },
+          { label: "Bot Revenue", value: `KES ${totalBots.toLocaleString()}`, color: "from-blue-600 to-cyan-600" },
+          { label: "Avg / Day", value: `KES ${avgPerDay.toLocaleString()}`, color: "from-orange-600 to-amber-600" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="rounded-2xl p-4 border border-white/8 bg-white/3">
+            <p className="text-xs text-white/40 mb-1">{label}</p>
+            <p className={`text-xl font-bold bg-gradient-to-r ${color} bg-clip-text text-transparent`}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Revenue Chart */}
+      <div className="rounded-2xl border border-white/8 bg-white/3 p-5">
+        <h2 className="text-sm font-semibold text-white mb-4">Daily Revenue (KES)</h2>
+        {isLoading ? (
+          <div className="flex items-center justify-center h-48 text-white/30 text-sm">Loading...</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <defs>
+                <linearGradient id="colorSub" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="colorBot" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: "#1e1b4b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "#fff", fontSize: "12px" }} />
+              <Legend wrapperStyle={{ fontSize: "12px", color: "rgba(255,255,255,0.6)" }} />
+              <Area type="monotone" dataKey="Subscriptions" stroke="#6366f1" strokeWidth={2} fill="url(#colorSub)" />
+              <Area type="monotone" dataKey="Bots" stroke="#10b981" strokeWidth={2} fill="url(#colorBot)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Orders Bar Chart */}
+      <div className="rounded-2xl border border-white/8 bg-white/3 p-5">
+        <h2 className="text-sm font-semibold text-white mb-4">Daily Orders</h2>
+        {isLoading ? (
+          <div className="flex items-center justify-center h-48 text-white/30 text-sm">Loading...</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: "#1e1b4b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "#fff", fontSize: "12px" }} />
+              <Bar dataKey="Orders" fill="#6366f1" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Admin() {
   const [token, setTokenState] = useState<string | null>(() => getToken());
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [adminRole, setAdminRole] = useState<"super" | "subadmin" | null>(null);
+  const [isPrimary, setIsPrimary] = useState<boolean>(false);
   const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
+  const [adminProfile, setAdminProfile] = useState<{ name: string; avatar: string; email: string } | null>(null);
   const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    registerSessionExpiredHandler(() => {
+      setTokenState(null);
+      setAdminRole(null);
+      setAdminPermissions([]);
+      setAdminProfile(null);
+    });
+  }, []);
 
   useEffect(() => {
     if (token) {
       authFetch("/api/admin/me").then((d) => {
         if (d.success) {
           setAdminRole(d.role);
+          if (d.role === "super") setIsPrimary(d.isPrimary === true);
           if (d.role === "subadmin") setAdminPermissions(d.permissions || []);
         }
+      }).catch(() => {});
+      authFetch("/api/admin/profile").then((d) => {
+        if (d.success) setAdminProfile({ name: d.name, avatar: d.avatar, email: d.email });
       }).catch(() => {});
     }
   }, [token]);
@@ -90,22 +247,39 @@ export default function Admin() {
 
   if (!token) return <LoginFlow onLogin={login} />;
 
-  const allTabs: { id: Tab; label: string; icon: any; superOnly?: boolean }[] = [
+  const allTabs: { id: Tab; label: string; icon: any; superOnly?: boolean; alwaysVisible?: boolean }[] = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "analytics", label: "Analytics", icon: TrendingUp },
     { id: "plans", label: "Plans & Offers", icon: Tags },
     { id: "accounts", label: "Accounts", icon: Package },
     { id: "promos", label: "Promo Codes", icon: BadgePercent },
     { id: "transactions", label: "Transactions", icon: ArrowLeftRight },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "customers", label: "Customers", icon: Users },
+    { id: "groups", label: "Customer Groups", icon: Tags },
+    { id: "funnel", label: "Conversion Funnel", icon: TrendingUp },
+    { id: "flash-sales", label: "Flash Sales", icon: Zap },
+    { id: "ratings", label: "Ratings", icon: Star },
+    { id: "feature-requests", label: "Feature Requests", icon: Sparkles },
     { id: "emailblast", label: "Email Blast", icon: Send },
+    { id: "campaigns", label: "Campaigns", icon: Send },
     { id: "support", label: "Support", icon: MessageCircle },
+    { id: "whatsapp", label: "WhatsApp Bot", icon: MessageCircle, alwaysVisible: true },
+    { id: "bot-store", label: "Bot Store", icon: Bot, alwaysVisible: true },
+    { id: "bot-orders", label: "Bot Orders", icon: Package, alwaysVisible: true },
     { id: "logs", label: "Activity Logs", icon: Activity },
     { id: "subadmins", label: "Sub-Admins", icon: Users, superOnly: true },
+    { id: "super-admins", label: "Super Admins", icon: Shield, superOnly: true },
+    { id: "geo-restrict", label: "Geo Restrict", icon: Globe, superOnly: true },
+    { id: "vps", label: "VPS Manager", icon: Server, superOnly: true },
+    { id: "vps-sales", label: "VPS Sales", icon: ShoppingBag },
+    { id: "domains", label: "Domains", icon: Link2, superOnly: true },
     { id: "settings", label: "Settings", icon: Settings, superOnly: true },
   ];
 
   const visibleTabs = allTabs.filter(tab => {
+    if (tab.alwaysVisible) return true;
+    if (tab.id === "super-admins") return adminRole === "super" && isPrimary;
     if (adminRole === "super") return true;
     if (tab.superOnly) return false;
     if (adminPermissions.length === 0) return false;
@@ -122,33 +296,69 @@ export default function Admin() {
 
       {/* Sidebar */}
       <aside className="relative z-10 w-56 shrink-0 glass-nav border-r border-white/8 flex flex-col">
-        <div className="p-4 border-b border-white/8">
-          <div className="flex items-center gap-2.5">
-            <img src="/favicon.png" alt="Chege Tech" className="w-9 h-9 rounded-xl shadow-lg" style={{ boxShadow: "0 0 14px rgba(99,102,241,0.4)" }} />
-            <div>
-              <p className="font-bold text-sm text-white">Admin Panel</p>
-              <p className="text-xs text-white/40">{adminRole === "subadmin" ? "Sub-Admin" : "Super Admin"}</p>
+        {/* Brand */}
+        <div className="p-4 border-b border-white/8 flex items-center gap-2.5">
+          <img src="/favicon.svg" alt="Chege Tech" className="w-8 h-8 rounded-xl shadow-lg" style={{ boxShadow: "0 0 14px rgba(99,102,241,0.4)" }} />
+          <p className="font-bold text-sm text-white tracking-tight">Chege Tech</p>
+        </div>
+        {/* Admin Profile Card */}
+        <button
+          onClick={() => setActiveTab("settings")}
+          className="p-3 border-b border-white/8 flex items-center gap-3 hover:bg-white/5 transition-all text-left group"
+          title="Edit profile"
+        >
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-lg">
+            {adminProfile?.avatar || (adminRole === "subadmin" ? "SA" : "CT")}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-white truncate">{adminProfile?.name || (adminRole === "subadmin" ? "Sub-Admin" : "Super Admin")}</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${adminRole === "subadmin" ? "bg-blue-500/20 text-blue-300" : "bg-violet-500/20 text-violet-300"}`}>
+                {adminRole === "subadmin" ? "Sub-Admin" : "Super Admin"}
+              </span>
             </div>
           </div>
-        </div>
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <svg className="w-3.5 h-3.5 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          </div>
+        </button>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {visibleTabs.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              data-testid={`nav-${id}`}
-              onClick={() => setActiveTab(id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                activeTab === id
-                  ? "bg-gradient-to-r from-indigo-600/80 to-violet-600/80 text-white shadow-lg border border-white/10"
-                  : "text-white/50 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {label}
-              {id === "support" && <SupportBadgeCount />}
-            </button>
-          ))}
+          {visibleTabs.map(({ id, label, icon: Icon }) => {
+            const isWA = id === "whatsapp";
+            const isActive = activeTab === id;
+            return (
+              <button
+                key={id}
+                data-testid={`nav-${id}`}
+                onClick={() => setActiveTab(id as Tab)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  isActive && isWA
+                    ? "text-white shadow-lg border"
+                    : isActive
+                    ? "bg-gradient-to-r from-indigo-600/80 to-violet-600/80 text-white shadow-lg border border-white/10"
+                    : isWA
+                    ? "hover:bg-white/5"
+                    : "text-white/50 hover:text-white hover:bg-white/5"
+                }`}
+                style={isWA && isActive
+                  ? { background: "linear-gradient(135deg,rgba(18,140,126,.7),rgba(37,211,102,.5))", borderColor: "rgba(37,211,102,.3)" }
+                  : isWA && !isActive
+                  ? { color: "#25D366" }
+                  : {}}
+              >
+                {isWA ? (
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="currentColor">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/>
+                  </svg>
+                ) : (
+                  <Icon className="w-4 h-4" />
+                )}
+                {label}
+                {id === "support" && <SupportBadgeCount />}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="p-3 border-t border-white/8 space-y-1">
@@ -173,24 +383,601 @@ export default function Admin() {
       <main className="relative z-10 flex-1 overflow-y-auto">
         <div className="p-6">
           {activeTab === "dashboard" && <DashboardTab />}
+          {activeTab === "analytics" && <AnalyticsTab />}
           {activeTab === "plans" && <PlansTab />}
           {activeTab === "accounts" && <AccountsTab />}
           {activeTab === "promos" && <PromosTab />}
           {activeTab === "transactions" && <TransactionsTab />}
           {activeTab === "apikeys" && <ApiKeysTab />}
           {activeTab === "customers" && <CustomersTab />}
+          {activeTab === "groups" && <CustomerGroupsTab />}
+          {activeTab === "funnel" && <ConversionFunnelTab />}
+          {activeTab === "flash-sales" && <FlashSalesTab />}
+          {activeTab === "ratings" && <RatingsTab />}
+          {activeTab === "feature-requests" && <FeatureRequestsAdminTab />}
           {activeTab === "emailblast" && <EmailBlastTab />}
+          {activeTab === "campaigns" && <CampaignsTab />}
           {activeTab === "support" && <SupportTab />}
           {activeTab === "logs" && <LogsTab />}
+          {activeTab === "whatsapp" && <WhatsAppTab />}
+          {activeTab === "bot-store" && <BotStoreAdminTab />}
+          {activeTab === "bot-orders" && <BotOrdersAdminTab />}
           {activeTab === "subadmins" && adminRole === "super" && <SubAdminsTab />}
-          {activeTab === "settings" && adminRole === "super" && <SettingsTab />}
+          {activeTab === "super-admins" && adminRole === "super" && isPrimary && <SuperAdminsTab />}
+          {activeTab === "geo-restrict" && adminRole === "super" && <GeoRestrictTab />}
+          {activeTab === "vps" && adminRole === "super" && <VpsTab />}
+          {activeTab === "vps-sales" && <VpsSellerTab />}
+          {activeTab === "domains" && adminRole === "super" && <DomainsTab />}
+          {activeTab === "settings" && adminRole === "super" && <SettingsErrorBoundary><SettingsTab /></SettingsErrorBoundary>}
         </div>
       </main>
+
+      {/* Floating Admin AI Bot */}
+      <AdminMonitorBot />
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ADMIN AI BOT
+// ═══════════════════════════════════════════════════════════════
+
+type BotMessage = { role: "user" | "bot"; content: string; ts: number; isAuto?: boolean };
+
+const QUICK_CMDS = [
+  { label: "📊 Stats", cmd: "stats" },
+  { label: "📦 Orders", cmd: "orders" },
+  { label: "⏳ Pending", cmd: "pending orders" },
+  { label: "👥 Customers", cmd: "customers" },
+  { label: "🗄️ Stock", cmd: "stock" },
+  { label: "⚠️ Expiring", cmd: "expiring 7 days" },
+  { label: "💹 Revenue", cmd: "revenue breakdown" },
+  { label: "🏷️ Promos", cmd: "promo codes" },
+  { label: "💰 Top-up", cmd: "topup customer@email.com 30" },
+  { label: "🎁 Mass top-up", cmd: "topup all 10" },
+  { label: "🔥 Flash Sales", cmd: "flash sales" },
+  { label: "👥 Groups", cmd: "groups" },
+  { label: "📈 Funnel", cmd: "funnel" },
+  { label: "🚫 Ban", cmd: "ban customer@email.com spam" },
+  { label: "✅ Unban", cmd: "unban customer@email.com" },
+  { label: "🔁 Resend", cmd: "resend customer@email.com" },
+  { label: "💳 Wallets", cmd: "wallets" },
+  { label: "📉 Deduct", cmd: "deduct customer@email.com 50 reason" },
+  { label: "📊 Wallet", cmd: "wallet customer@email.com" },
+  { label: "🎯 Referrals", cmd: "referrals" },
+  { label: "❓ Help", cmd: "help" },
+];
+
+function renderBotText(text: string) {
+  return text.split("\n").map((line, i) => {
+    const html = line
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`(.*?)`/g, "<code style='background:rgba(99,102,241,0.2);padding:1px 5px;border-radius:3px;font-size:10px;color:#a5b4fc'>$1</code>");
+    const isBullet = /^[-•*]\s/.test(line) || /^\d+\.\s/.test(line);
+    return (
+      <p key={i} className={`${isBullet ? "ml-3" : ""} ${i < text.split("\n").length - 1 ? "mb-0.5" : ""}`}
+        dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }} />
+    );
+  });
+}
+
+type ThreatItem = {
+  id: string; severity: "critical"|"high"|"medium"|"low";
+  type: string; email: string; description: string; detail: string; canBan: boolean;
+};
+
+const SEVERITY_COLOR: Record<string, string> = {
+  critical: "bg-red-500/15 border-red-500/30 text-red-400",
+  high:     "bg-orange-500/15 border-orange-500/30 text-orange-400",
+  medium:   "bg-yellow-500/15 border-yellow-500/25 text-yellow-400",
+  low:      "bg-blue-500/10 border-blue-500/20 text-blue-400",
+};
+const SEVERITY_BADGE: Record<string, string> = {
+  critical: "bg-red-500 text-white",
+  high:     "bg-orange-500 text-white",
+  medium:   "bg-yellow-500 text-black",
+  low:      "bg-blue-500 text-white",
+};
+
+function AdminMonitorBot() {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"monitor"|"security"|"auto">("monitor");
+  const [messages, setMessages] = useState<BotMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [alerts, setAlerts] = useState(0);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  // Bot running state — persisted so it survives page refresh
+  const [botRunning, setBotRunning] = useState(() => localStorage.getItem("chege_bot_running") === "true");
+  // Security / protection mode
+  const [scanning, setScanning] = useState(false);
+  const [threats, setThreats] = useState<ThreatItem[]>([]);
+  const [lastScan, setLastScan] = useState<Date | null>(null);
+  const [banningEmail, setBanningEmail] = useState<string | null>(null);
+  const [bannedEmails, setBannedEmails] = useState<Set<string>>(new Set());
+  // Auto-fix log
+  const [autoActions, setAutoActions] = useState<any[]>([]);
+  const [autoLogLoading, setAutoLogLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const monitorPoll = useRef<ReturnType<typeof setInterval> | null>(null);
+  const securityPoll = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoLogPoll = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  async function fetchStatus(silent = false) {
+    try {
+      const res = await authFetch("/api/admin/bot/status");
+      if (res.success) {
+        const botMsg: BotMessage = { role: "bot", content: res.response, ts: Date.now(), isAuto: true };
+        setMessages(prev => [botMsg, ...prev.filter(m => !m.isAuto)]);
+        setLastRefresh(new Date());
+        const n = (res.response.match(/🚨|⚠️|⏳|🔴|🟡/g) || []).length;
+        if (!open) setAlerts(n);
+      }
+    } catch { /* silent */ }
+  }
+
+  async function runScan() {
+    setScanning(true);
+    try {
+      const res = await authFetch("/api/admin/bot/scan");
+      if (res.success) {
+        setThreats(res.threats || []);
+        setLastScan(new Date());
+        const critical = (res.threats || []).filter((t: ThreatItem) => t.severity === "critical" || t.severity === "high").length;
+        if (!open && critical > 0) setAlerts(prev => Math.max(prev, critical));
+      }
+    } catch { /* silent */ }
+    finally { setScanning(false); }
+  }
+
+  async function fetchAutoLog() {
+    setAutoLogLoading(true);
+    try {
+      const res = await authFetch("/api/admin/bot/autolog");
+      if (res.success) setAutoActions(res.actions || []);
+    } catch {}
+    finally { setAutoLogLoading(false); }
+  }
+
+  // Persist botRunning to localStorage
+  useEffect(() => {
+    localStorage.setItem("chege_bot_running", String(botRunning));
+    if (!botRunning) {
+      if (monitorPoll.current) clearInterval(monitorPoll.current);
+      if (securityPoll.current) clearInterval(securityPoll.current);
+      if (autoLogPoll.current) clearInterval(autoLogPoll.current);
+    }
+  }, [botRunning]);
+
+  function startBot() {
+    setBotRunning(true);
+    fetchStatus(false);
+    runScan();
+    fetchAutoLog();
+    setMessages([]);
+  }
+  function stopBot() {
+    setBotRunning(false);
+    setMessages([]);
+    setThreats([]);
+    setAutoActions([]);
+    setLastRefresh(null);
+    setLastScan(null);
+  }
+
+  // Polling when panel is open AND bot is running
+  useEffect(() => {
+    if (open && botRunning) {
+      setAlerts(0);
+      fetchStatus(false);
+      runScan();
+      fetchAutoLog();
+      setTimeout(() => inputRef.current?.focus(), 150);
+      monitorPoll.current = setInterval(() => fetchStatus(true), 30000);
+      securityPoll.current = setInterval(runScan, 60000);
+      autoLogPoll.current = setInterval(fetchAutoLog, 30000);
+    } else {
+      if (monitorPoll.current) clearInterval(monitorPoll.current);
+      if (securityPoll.current) clearInterval(securityPoll.current);
+      if (autoLogPoll.current) clearInterval(autoLogPoll.current);
+    }
+    return () => {
+      if (monitorPoll.current) clearInterval(monitorPoll.current);
+      if (securityPoll.current) clearInterval(securityPoll.current);
+      if (autoLogPoll.current) clearInterval(autoLogPoll.current);
+    };
+  }, [open, botRunning]);
+
+  // Background poll every 60s (only when bot is running and panel is closed)
+  useEffect(() => {
+    if (!botRunning) return;
+    const bg = setInterval(() => { if (!open) fetchStatus(true); }, 60000);
+    return () => clearInterval(bg);
+  }, [open, botRunning]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  async function send(text: string) {
+    const msg = text.trim();
+    if (!msg || loading) return;
+    setInput("");
+    setMessages(prev => [...prev, { role: "user", content: msg, ts: Date.now() }]);
+    setLoading(true);
+    try {
+      const res = await authFetch("/api/admin/ai-assistant", { method: "POST", body: JSON.stringify({ message: msg }) });
+      setMessages(prev => [...prev, { role: "bot", content: res.success ? res.response : `Error: ${res.error}`, ts: Date.now() }]);
+    } catch {
+      setMessages(prev => [...prev, { role: "bot", content: "Network error.", ts: Date.now() }]);
+    } finally { setLoading(false); }
+  }
+
+  async function banCustomer(email: string, reason: string) {
+    setBanningEmail(email);
+    try {
+      const res = await authFetch("/api/admin/bot/ban", { method: "POST", body: JSON.stringify({ email, reason }) });
+      if (res.success) {
+        setBannedEmails(prev => new Set<string>(Array.from(prev).concat([email])));
+        setThreats(prev => prev.map(t => t.email === email ? { ...t, canBan: false } : t));
+      }
+    } catch { /* silent */ }
+    finally { setBanningEmail(null); }
+  }
+
+  const statusMsg = messages.find(m => m.isAuto);
+  const chatMsgs = messages.filter(m => !m.isAuto);
+  const criticalCount = threats.filter(t => t.severity === "critical" || t.severity === "high").length;
+  const badgeCount = criticalCount || alerts;
+  const autoFixedCount = autoActions.filter(a => a.result === "success").length;
+
+  return (
+    <>
+      {/* Floating button */}
+      <button onClick={() => setOpen(o => !o)}
+        className="fixed bottom-6 left-6 z-50 w-14 h-14 rounded-full shadow-2xl shadow-black/60 flex items-center justify-center transition-all hover:scale-105 active:scale-95 relative"
+        style={{ background: botRunning ? "linear-gradient(135deg,#059669,#4f46e5)" : "linear-gradient(135deg,#374151,#1f2937)" }}
+        title={botRunning ? "Admin Bot — Running" : "Admin Bot — Stopped"}>
+        {open ? <Minimize2 className="w-5 h-5 text-white" /> : <Bot className="w-6 h-6 text-white" />}
+        <span className={`absolute -bottom-0.5 -left-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0b0b18] ${botRunning ? "bg-emerald-400 animate-pulse" : "bg-red-500"}`} />
+        {!open && badgeCount > 0 && botRunning && (
+          <span className="absolute -top-1 -left-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center z-10">
+            {badgeCount}
+          </span>
+        )}
+      </button>
+
+      {/* Panel */}
+      {open && (
+        <div className="fixed bottom-24 left-6 z-50 w-[400px] max-w-[calc(100vw-2rem)] rounded-2xl border border-white/10 bg-[#0b0b18] shadow-2xl shadow-black/80 flex flex-col overflow-hidden"
+          style={{ height: "580px" }}>
+
+          {/* Header */}
+          <div className="px-4 py-2.5 border-b border-white/8 flex-shrink-0"
+            style={{ background: "rgba(5,150,105,0.08)" }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 relative"
+                style={{ background: "linear-gradient(135deg,#059669,#4f46e5)" }}>
+                <Bot className="w-3.5 h-3.5 text-white" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[#0b0b18] bg-emerald-400 animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-white">Admin Protection Bot</p>
+                <p className="text-[10px]">
+                  {botRunning
+                    ? <span className="text-emerald-400">● Running · monitoring 24/7{lastRefresh && <span className="text-white/25 ml-1">· {lastRefresh.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}</span>}</span>
+                    : <span className="text-red-400">● Stopped · click Start to begin monitoring</span>
+                  }
+                </p>
+              </div>
+              {botRunning ? (
+                <button
+                  onClick={stopBot}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-500/15 text-red-400 border border-red-500/25 hover:bg-red-500/25 transition-colors"
+                  title="Stop bot"
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                  Stop
+                </button>
+              ) : (
+                <button
+                  onClick={startBot}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600/25 text-emerald-300 border border-emerald-500/35 hover:bg-emerald-600/40 transition-colors"
+                  title="Start bot"
+                >
+                  <Play className="w-2.5 h-2.5" />
+                  Start
+                </button>
+              )}
+              {botRunning && (
+                <button onClick={() => fetchStatus(false)} title="Refresh" className="text-white/25 hover:text-white/60 p-1 transition-colors">
+                  <RotateCw className={`w-3 h-3 ${scanning ? "animate-spin text-indigo-400" : ""}`} />
+                </button>
+              )}
+              <button onClick={() => setOpen(false)} className="text-white/25 hover:text-white/60 p-1 transition-colors">
+                <Minimize2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-1 mt-2">
+              {([["monitor","📡 Monitor"],["security","🛡️ Security"],["auto","🤖 Auto-Fix"]] as [string,string][]).map(([t,label]) => (
+                <button key={t} onClick={() => setTab(t as any)}
+                  className={`text-[11px] px-3 py-1 rounded-lg transition-colors ${
+                    tab === t ? "bg-white/10 text-white font-medium" : "text-white/35 hover:text-white/60"
+                  }`}>
+                  {label}
+                  {t === "security" && criticalCount > 0 && (
+                    <span className="ml-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold inline-flex items-center justify-center">{criticalCount}</span>
+                  )}
+                  {t === "auto" && autoFixedCount > 0 && (
+                    <span className="ml-1 w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-bold inline-flex items-center justify-center">{autoFixedCount}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── BOT STOPPED SCREEN ── */}
+          {!botRunning && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-5 p-6">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: "rgba(55,65,81,.6)", border: "2px solid rgba(255,255,255,.08)" }}>
+                <Bot className="w-8 h-8 text-white/25" />
+              </div>
+              <div className="text-center">
+                <p className="text-white font-bold text-base mb-1">Bot is not running</p>
+                <p className="text-white/35 text-xs max-w-[240px] leading-relaxed">Start the bot to enable live monitoring, security scanning, and auto-fix actions.</p>
+              </div>
+              <button
+                onClick={startBot}
+                className="flex items-center gap-2.5 px-6 py-3 rounded-2xl font-bold text-sm text-white transition-all hover:scale-105 active:scale-95 shadow-lg shadow-emerald-900/30"
+                style={{ background: "linear-gradient(135deg,#059669,#4f46e5)" }}
+              >
+                <Play className="w-4 h-4" />
+                Start Bot
+              </button>
+              <p className="text-white/20 text-[10px]">Bot state is saved across page refreshes</p>
+            </div>
+          )}
+
+          {/* ── MONITOR TAB ── */}
+          {botRunning && tab === "monitor" && (
+            <>
+              {statusMsg ? (
+                <div className="px-3 py-2 border-b border-white/6 flex-shrink-0 bg-white/2 text-[11px] text-white/70 leading-relaxed max-h-36 overflow-y-auto">
+                  {renderBotText(statusMsg.content)}
+                </div>
+              ) : (
+                <div className="px-3 py-2 border-b border-white/6 flex-shrink-0 flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
+                  <p className="text-[11px] text-white/25">Loading live status…</p>
+                </div>
+              )}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {chatMsgs.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full gap-2 pb-4">
+                    <Bot className="w-8 h-8 text-indigo-500/30" />
+                    <p className="text-[11px] text-white/20 text-center">Tap a command below or type your query</p>
+                  </div>
+                )}
+                {chatMsgs.map((m, i) => (
+                  <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} gap-2`}>
+                    {m.role === "bot" && (
+                      <div className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <Bot className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+                    <div className={`max-w-[84%] rounded-xl px-3 py-2 text-[11px] leading-relaxed ${m.role === "user" ? "bg-indigo-600 text-white" : "bg-white/7 text-white/85 border border-white/6"}`}>
+                      {m.role === "bot" ? renderBotText(m.content) : <p>{m.content}</p>}
+                    </div>
+                  </div>
+                ))}
+                {loading && (
+                  <div className="flex gap-2">
+                    <div className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                      <Bot className="w-3 h-3 text-white" />
+                    </div>
+                    <div className="bg-white/7 border border-white/6 rounded-xl px-3 py-2 flex gap-1 items-center">
+                      {[0,150,300].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay:`${d}ms` }} />)}
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+              {/* Scrollable quick-command chips — always visible */}
+              <div className="px-3 pt-2 pb-1 border-t border-white/6 flex-shrink-0">
+                <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
+                  {QUICK_CMDS.map(q => (
+                    <button key={q.cmd} onClick={() => send(q.cmd)} disabled={loading}
+                      className="flex-shrink-0 text-[10px] font-medium text-indigo-300 bg-indigo-600/12 hover:bg-indigo-600/30 border border-indigo-500/25 rounded-full px-2.5 py-1 transition-colors whitespace-nowrap disabled:opacity-40">
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="px-3 pb-3 pt-1 flex-shrink-0">
+                <form onSubmit={e => { e.preventDefault(); send(input); }} className="flex gap-2">
+                  <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+                    placeholder="Type a command or question…" disabled={loading}
+                    className="flex-1 bg-white/6 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500/50 transition-colors" />
+                  <button type="submit" disabled={loading || !input.trim()}
+                    className="w-8 h-8 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 flex items-center justify-center transition-colors self-center flex-shrink-0">
+                    <Send className="w-3.5 h-3.5 text-white" />
+                  </button>
+                </form>
+              </div>
+            </>
+          )}
+
+          {/* ── SECURITY TAB ── */}
+          {botRunning && tab === "security" && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Scan bar */}
+              <div className="px-3 py-2 border-b border-white/6 flex-shrink-0 flex items-center gap-2">
+                <button onClick={runScan} disabled={scanning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-[11px] font-medium transition-colors">
+                  {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                  {scanning ? "Scanning…" : "Scan Now"}
+                </button>
+                <div className="flex-1 min-w-0">
+                  {lastScan ? (
+                    <p className="text-[10px] text-white/35">
+                      Last scan: {lastScan.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", second:"2-digit" })}
+                      <span className="text-emerald-400 ml-1">· auto every 60s</span>
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-emerald-400/60">Bot auto-scans every 60s · scanning now…</p>
+                  )}
+                </div>
+                {threats.length > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/25">
+                    {threats.length} threat{threats.length !== 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+
+              {/* Threats list */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {!lastScan && scanning && (
+                  <div className="flex flex-col items-center justify-center h-full gap-2">
+                    <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+                    <p className="text-sm text-white/50">Bot scanning for threats…</p>
+                    <p className="text-[10px] text-white/25">card testing · rapid purchases · spend spikes · suspended accounts</p>
+                  </div>
+                )}
+
+                {scanning && threats.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full gap-2">
+                    <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+                    <p className="text-sm text-white/50">Scanning for threats…</p>
+                  </div>
+                )}
+
+                {lastScan && !scanning && threats.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
+                    <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
+                      <CheckCircle className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    <p className="text-sm font-medium text-white">All Clear</p>
+                    <p className="text-xs text-white/35">No suspicious activity detected</p>
+                  </div>
+                )}
+
+                {threats.map(t => {
+                  const isBanned = bannedEmails.has(t.email);
+                  return (
+                    <div key={t.id} className={`rounded-xl border p-3 space-y-1.5 ${SEVERITY_COLOR[t.severity]}`}>
+                      <div className="flex items-start gap-2">
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0 mt-0.5 ${SEVERITY_BADGE[t.severity]}`}>
+                          {t.severity}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-semibold text-white">{t.type}</p>
+                          <p className="text-[10px] opacity-80 truncate">{t.email}</p>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-white/70">{t.description}</p>
+                      <p className="text-[10px] text-white/40 italic">{t.detail}</p>
+                      {t.canBan && (
+                        <button
+                          disabled={isBanned || banningEmail === t.email}
+                          onClick={() => banCustomer(t.email, `${t.type}: ${t.description}`)}
+                          className={`mt-1 w-full py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                            isBanned
+                              ? "bg-white/5 text-white/25 cursor-default border border-white/10"
+                              : "bg-red-600 hover:bg-red-500 text-white active:scale-95"
+                          }`}>
+                          {banningEmail === t.email ? (
+                            <><Loader2 className="w-3 h-3 animate-spin" /> Banning…</>
+                          ) : isBanned ? (
+                            <><CheckCircle className="w-3 h-3" /> Banned</>
+                          ) : (
+                            <><Ban className="w-3 h-3" /> Ban Account</>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── AUTO-FIX TAB ── */}
+          {botRunning && tab === "auto" && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Header bar */}
+              <div className="px-3 py-2 border-b border-white/6 flex-shrink-0 flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-white/70 font-medium">Bot Auto-Actions Log</p>
+                  <p className="text-[10px] text-emerald-400/70">Runs every 2 min · verifies payments · resends credentials · bans threats</p>
+                </div>
+                <button onClick={fetchAutoLog} disabled={autoLogLoading}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-white/40 hover:text-white/70 transition-colors border border-white/10 hover:border-white/20">
+                  <RotateCw className={`w-3 h-3 ${autoLogLoading ? "animate-spin text-indigo-400" : ""}`} />
+                  Refresh
+                </button>
+              </div>
+              {/* Action list */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {autoLogLoading && autoActions.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full gap-2">
+                    <Loader2 className="w-7 h-7 text-indigo-400 animate-spin" />
+                    <p className="text-xs text-white/35">Loading auto-fix log…</p>
+                  </div>
+                )}
+                {!autoLogLoading && autoActions.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+                    <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                      <CheckCircle className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">No actions yet</p>
+                      <p className="text-xs text-white/30 mt-1">The bot runs every 2 minutes.<br/>Actions will appear here automatically.</p>
+                    </div>
+                    <div className="text-[10px] text-white/20 space-y-0.5 border border-white/8 rounded-xl p-3 text-left w-full">
+                      <p className="font-semibold text-white/35 mb-1">What the bot fixes automatically:</p>
+                      <p>💳 Pending payments → verifies with Paystack</p>
+                      <p>📧 Missing credentials → assigns account + emails</p>
+                      <p>🛡️ Critical threats → auto-bans suspended accounts</p>
+                      <p>🚨 Card testers → flags for admin review</p>
+                    </div>
+                  </div>
+                )}
+                {autoActions.map((a: any) => {
+                  const typeColor = a.type === "security" ? "text-red-400" : a.type === "payment" ? "text-yellow-400" : "text-blue-400";
+                  const typeIcon = a.type === "security" ? "🛡️" : a.type === "payment" ? "💳" : "📧";
+                  const resultColor = a.result === "success" ? "text-emerald-400" : a.result === "failed" ? "text-red-400" : "text-white/40";
+                  const resultIcon = a.result === "success" ? "✅" : a.result === "failed" ? "❌" : "⏭️";
+                  const timeStr = new Date(a.time).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+                  const dateStr = new Date(a.time).toLocaleDateString([], { month:"short", day:"numeric" });
+                  return (
+                    <div key={a.id} className="rounded-xl border border-white/8 bg-white/2 p-3 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base leading-none">{typeIcon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-semibold text-white truncate">{a.action}</p>
+                          <p className="text-[10px] text-white/40 truncate">{a.email}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className={`text-[10px] font-semibold ${resultColor}`}>{resultIcon} {a.result}</p>
+                          <p className="text-[9px] text-white/25">{dateStr} {timeStr}</p>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-white/50 leading-relaxed">{a.detail}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 // LOGIN FLOW  (pre-auth - uses plainFetch only)
 // ═══════════════════════════════════════════════════════════════
 function LoginFlow({ onLogin }: { onLogin: (token: string, role?: string) => void }) {
@@ -332,37 +1119,561 @@ function LoginFlow({ onLogin }: { onLogin: (token: string, role?: string) => voi
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS TAB  (2FA setup + Paystack config)
 // ═══════════════════════════════════════════════════════════════
-function SettingsTab() {
+function AdminProfileSection({ inputCls }: { inputCls: string }) {
   const { toast } = useToast();
-  const inputCls = "glass border-white/10 bg-white/5 text-white placeholder:text-white/25 focus:border-indigo-500/50";
+  const AVATAR_PRESETS = ["CT", "AT", "SA", "MG", "🚀", "⚡", "🔥", "💎", "👑", "🛡️"];
 
-  const { data: secretsData } = useQuery<{ secrets: any }>({
-    queryKey: ["/api/admin/secrets"],
-    queryFn: () => authFetch("/api/admin/secrets"),
+  const { data, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/profile"],
+    queryFn: () => authFetch("/api/admin/profile"),
   });
-  const s = secretsData?.secrets;
 
-  // ─── App Config state ────────────────────────────────────────
-  const { data: configData, refetch: refetchConfig } = useQuery<any>({
-    queryKey: ["/api/admin/app-config"],
-    queryFn: () => authFetch("/api/admin/app-config"),
-  });
-  const [appCfg, setAppCfg] = useState<any>(null);
-  const [cfgDirty, setCfgDirty] = useState(false);
-  if (configData?.config && !appCfg) setAppCfg(configData.config);
+  const [form, setForm] = useState<{ name: string; avatar: string; bio: string } | null>(null);
+  const [dirty, setDirty] = useState(false);
 
-  const saveCfgMutation = useMutation({
-    mutationFn: () => authFetch("/api/admin/app-config", { method: "PUT", body: JSON.stringify(appCfg) }),
+  useEffect(() => {
+    if (data?.success && !form) setForm({ name: data.name || "", avatar: data.avatar || "CT", bio: data.bio || "" });
+  }, [data]);
+
+  function update(key: string, value: string) {
+    setForm(prev => prev ? { ...prev, [key]: value } : prev);
+    setDirty(true);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => authFetch("/api/admin/profile", { method: "PUT", body: JSON.stringify(form) }),
     onSuccess: (d) => {
-      if (d.success) { toast({ title: "Settings saved" }); setCfgDirty(false); refetchConfig(); }
+      if (d.success) { toast({ title: "Profile saved" }); setDirty(false); refetch(); }
       else toast({ title: "Failed", description: d.error, variant: "destructive" });
     },
   });
 
-  function updateCfg(key: string, value: any) {
-    setAppCfg((prev: any) => ({ ...prev, [key]: value }));
-    setCfgDirty(true);
+  const isSuperAdmin = data?.role === "super";
+
+  return (
+    <div className="glass-card rounded-2xl overflow-hidden">
+      <div className="p-5 border-b border-white/8 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-600/20 flex items-center justify-center">
+            <UserCircle className="w-5 h-5 text-indigo-400" />
+          </div>
+          <div>
+            <p className="font-semibold text-white">Admin Profile</p>
+            <p className="text-xs text-white/40">Your display name, avatar, and bio</p>
+          </div>
+        </div>
+        {dirty && (
+          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+            className="bg-gradient-to-r from-indigo-600 to-violet-600 border-0 text-white text-xs h-8 px-3">
+            <Save className="w-3.5 h-3.5 mr-1.5" />{saveMutation.isPending ? "Saving..." : "Save Profile"}
+          </Button>
+        )}
+      </div>
+      {form ? (
+        <div className="p-5 space-y-5">
+          {/* Avatar + name row */}
+          <div className="flex items-start gap-4">
+            {/* Avatar preview */}
+            <div className="shrink-0">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-500/20">
+                {form.avatar || "CT"}
+              </div>
+              <p className="text-[10px] text-white/30 text-center mt-1.5">Preview</p>
+            </div>
+            <div className="flex-1 space-y-3">
+              <div>
+                <label className="text-xs text-white/40 block mb-1.5">Display Name</label>
+                <Input value={form.name} onChange={e => update("name", e.target.value)}
+                  placeholder="Super Admin" className={inputCls} maxLength={32} />
+              </div>
+              <div>
+                <label className="text-xs text-white/40 block mb-1.5">Role</label>
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${data?.role === "super" ? "bg-violet-500/20 text-violet-300" : "bg-blue-500/20 text-blue-300"}`}>
+                  <Shield className="w-3 h-3" />
+                  {data?.role === "super" ? "Super Admin" : "Sub-Admin"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Avatar picker */}
+          {isSuperAdmin && (
+            <div>
+              <label className="text-xs text-white/40 block mb-2">Avatar — pick initials or emoji</label>
+              <div className="flex flex-wrap gap-2">
+                {AVATAR_PRESETS.map(a => (
+                  <button key={a} onClick={() => update("avatar", a)}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-all border ${
+                      form.avatar === a
+                        ? "bg-gradient-to-br from-indigo-600 to-violet-600 text-white border-indigo-400/50 shadow-lg"
+                        : "glass border-white/10 text-white/60 hover:border-indigo-400/40 hover:text-white"
+                    }`}>
+                    {a}
+                  </button>
+                ))}
+                {/* Custom input */}
+                <input
+                  value={AVATAR_PRESETS.includes(form.avatar) ? "" : form.avatar}
+                  onChange={e => update("avatar", e.target.value.slice(0, 3))}
+                  placeholder="…"
+                  maxLength={3}
+                  className="w-10 h-10 rounded-xl glass border border-white/10 text-white text-sm font-bold text-center bg-transparent focus:border-indigo-400/50 outline-none placeholder:text-white/20"
+                  title="Custom avatar (up to 3 chars)"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Bio */}
+          {isSuperAdmin && (
+            <div>
+              <label className="text-xs text-white/40 block mb-1.5">Bio <span className="text-white/20">(optional)</span></label>
+              <textarea
+                value={form.bio}
+                onChange={e => update("bio", e.target.value)}
+                placeholder="Brief description about this admin account..."
+                maxLength={160}
+                rows={2}
+                className={`w-full rounded-xl px-3 py-2 text-sm resize-none ${inputCls}`}
+              />
+              <p className="text-[10px] text-white/25 mt-1">{form.bio.length}/160</p>
+            </div>
+          )}
+
+          {/* Email (read-only) */}
+          {data?.email && (
+            <div>
+              <label className="text-xs text-white/40 block mb-1.5">Email <span className="text-white/20">(change in Credentials section)</span></label>
+              <div className="glass rounded-xl px-3 py-2.5 text-sm text-white/50 font-mono">{data.email}</div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="p-5 text-center text-white/30 text-sm">Loading...</div>
+      )}
+    </div>
+  );
+}
+
+function AffiliateTiersSection({ inputCls }: { inputCls: string }) {
+  const { toast } = useToast();
+  const tierColors: Record<string, { bg: string; text: string; border: string; badge: string }> = {
+    Silver:   { bg: "bg-slate-400/10",  text: "text-slate-300",  border: "border-slate-400/20",  badge: "bg-slate-500/30 text-slate-200" },
+    Gold:     { bg: "bg-amber-400/10",  text: "text-amber-300",  border: "border-amber-400/20",  badge: "bg-amber-500/30 text-amber-200" },
+    Platinum: { bg: "bg-violet-400/10", text: "text-violet-300", border: "border-violet-400/20", badge: "bg-violet-500/30 text-violet-200" },
+  };
+
+  const { data, refetch } = useQuery<{ success: boolean; tiers: any[] }>({
+    queryKey: ["/api/admin/affiliate-tiers"],
+    queryFn: () => authFetch("/api/admin/affiliate-tiers"),
+  });
+
+  const [tiers, setTiers] = useState<any[]>([]);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (Array.isArray(data?.tiers) && tiers.length === 0) setTiers(data.tiers);
+  }, [data?.tiers]);
+
+  function updateTier(index: number, field: string, value: any) {
+    setTiers(prev => prev.map((t, i) => i === index ? { ...t, [field]: field === "name" ? value : Number(value) } : t));
+    setDirty(true);
   }
+
+  const saveMutation = useMutation({
+    mutationFn: () => authFetch("/api/admin/affiliate-tiers", { method: "PUT", body: JSON.stringify({ tiers }) }),
+    onSuccess: (d) => {
+      if (d.success) { toast({ title: "Affiliate tiers saved" }); setDirty(false); refetch(); }
+      else toast({ title: "Failed to save", description: d.error, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="glass-card rounded-2xl overflow-hidden">
+      <div className="p-5 border-b border-white/8 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-600/20 flex items-center justify-center">
+            <Star className="w-5 h-5 text-amber-400" />
+          </div>
+          <div>
+            <p className="font-semibold text-white">Affiliate Tier Thresholds</p>
+            <p className="text-xs text-white/40">Set referral counts and coin multipliers for each tier</p>
+          </div>
+        </div>
+        {dirty && (
+          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+            className="bg-gradient-to-r from-amber-600 to-orange-600 border-0 text-white text-xs h-8 px-3">
+            <Save className="w-3.5 h-3.5 mr-1.5" />{saveMutation.isPending ? "Saving..." : "Save Tiers"}
+          </Button>
+        )}
+      </div>
+      <div className="p-5 space-y-3">
+        <div className="grid grid-cols-3 gap-2 mb-1">
+          <p className="text-xs text-white/30 font-medium uppercase tracking-wide">Tier</p>
+          <p className="text-xs text-white/30 font-medium uppercase tracking-wide">Min Referrals</p>
+          <p className="text-xs text-white/30 font-medium uppercase tracking-wide">Coin Multiplier</p>
+        </div>
+        {!Array.isArray(tiers) || tiers.length === 0 ? (
+          <div className="text-center text-white/30 text-sm py-4">Loading...</div>
+        ) : (
+          tiers.map((tier, i) => {
+            const c = tierColors[tier.name] || tierColors["Silver"];
+            return (
+              <div key={i} className={`grid grid-cols-3 gap-2 items-center p-3 rounded-xl border ${c.border} ${c.bg}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>{tier.name}</span>
+                </div>
+                <div>
+                  <Input
+                    type="number" min={1} value={tier.min}
+                    onChange={(e) => updateTier(i, "min", e.target.value)}
+                    className={`${inputCls} h-8 text-sm`}
+                    placeholder="5"
+                  />
+                </div>
+                <div className="relative">
+                  <Input
+                    type="number" min={1} step={0.05} value={tier.multiplier}
+                    onChange={(e) => updateTier(i, "multiplier", e.target.value)}
+                    className={`${inputCls} h-8 text-sm pr-8`}
+                    placeholder="1.25"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-white/30">×</span>
+                </div>
+              </div>
+            );
+          })
+        )}
+        <p className="text-[11px] text-white/25 pt-1">
+          Referrers automatically upgrade tiers as they accumulate referrals. Each tier earns coins at the set multiplier on every purchase by referred users.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── ANNOUNCEMENTS SECTION ───────────────────────────────────────────────────
+function MonthlySummarySection({ inputCls }: { inputCls: string }) {
+  const { toast } = useToast();
+  const [targetEmail, setTargetEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ sent: number } | null>(null);
+
+  async function handleSend() {
+    setLoading(true);
+    setResult(null);
+    try {
+      const r = await authFetch("/api/admin/cron/monthly-summary", {
+        method: "POST",
+        body: JSON.stringify({ email: targetEmail.trim() || undefined }),
+      });
+      if (r.success) {
+        setResult({ sent: r.sent });
+        if (r.sent === 0) toast({ title: "No emails sent", description: "No customers had successful orders this month so far" });
+        else toast({ title: `${r.sent} summary email${r.sent !== 1 ? "s" : ""} sent` });
+      } else {
+        toast({ title: r.error ?? "Failed", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Network error", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="glass-card rounded-2xl overflow-hidden">
+      <div className="p-5 border-b border-white/8 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-indigo-600/20 flex items-center justify-center">
+          <Mail className="w-5 h-5 text-indigo-400" />
+        </div>
+        <div className="flex-1">
+          <p className="font-semibold text-white">Monthly Spending Summary Emails</p>
+          <p className="text-xs text-white/40">Automatically sent to all customers on the 1st of each month · Shows previous month's orders and estimated savings</p>
+        </div>
+        <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 shrink-0">
+          Cron: 1st of month
+        </span>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="rounded-xl p-3.5 text-xs space-y-1.5" style={{ background: "rgba(99,102,241,.07)", border: "1px solid rgba(99,102,241,.18)" }}>
+          <p className="text-indigo-300 font-semibold">How it works</p>
+          <ul className="text-indigo-200/60 space-y-1 list-disc list-inside">
+            <li>Runs automatically on the 1st of every month at 9am</li>
+            <li>Each customer with at least one successful order in the previous month gets a personalised email</li>
+            <li>Shows itemised order list, total spent, and estimated savings vs buying directly</li>
+            <li>Deduplication prevents re-sending — each customer gets at most one summary per month</li>
+            <li>Customers with zero orders are silently skipped</li>
+          </ul>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs text-white/50 uppercase tracking-wider font-semibold">Manual Trigger</p>
+          <p className="text-xs text-white/35">
+            Trigger the summary right now — useful for testing. Uses <strong className="text-white/50">current month so far</strong> as the order window (cron uses previous month). Deduplication is bypassed for all manual triggers, so you can safely re-send without affecting the scheduled cron run. Leave the email field blank to send to all eligible customers, or enter a specific email to test with one recipient.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              placeholder="customer@example.com (optional — blank = all customers)"
+              value={targetEmail}
+              onChange={e => setTargetEmail(e.target.value)}
+              className="flex-1 text-sm bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white placeholder:text-white/25 outline-none focus:border-indigo-500/50"
+            />
+            <button
+              disabled={loading}
+              onClick={handleSend}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {loading ? "Sending..." : "Send Now"}
+            </button>
+          </div>
+          {result !== null && (
+            <div className="flex items-center gap-2.5 rounded-xl p-3 text-sm" style={{ background: result.sent > 0 ? "rgba(16,185,129,.08)" : "rgba(156,163,175,.08)", border: result.sent > 0 ? "1px solid rgba(16,185,129,.2)" : "1px solid rgba(156,163,175,.15)" }}>
+              {result.sent > 0
+                ? <><CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" /><p className="text-emerald-300 font-semibold">{result.sent} summary email{result.sent !== 1 ? "s" : ""} sent successfully</p></>
+                : <><Info className="w-4 h-4 text-white/30 shrink-0" /><p className="text-white/40">No eligible customers found for the current month so far</p></>
+              }
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnnouncementsSection({ inputCls }: { inputCls: string }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/announcements"],
+    queryFn: () => fetch("/api/announcements").then(r => r.json()),
+  });
+  const announcements: any[] = data?.announcements ?? [];
+
+  const [form, setForm] = useState({ title: "", message: "", type: "info", link: "", linkLabel: "", expiresAt: "" });
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleCreate() {
+    if (!form.title.trim() || !form.message.trim()) { toast({ title: "Title and message required", variant: "destructive" }); return; }
+    setSaving(true);
+    try {
+      const r = await authFetch("/api/admin/announcements", { method: "POST", body: JSON.stringify(form) });
+      if (r.success) {
+        toast({ title: "Announcement created" });
+        setForm({ title: "", message: "", type: "info", link: "", linkLabel: "", expiresAt: "" });
+        refetch(); qc.invalidateQueries({ queryKey: ["/api/announcements"] });
+      } else toast({ title: r.error ?? "Failed", variant: "destructive" });
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    try {
+      const r = await authFetch(`/api/admin/announcements/${id}`, { method: "DELETE" });
+      if (r.success) { refetch(); qc.invalidateQueries({ queryKey: ["/api/announcements"] }); }
+      else toast({ title: r.error ?? "Failed", variant: "destructive" });
+    } finally { setDeletingId(null); }
+  }
+
+  const typeColors: Record<string, string> = {
+    info: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+    warning: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    success: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    urgent: "bg-red-500/15 text-red-300 border-red-500/30",
+  };
+
+  return (
+    <div className="glass-card rounded-2xl overflow-hidden">
+      <div className="p-5 border-b border-white/8 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center">
+          <Info className="w-5 h-5 text-violet-400" />
+        </div>
+        <div>
+          <p className="font-semibold text-white">In-App Announcements</p>
+          <p className="text-xs text-white/40">Broadcast banners shown on customers' dashboards</p>
+        </div>
+      </div>
+      <div className="p-5 space-y-4">
+        {/* Create form */}
+        <div className="space-y-3 p-4 rounded-xl border border-white/8 bg-white/2">
+          <p className="text-xs text-white/50 uppercase tracking-wider font-semibold">New Announcement</p>
+          <Input className={inputCls} placeholder="Title *" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+          <textarea
+            className={`${inputCls} w-full min-h-[72px] rounded-md px-3 py-2 text-sm resize-none`}
+            placeholder="Message *"
+            value={form.message}
+            onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <select className={`${inputCls} rounded-md px-3 py-2 text-sm bg-white/5`} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="success">Success</option>
+              <option value="urgent">Urgent</option>
+            </select>
+            <Input className={inputCls} type="datetime-local" placeholder="Expires At (optional)" value={form.expiresAt} onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input className={inputCls} placeholder="Link URL (optional)" value={form.link} onChange={e => setForm(f => ({ ...f, link: e.target.value }))} />
+            <Input className={inputCls} placeholder="Link label" value={form.linkLabel} onChange={e => setForm(f => ({ ...f, linkLabel: e.target.value }))} />
+          </div>
+          <Button onClick={handleCreate} disabled={saving} className="bg-gradient-to-r from-violet-600 to-indigo-600 border-0 text-white text-xs h-8 px-4">
+            <Plus className="w-3.5 h-3.5 mr-1.5" />{saving ? "Creating..." : "Post Announcement"}
+          </Button>
+        </div>
+
+        {/* Existing announcements */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-6"><Loader2 className="w-5 h-5 text-indigo-400 animate-spin" /></div>
+        ) : announcements.length === 0 ? (
+          <p className="text-center text-white/25 text-sm py-4">No announcements yet</p>
+        ) : (
+          <div className="space-y-2">
+            {announcements.map((a: any) => (
+              <div key={a.id} className={`flex items-start gap-3 p-3 rounded-xl border ${typeColors[a.type] ?? typeColors.info}`}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{a.title}</p>
+                  <p className="text-xs opacity-70 mt-0.5 line-clamp-2">{a.message}</p>
+                  {a.expiresAt && <p className="text-xs opacity-50 mt-1">Expires {new Date(a.expiresAt).toLocaleString("en-KE")}</p>}
+                </div>
+                <button
+                  onClick={() => handleDelete(a.id)}
+                  disabled={deletingId === a.id}
+                  className="shrink-0 text-red-400/60 hover:text-red-400 transition-colors"
+                >
+                  {deletingId === a.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── WAITLIST SECTION ─────────────────────────────────────────────────────────
+function WaitlistSection({ inputCls }: { inputCls: string }) {
+  const { toast } = useToast();
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/waitlist"],
+    queryFn: () => authFetch("/api/admin/waitlist"),
+  });
+  const entries: any[] = data?.waitlist ?? [];
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [notifyingPlan, setNotifyingPlan] = useState<string | null>(null);
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    try {
+      const r = await authFetch(`/api/admin/waitlist/${id}`, { method: "DELETE" });
+      if (r.success) refetch();
+      else toast({ title: r.error ?? "Failed", variant: "destructive" });
+    } finally { setDeletingId(null); }
+  }
+
+  async function handleNotify(planId: string, planName: string) {
+    setNotifyingPlan(planId);
+    try {
+      const r = await authFetch(`/api/admin/waitlist/notify/${planId}`, { method: "POST" });
+      if (r.success) toast({ title: `Notified ${r.count ?? "all"} subscribers for ${planName}` });
+      else toast({ title: r.error ?? "Failed", variant: "destructive" });
+    } finally { setNotifyingPlan(null); }
+  }
+
+  // Group entries by planId
+  const planGroups = entries.reduce((acc: Record<string, any[]>, e: any) => {
+    if (!acc[e.planId]) acc[e.planId] = [];
+    acc[e.planId].push(e); return acc;
+  }, {});
+
+  return (
+    <div className="glass-card rounded-2xl overflow-hidden">
+      <div className="p-5 border-b border-white/8 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-amber-600/20 flex items-center justify-center">
+          <Bell className="w-5 h-5 text-amber-400" />
+        </div>
+        <div>
+          <p className="font-semibold text-white">Waitlist</p>
+          <p className="text-xs text-white/40">{entries.length} customer{entries.length !== 1 ? "s" : ""} waiting · Notify when back in stock</p>
+        </div>
+      </div>
+      <div className="p-5">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-6"><Loader2 className="w-5 h-5 text-indigo-400 animate-spin" /></div>
+        ) : entries.length === 0 ? (
+          <p className="text-center text-white/25 text-sm py-4">No waitlist entries yet</p>
+        ) : (
+          <div className="space-y-4">
+            {Object.entries(planGroups).map(([planId, planEntries]) => (
+              <div key={planId} className="border border-white/8 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between gap-3 px-4 py-3 bg-white/3 border-b border-white/5">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{planEntries[0]?.planName ?? planId}</p>
+                    <p className="text-xs text-white/35">{planEntries.length} waiting</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleNotify(planId, planEntries[0]?.planName ?? planId)}
+                    disabled={notifyingPlan === planId}
+                    className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs h-7 px-3"
+                  >
+                    <Send className="w-3 h-3 mr-1.5" />
+                    {notifyingPlan === planId ? "Notifying..." : "Notify All"}
+                  </Button>
+                </div>
+                <div className="divide-y divide-white/5">
+                  {planEntries.map((e: any) => (
+                    <div key={e.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs text-white/70 truncate">{e.email}</p>
+                        <p className="text-xs text-white/25">{new Date(e.joinedAt).toLocaleDateString("en-KE")}</p>
+                      </div>
+                      <button onClick={() => handleDelete(e.id)} disabled={deletingId === e.id}
+                        className="shrink-0 text-red-400/50 hover:text-red-400 transition-colors">
+                        {deletingId === e.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SettingsTab() {
+  const { toast } = useToast();
+  const inputCls = "glass border-white/10 bg-white/5 text-white placeholder:text-white/25 focus:border-indigo-500/50";
+
+  const { data: secretsData, isLoading: secretsLoading } = useQuery<{ secrets: any }>({
+    queryKey: ["/api/admin/secrets"],
+    queryFn: () => authFetch("/api/admin/secrets"),
+  });
+  const rawVars = secretsData?.secrets?.vars;
+  const envVars: { key: string; label: string; set: boolean; group: string }[] = Array.isArray(rawVars) ? rawVars : [];
+  const groups = Array.from(new Set(envVars.map((v) => v.group)));
+
+  // ─── Test email state ───────────────────────────────────────────────────
+  const [testEmailTo, setTestEmailTo] = useState("");
+  const [testEmailLoading, setTestEmailLoading] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; to?: string; error?: string; domainWarning?: string } | null>(null);
+  const [domainStatus, setDomainStatus] = useState<{ loaded: boolean; allVerified: boolean; unverified: string[]; domains: { name: string; status: string }[] }>({ loaded: false, allVerified: false, unverified: [], domains: [] });
+
+  useEffect(() => {
+    authFetch("/api/admin/email/domain-status").then((r: any) => {
+      if (r.success !== undefined) {
+        setDomainStatus({ loaded: true, allVerified: r.allVerified ?? false, unverified: r.unverifiedFromDomains ?? [], domains: r.domains ?? [] });
+      }
+    }).catch(() => {});
+  }, []);
 
   // ─── 2FA state ──────────────────────────────────────────────
   const [tfaStep, setTfaStep] = useState<"idle" | "qr" | "verify">("idle");
@@ -409,73 +1720,198 @@ function SettingsTab() {
       <h1 className="text-xl font-bold text-white mb-6">Settings</h1>
       <div className="space-y-5 max-w-2xl">
 
-        {/* ─── App Config (Editable) ───────────────────────── */}
+        {/* ─── Admin Profile ───────────────────────────────── */}
+        <AdminProfileSection inputCls={inputCls} />
+
+        {/* ─── Announcements ───────────────────────────────── */}
+        <AnnouncementsSection inputCls={inputCls} />
+
+        {/* ─── Waitlist ─────────────────────────────────────── */}
+        <WaitlistSection inputCls={inputCls} />
+
+        {/* ─── Environment Variables Status ────────────────── */}
         <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-white/8 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center">
-                <Settings className="w-5 h-5 text-violet-400" />
-              </div>
-              <div>
-                <p className="font-semibold text-white">App Settings</p>
-                <p className="text-xs text-white/40">Site name, WhatsApp, domains, support email</p>
-              </div>
+          <div className="p-5 border-b border-white/8 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600/20 flex items-center justify-center">
+              <Key className="w-5 h-5 text-emerald-400" />
             </div>
-            {cfgDirty && (
-              <Button onClick={() => saveCfgMutation.mutate()} disabled={saveCfgMutation.isPending}
-                className="bg-gradient-to-r from-violet-600 to-indigo-600 border-0 text-white text-xs h-8 px-3"
-                data-testid="button-save-config">
-                <Save className="w-3.5 h-3.5 mr-1.5" />{saveCfgMutation.isPending ? "Saving..." : "Save Changes"}
-              </Button>
+            <div>
+              <p className="font-semibold text-white">Environment Variables</p>
+              <p className="text-xs text-white/40">All secrets are loaded from your <code className="text-emerald-400/80 bg-white/5 px-1 rounded">.env</code> file — edit that file to make changes</p>
+            </div>
+          </div>
+          <div className="p-5">
+            {secretsLoading ? (
+              <div className="flex items-center gap-2 text-white/30 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+            ) : envVars.length === 0 ? (
+              <p className="text-white/30 text-sm">No status available</p>
+            ) : (
+              <div className="space-y-4">
+                {groups.map((group) => (
+                  <div key={group}>
+                    <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">{group}</p>
+                    <div className="space-y-1.5">
+                      {envVars.filter((v) => v.group === group).map((v) => (
+                        <div key={v.key} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-white/3 border border-white/6">
+                          <div>
+                            <span className="text-xs text-white/70 font-medium">{v.label}</span>
+                            <span className="ml-2 text-[10px] text-white/25 font-mono">{v.key}</span>
+                          </div>
+                          {v.set
+                            ? <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold"><CheckCircle className="w-3 h-3" /> Set</span>
+                            : <span className="flex items-center gap-1 text-[10px] text-red-400 font-semibold"><XCircle className="w-3 h-3" /> Missing</span>
+                          }
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[10px] text-white/20 pt-1">Edit <code className="text-white/35">chegetech/.env</code> then restart the server to apply changes</p>
+              </div>
             )}
           </div>
-          {appCfg ? (
-            <div className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-white/40 block mb-1.5">Site Name</label>
-                  <Input value={appCfg.siteName || ""} onChange={(e) => updateCfg("siteName", e.target.value)}
-                    placeholder="Chege Tech" className={inputCls} data-testid="input-site-name" />
-                </div>
-                <div>
-                  <label className="text-xs text-white/40 block mb-1.5">Support Email</label>
-                  <Input value={appCfg.supportEmail || ""} onChange={(e) => updateCfg("supportEmail", e.target.value)}
-                    placeholder="support@example.com" type="email" className={inputCls} data-testid="input-support-email" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-white/40 block mb-1.5">WhatsApp Number</label>
-                  <Input value={appCfg.whatsappNumber || ""} onChange={(e) => updateCfg("whatsappNumber", e.target.value)}
-                    placeholder="+254114291301" className={inputCls} data-testid="input-whatsapp-number" />
-                </div>
-                <div>
-                  <label className="text-xs text-white/40 block mb-1.5">Custom Domain</label>
-                  <Input value={appCfg.customDomain || ""} onChange={(e) => updateCfg("customDomain", e.target.value)}
-                    placeholder="chegetech.com" className={inputCls} data-testid="input-custom-domain" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-white/40 block mb-1.5">WhatsApp Channel URL</label>
-                <Input value={appCfg.whatsappChannel || ""} onChange={(e) => updateCfg("whatsappChannel", e.target.value)}
-                  placeholder="https://whatsapp.com/channel/..." className={inputCls} data-testid="input-whatsapp-channel" />
-                <p className="text-[10px] text-white/25 mt-1">Customers are redirected here after a successful purchase</p>
-              </div>
-              <div className="flex items-center justify-between p-3 glass rounded-xl">
-                <div>
-                  <p className="text-sm text-white">Chat Assistant</p>
-                  <p className="text-xs text-white/40">Show floating WhatsApp chat button on all pages</p>
-                </div>
-                <Switch checked={!!appCfg.chatAssistantEnabled} onCheckedChange={(v) => updateCfg("chatAssistantEnabled", v)} data-testid="toggle-chat-assistant" />
-              </div>
-            </div>
-          ) : (
-            <div className="p-5 text-center text-white/30 text-sm">Loading...</div>
-          )}
         </div>
 
-        {/* ─── Credentials Editor ─────────────────────────── */}
-        <CredentialsEditor inputCls={inputCls} />
+        {/* ─── Test Email ──────────────────────────────────── */}
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-white/8 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-sky-600/20 flex items-center justify-center">
+              <Mail className="w-5 h-5 text-sky-400" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-white">Test Email Delivery</p>
+              <p className="text-xs text-white/40">Send a test email to confirm your Resend API key works</p>
+            </div>
+            {domainStatus.loaded && (
+              domainStatus.allVerified ? (
+                <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Domain Verified
+                </span>
+              ) : (
+                <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> Domain Unverified
+                </span>
+              )
+            )}
+          </div>
+
+          {/* Domain verification warning banner */}
+          {domainStatus.loaded && !domainStatus.allVerified && (
+            <div className="mx-5 mt-4 rounded-xl p-3.5" style={{ background: "rgba(245,158,11,.08)", border: "1px solid rgba(245,158,11,.25)" }}>
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                <div className="space-y-1.5">
+                  <p className="text-amber-300 text-sm font-semibold">Why emails appear sent but never arrive</p>
+                  <p className="text-amber-200/70 text-xs leading-relaxed">
+                    Resend accepts the email request and returns "success" — but <strong>silently drops emails</strong> sent to customer addresses until your domain is verified. This is a Resend restriction, not a code bug.
+                  </p>
+                  {domainStatus.unverified.length > 0 && (
+                    <p className="text-amber-200/70 text-xs">
+                      Unverified domain{domainStatus.unverified.length > 1 ? "s" : ""}: <span className="font-mono text-amber-300">{domainStatus.unverified.join(", ")}</span>
+                    </p>
+                  )}
+                  <div className="pt-1">
+                    <p className="text-amber-200/60 text-xs font-semibold mb-1">To fix this:</p>
+                    <ol className="text-amber-200/60 text-xs space-y-0.5 list-decimal list-inside">
+                      <li>Go to <strong className="text-amber-300">resend.com/domains</strong> → Add Domain</li>
+                      <li>Enter <span className="font-mono text-amber-300">{domainStatus.unverified[0] || "streamvault-premium.site"}</span></li>
+                      <li>Add the DNS records shown (TXT + MX + DKIM) to your domain registrar</li>
+                      <li>Click Verify — emails will start delivering immediately</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="p-5 space-y-3">
+            <div className="flex gap-2">
+              <input
+                type="email"
+                placeholder="recipient@example.com (leave blank = ADMIN_EMAIL)"
+                value={testEmailTo}
+                onChange={(e) => setTestEmailTo(e.target.value)}
+                className="flex-1 text-sm bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white placeholder:text-white/25 outline-none focus:border-indigo-500/50"
+              />
+              <button
+                disabled={testEmailLoading}
+                onClick={async () => {
+                  setTestEmailLoading(true);
+                  setTestEmailResult(null);
+                  try {
+                    const r = await authFetch("/api/admin/test-email", {
+                      method: "POST",
+                      body: JSON.stringify({ to: testEmailTo.trim() || undefined }),
+                    });
+                    setTestEmailResult(r);
+                    // Refresh domain status after test
+                    authFetch("/api/admin/email/domain-status").then((ds: any) => {
+                      if (ds.success !== undefined) setDomainStatus({ loaded: true, allVerified: ds.allVerified ?? false, unverified: ds.unverifiedFromDomains ?? [], domains: ds.domains ?? [] });
+                    }).catch(() => {});
+                  } catch (e: any) {
+                    setTestEmailResult({ success: false, error: e.message || "Network error" });
+                  } finally {
+                    setTestEmailLoading(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl text-sm font-semibold bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/20 transition-colors disabled:opacity-50 whitespace-nowrap"
+              >
+                {testEmailLoading ? "Sending…" : "Send Test"}
+              </button>
+            </div>
+            {testEmailResult && (
+              testEmailResult.success ? (
+                <div className="rounded-xl p-3 text-sm space-y-1.5" style={{ background: "rgba(16,185,129,.08)", border: "1px solid rgba(16,185,129,.2)" }}>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <p className="text-emerald-400 font-semibold">Request accepted by Resend</p>
+                  </div>
+                  <p className="text-white/40 text-xs pl-6">Sent to <span className="text-white/60">{testEmailResult.to}</span> — check your inbox and spam folder</p>
+                  {testEmailResult.domainWarning && (
+                    <div className="mt-2 pl-6 flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                      <p className="text-amber-300/80 text-xs">{testEmailResult.domainWarning}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-start gap-2.5 rounded-xl p-3 text-sm" style={{ background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.2)" }}>
+                  <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-red-400 font-semibold">Send failed</p>
+                    <p className="text-white/50 text-xs mt-1 font-mono break-all">{testEmailResult.error}</p>
+                    {testEmailResult.error?.includes("not configured") || testEmailResult.error?.includes("API key") ? (
+                      <p className="text-amber-400/70 text-xs mt-2">RESEND_API_KEY is missing. Add it in .env or in Settings → Credentials → Resend API Key.</p>
+                    ) : testEmailResult.error?.includes("Invalid") || testEmailResult.error?.includes("Unauthorized") ? (
+                      <p className="text-amber-400/70 text-xs mt-2">The API key was rejected by Resend. Check it at <strong className="text-amber-300">resend.com/api-keys</strong> and make sure it has send permission.</p>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* Resend domains list */}
+            {domainStatus.loaded && domainStatus.domains.length > 0 && (
+              <div className="pt-1">
+                <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Your Resend Domains</p>
+                <div className="space-y-1.5">
+                  {domainStatus.domains.map((d) => (
+                    <div key={d.name} className="flex items-center justify-between text-xs bg-white/3 rounded-lg px-3 py-1.5">
+                      <span className="text-white/60 font-mono">{d.name}</span>
+                      <span className={`font-semibold ${d.status === "verified" ? "text-emerald-400" : "text-amber-400"}`}>{d.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ─── Monthly Summary Emails ──────────────────────── */}
+        <MonthlySummarySection inputCls={inputCls} />
+
+        {/* ─── Affiliate Tiers ─────────────────────────────── */}
+        <AffiliateTiersSection inputCls={inputCls} />
 
         {/* ─── 2FA ─────────────────────────────────────────── */}
         <div className="glass-card rounded-2xl overflow-hidden">
@@ -624,6 +2060,7 @@ function DashboardTab() {
   });
   const stats = statsData?.transactions;
   const accStats = statsData?.accounts;
+  const botStats = statsData?.bots;
   const daily: Array<{ date: string; revenue: number; orders: number }> = analyticsData?.daily ?? [];
   const topPlans: Array<{ planName: string; revenue: number; orders: number }> = analyticsData?.topPlans ?? [];
   const maxRevenue = Math.max(...daily.map((d) => d.revenue), 1);
@@ -649,6 +2086,11 @@ function DashboardTab() {
             <GlassStatCard title="Total Orders" value={stats?.total ?? 0} icon={ArrowLeftRight} gradient="from-indigo-500 to-blue-600" glow="rgba(99,102,241,0.3)" />
             <GlassStatCard title="Emails Sent" value={stats?.emailsSent ?? 0} icon={Mail} gradient="from-violet-500 to-purple-600" glow="rgba(139,92,246,0.3)" />
             <GlassStatCard title="Active Accounts" value={accStats?.totalAccounts ?? 0} icon={Package} gradient="from-cyan-500 to-blue-500" glow="rgba(6,182,212,0.3)" />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+            <GlassStatCard title="Bot Orders" value={botStats?.total ?? 0} icon={Bot} gradient="from-green-500 to-emerald-600" glow="rgba(34,197,94,0.3)" />
+            <GlassStatCard title="Bot Revenue" value={`KES ${(botStats?.revenue || 0).toLocaleString()}`} icon={TrendingUp} gradient="from-lime-500 to-green-600" glow="rgba(132,204,22,0.3)" />
+            <GlassStatCard title="Bots Deployed" value={botStats?.deployed ?? 0} icon={Zap} gradient="from-teal-500 to-cyan-600" glow="rgba(20,184,166,0.3)" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             {[
@@ -734,6 +2176,9 @@ function PlansTab() {
   const [editValues, setEditValues] = useState<{ price: string; offerLabel: string }>({ price: "", offerLabel: "" });
   const [showAddCustom, setShowAddCustom] = useState(false);
   const [expandedCat, setExpandedCat] = useState<Record<string, boolean>>({});
+  const [newCatMode, setNewCatMode] = useState(false);
+  const [newCatDisplayName, setNewCatDisplayName] = useState("");
+  const [newCatKey, setNewCatKey] = useState("");
 
   const { data: plansData, refetch: refetchPlans } = useQuery<any>({ queryKey: ["/api/plans"] });
   const { data: overridesData, refetch: refetchOverrides } = useQuery<any>({
@@ -771,7 +2216,7 @@ function PlansTab() {
   });
 
   const addCustomForm = useForm({
-    defaultValues: { name: "", price: "", duration: "1 Month", features: "", categoryKey: "streaming", categoryName: "Streaming Services", maxUsers: "5" },
+    defaultValues: { name: "", price: "", duration: "1 Month", features: "", categoryKey: "streaming", categoryName: "Streaming Services", maxUsers: "5", clientId: "", clientSecret: "", serviceUrl: "" },
   });
 
   const addCustomMutation = useMutation({
@@ -779,7 +2224,7 @@ function PlansTab() {
       method: "POST",
       body: JSON.stringify({ ...d, price: parseInt(d.price), maxUsers: parseInt(d.maxUsers), features: d.features.split(",").map((f: string) => f.trim()).filter(Boolean) }),
     }),
-    onSuccess: () => { toast({ title: "Custom plan added" }); setShowAddCustom(false); addCustomForm.reset(); refetchPlans(); refetchCustom(); },
+    onSuccess: () => { toast({ title: "Custom plan added" }); setShowAddCustom(false); addCustomForm.reset(); setNewCatMode(false); setNewCatDisplayName(""); setNewCatKey(""); refetchPlans(); refetchCustom(); },
   });
 
   const allPlanEntries = Object.entries(categories).flatMap(([catKey, cat]: [string, any]) =>
@@ -806,31 +2251,125 @@ function PlansTab() {
       {showAddCustom && (
         <div className="glass-card rounded-2xl p-5 mb-6">
           <h3 className="font-semibold text-white mb-4">Add Custom Plan</h3>
-          <form onSubmit={addCustomForm.handleSubmit((d) => addCustomMutation.mutate(d))} className="space-y-4">
+          <form
+            onSubmit={addCustomForm.handleSubmit((d) => {
+              const finalKey = newCatMode ? newCatKey.trim() : d.categoryKey;
+              const finalName = newCatMode ? newCatDisplayName.trim() : (categories[d.categoryKey]?.category ?? d.categoryKey);
+              addCustomMutation.mutate({ ...d, categoryKey: finalKey, categoryName: finalName });
+            })}
+            className="space-y-4"
+          >
             <div className="grid grid-cols-2 gap-4">
               <div><label className="text-xs text-white/50 block mb-1">Plan Name</label><Input {...addCustomForm.register("name")} placeholder="e.g. Disney+" className="glass border-white/10 bg-white/5 text-white placeholder:text-white/25" /></div>
               <div><label className="text-xs text-white/50 block mb-1">Price (KES)</label><Input {...addCustomForm.register("price")} type="number" placeholder="250" className="glass border-white/10 bg-white/5 text-white" /></div>
               <div><label className="text-xs text-white/50 block mb-1">Duration</label><Input {...addCustomForm.register("duration")} placeholder="1 Month" className="glass border-white/10 bg-white/5 text-white" /></div>
               <div><label className="text-xs text-white/50 block mb-1">Max Users</label><Input {...addCustomForm.register("maxUsers")} type="number" placeholder="5" className="glass border-white/10 bg-white/5 text-white" /></div>
-              <div>
-                <label className="text-xs text-white/50 block mb-1">Category</label>
-                <select {...addCustomForm.register("categoryKey")} className="w-full h-9 rounded-lg glass border border-white/10 bg-background/50 text-white/80 px-3 text-sm">
-                  <option value="streaming">Streaming</option>
-                  <option value="music">Music</option>
-                  <option value="productivity">Productivity</option>
-                  <option value="vpn">VPN</option>
-                  <option value="gaming">Gaming</option>
-                  <option value="other">Other</option>
-                </select>
+
+              {/* ── Category picker ── */}
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-white/50">Category</label>
+                  <button
+                    type="button"
+                    onClick={() => { setNewCatMode(m => !m); setNewCatDisplayName(""); setNewCatKey(""); }}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+                  >
+                    {newCatMode ? (
+                      <><X className="w-3 h-3" />Use existing</>
+                    ) : (
+                      <><Plus className="w-3 h-3" />New category</>
+                    )}
+                  </button>
+                </div>
+
+                {newCatMode ? (
+                  /* ── Inline new-category creator ── */
+                  <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
+                    <p className="text-xs text-indigo-300/70 mb-2">Enter a name for your new category and we'll generate its ID automatically.</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-white/40 block mb-1">Display Name <span className="text-red-400">*</span></label>
+                        <Input
+                          value={newCatDisplayName}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setNewCatDisplayName(val);
+                            setNewCatKey(val.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""));
+                          }}
+                          placeholder="e.g. Sports & Live TV"
+                          className="glass border-white/10 bg-white/5 text-white placeholder:text-white/20 h-8 text-sm"
+                          required={newCatMode}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-white/40 block mb-1">Category ID <span className="text-white/25">(auto)</span></label>
+                        <Input
+                          value={newCatKey}
+                          onChange={e => setNewCatKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                          placeholder="sports_live_tv"
+                          className="glass border-white/10 bg-white/5 text-white/60 placeholder:text-white/20 h-8 text-sm font-mono"
+                          required={newCatMode}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Existing category select (dynamic from plansData) ── */
+                  <select
+                    {...addCustomForm.register("categoryKey")}
+                    className="w-full h-9 rounded-lg glass border border-white/10 bg-background/50 text-white/80 px-3 text-sm"
+                  >
+                    {Object.entries(categories).map(([key, cat]: [string, any]) => (
+                      <option key={key} value={key}>{cat.category}</option>
+                    ))}
+                  </select>
+                )}
               </div>
-              <div><label className="text-xs text-white/50 block mb-1">Category Display Name</label><Input {...addCustomForm.register("categoryName")} placeholder="Entertainment" className="glass border-white/10 bg-white/5 text-white" /></div>
             </div>
+
             <div><label className="text-xs text-white/50 block mb-1">Features (comma-separated)</label><Input {...addCustomForm.register("features")} placeholder="HD Streaming, Multiple Devices" className="glass border-white/10 bg-white/5 text-white" /></div>
+
+            {/* ── Service / API credentials ── */}
+            <div className="rounded-xl border border-white/8 bg-white/3 p-3 space-y-3">
+              <p className="text-xs text-white/40 font-medium tracking-wide uppercase">Service Credentials <span className="normal-case text-white/25 font-normal">(optional — stored securely)</span></p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-white/50 block mb-1">Client ID</label>
+                  <Input
+                    {...addCustomForm.register("clientId")}
+                    placeholder="e.g. cid_abc123"
+                    className="glass border-white/10 bg-white/5 text-white placeholder:text-white/20 font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-white/50 block mb-1">Client Secret</label>
+                  <Input
+                    {...addCustomForm.register("clientSecret")}
+                    type="password"
+                    placeholder="••••••••••••"
+                    className="glass border-white/10 bg-white/5 text-white placeholder:text-white/20 font-mono text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-white/50 block mb-1">Service URL <span className="text-white/25">(API / dashboard endpoint)</span></label>
+                <Input
+                  {...addCustomForm.register("serviceUrl")}
+                  placeholder="https://api.yourservice.com"
+                  className="glass border-white/10 bg-white/5 text-white placeholder:text-white/20 text-sm"
+                />
+              </div>
+            </div>
+
             <div className="flex gap-3">
-              <Button type="submit" disabled={addCustomMutation.isPending} className="bg-gradient-to-r from-indigo-600 to-violet-600 border-0 text-white">
+              <Button
+                type="submit"
+                disabled={addCustomMutation.isPending || (newCatMode && (!newCatDisplayName.trim() || !newCatKey.trim()))}
+                className="bg-gradient-to-r from-indigo-600 to-violet-600 border-0 text-white"
+              >
                 {addCustomMutation.isPending ? "Saving..." : "Save Plan"}
               </Button>
-              <Button type="button" variant="outline" className="glass border-white/10 text-white/60" onClick={() => setShowAddCustom(false)}>Cancel</Button>
+              <Button type="button" variant="outline" className="glass border-white/10 text-white/60" onClick={() => { setShowAddCustom(false); setNewCatMode(false); }}>Cancel</Button>
             </div>
           </form>
         </div>
@@ -876,6 +2415,25 @@ function PlansTab() {
                               )}
                               <span className="text-xs text-white/30">· {plan.duration}</span>
                             </div>
+                            {(plan.clientId || plan.serviceUrl) && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                {plan.clientId && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-mono bg-violet-500/10 border border-violet-500/20 text-violet-300/70 rounded px-1.5 py-0.5">
+                                    <span className="text-violet-400/50">id:</span>{plan.clientId}
+                                  </span>
+                                )}
+                                {plan.clientSecret && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-mono bg-white/5 border border-white/10 text-white/30 rounded px-1.5 py-0.5">
+                                    secret: ••••••••
+                                  </span>
+                                )}
+                                {plan.serviceUrl && (
+                                  <a href={plan.serviceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-400/60 hover:text-indigo-400 underline truncate max-w-[140px]">
+                                    {plan.serviceUrl.replace(/^https?:\/\//, "")}
+                                  </a>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           {isEditing ? (
@@ -1201,7 +2759,11 @@ function AccountsTab() {
                           <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-3">
                               <div><label className="text-xs text-white/40">Email</label><Input value={editValues.email ?? ""} onChange={(e) => setEditValues((p: any) => ({ ...p, email: e.target.value }))} className={inputCls + " mt-1"} /></div>
-                              <div><label className="text-xs text-white/40">Password</label><Input value={editValues.password ?? ""} onChange={(e) => setEditValues((p: any) => ({ ...p, password: e.target.value }))} className={inputCls + " mt-1"} /></div>
+                              <div>
+                                <label className="text-xs text-white/40">Password</label>
+                                {acc.hasPassword && <span className="text-[10px] text-amber-400/70 ml-2">Password set — leave blank to keep</span>}
+                                <Input type="password" value={editValues.password ?? ""} onChange={(e) => setEditValues((p: any) => ({ ...p, password: e.target.value }))} className={inputCls + " mt-1"} placeholder={acc.hasPassword ? "Leave blank to keep current" : "No password set"} autoComplete="new-password" />
+                              </div>
                               <div><label className="text-xs text-white/40">Username</label><Input value={editValues.username ?? ""} onChange={(e) => setEditValues((p: any) => ({ ...p, username: e.target.value }))} className={inputCls + " mt-1"} /></div>
                               <div><label className="text-xs text-white/40">Max Slots</label><Input type="number" value={editValues.maxUsers ?? 5} onChange={(e) => setEditValues((p: any) => ({ ...p, maxUsers: parseInt(e.target.value) }))} className={inputCls + " mt-1"} /></div>
                               <div className="col-span-2"><label className="text-xs text-white/40">Instructions</label><Input value={editValues.instructions ?? ""} onChange={(e) => setEditValues((p: any) => ({ ...p, instructions: e.target.value }))} className={inputCls + " mt-1"} /></div>
@@ -1225,12 +2787,32 @@ function AccountsTab() {
                                 ) : (
                                   <Badge className="bg-emerald-600/70 text-white border-0 text-xs">{acc.currentUsers}/{acc.maxUsers} slots</Badge>
                                 )}
+                                {acc.hasPassword && <Badge className="glass border-white/10 text-white/30 text-xs">🔑 Password set</Badge>}
                               </div>
                               <p className="text-xs text-white/30 mt-0.5">Added {new Date(acc.addedAt).toLocaleDateString()} · {acc.usedBy?.length ?? 0} assigned</p>
+                              {acc.usedBy && acc.usedBy.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  {acc.usedBy.map((u: any, ui: number) => {
+                                    const expDate = u.expiresAt ? new Date(u.expiresAt) : null;
+                                    const isExpired = expDate && expDate < new Date();
+                                    const expSoon = expDate && !isExpired && expDate < new Date(Date.now() + 3*86400000);
+                                    return (
+                                      <div key={ui} className="flex items-center gap-2 text-[11px]">
+                                        <span className="text-white/50 truncate max-w-[160px]">{u.customerEmail}</span>
+                                        {expDate ? (
+                                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${isExpired ? "bg-red-500/20 text-red-400" : expSoon ? "bg-amber-500/20 text-amber-400" : "bg-white/5 text-white/30"}`}>
+                                            {isExpired ? "Expired" : "Expires"} {expDate.toLocaleDateString()}
+                                          </span>
+                                        ) : <span className="text-white/20">No expiry</span>}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <Button size="sm" variant="outline" className="glass border-white/10 text-white/60 hover:text-white h-8"
-                                onClick={() => { setEditingId(acc.id); setEditValues({ email: acc.email, password: acc.password, username: acc.username, maxUsers: acc.maxUsers, instructions: acc.instructions }); }}>
+                                onClick={() => { setEditingId(acc.id); setEditValues({ email: acc.email, password: "", username: acc.username, maxUsers: acc.maxUsers, instructions: acc.instructions }); }}>
                                 <Edit2 className="w-3.5 h-3.5 mr-1" />Edit
                               </Button>
                               <Button size="sm" variant="outline"
@@ -1258,6 +2840,55 @@ function AccountsTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ─── PlanSelector: multi-select checklist for promo plan restriction ─────────
+function PlanSelector({ selected, onChange }: { selected: string[]; onChange: (ids: string[]) => void }) {
+  const { data } = useQuery<any>({
+    queryKey: ["/api/plans"],
+    queryFn: () => fetch("/api/plans").then((r) => r.json()),
+    staleTime: 5 * 60 * 1000,
+  });
+  const categories: Record<string, any> = data?.categories ?? {};
+  const allPlans: { id: string; name: string; category: string }[] = [];
+  for (const [, cat] of Object.entries(categories)) {
+    for (const [id, plan] of Object.entries((cat as any).plans ?? {})) {
+      allPlans.push({ id, name: (plan as any).name, category: (cat as any).category });
+    }
+  }
+
+  if (!allPlans.length) return <p className="text-xs text-white/30 italic">Loading plans…</p>;
+
+  const grouped: Record<string, typeof allPlans> = {};
+  for (const p of allPlans) {
+    if (!grouped[p.category]) grouped[p.category] = [];
+    grouped[p.category].push(p);
+  }
+
+  function toggle(id: string) {
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  }
+
+  return (
+    <div className="glass border border-white/10 rounded-xl p-3 max-h-52 overflow-y-auto space-y-3">
+      {Object.entries(grouped).map(([cat, plans]) => (
+        <div key={cat}>
+          <p className="text-[10px] font-semibold text-white/30 uppercase tracking-wider mb-1">{cat}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {plans.map((p) => {
+              const active = selected.includes(p.id);
+              return (
+                <button key={p.id} type="button" onClick={() => toggle(p.id)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${active ? "bg-amber-500/20 border-amber-500/50 text-amber-300" : "border-white/10 text-white/40 hover:border-white/25 hover:text-white/60"}`}>
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // PROMO CODES TAB
 // ═══════════════════════════════════════════════════════════════
 function PromosTab() {
@@ -1271,16 +2902,16 @@ function PromosTab() {
   const codes: any[] = data?.codes ?? [];
 
   const form = useForm({
-    defaultValues: { code: "", label: "", discountType: "percent", discountValue: "", maxUses: "", expiresAt: "" },
+    defaultValues: { code: "", label: "", discountType: "percent", discountValue: "", maxUses: "", expiresAt: "", applicableTo: "all", applicablePlans: [] as string[] },
   });
 
   const createMutation = useMutation({
     mutationFn: (d: any) => authFetch("/api/admin/promo-codes", {
       method: "POST",
-      body: JSON.stringify({ ...d, discountValue: parseInt(d.discountValue), maxUses: d.maxUses ? parseInt(d.maxUses) : null, expiresAt: d.expiresAt || null, applicablePlans: null }),
+      body: JSON.stringify({ ...d, active: true, discountValue: parseInt(d.discountValue), maxUses: d.maxUses ? parseInt(d.maxUses) : null, expiresAt: d.expiresAt || null, applicablePlans: Array.isArray(d.applicablePlans) && d.applicablePlans.length > 0 ? d.applicablePlans : null, applicableTo: d.applicableTo || "all" }),
     }),
     onSuccess: (d: any) => {
-      if (d.success) { toast({ title: "Promo code created!" }); form.reset({ code: "", label: "", discountType: "percent", discountValue: "", maxUses: "", expiresAt: "" }); setShowAdd(false); refetch(); }
+      if (d.success) { toast({ title: "Promo code created!" }); form.reset({ code: "", label: "", discountType: "percent", discountValue: "", maxUses: "", expiresAt: "", applicableTo: "all", applicablePlans: [] }); setShowAdd(false); refetch(); }
       else toast({ title: "Error", description: d.error, variant: "destructive" });
     },
   });
@@ -1288,12 +2919,19 @@ function PromosTab() {
   const toggleMutation = useMutation({
     mutationFn: ({ code, active }: { code: string; active: boolean }) =>
       authFetch(`/api/admin/promo-codes/${code}`, { method: "PUT", body: JSON.stringify({ active }) }),
-    onSuccess: () => refetch(),
+    onSuccess: (d: any) => {
+      if (d.success) refetch();
+      else toast({ title: "Failed to update promo code", description: d.error || "Unknown error", variant: "destructive" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Network error", description: err.message || "Could not update promo code", variant: "destructive" });
+      refetch(); // revert switch to server state
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (code: string) => authFetch(`/api/admin/promo-codes/${code}`, { method: "DELETE" }),
-    onSuccess: () => { toast({ title: "Promo code deleted" }); refetch(); },
+    onSuccess: (d: any) => { if (d.success) { toast({ title: "Promo code deleted" }); refetch(); } else toast({ title: "Delete failed", description: d.error, variant: "destructive" }); },
   });
 
   const inputCls = "glass border-white/10 bg-white/5 text-white placeholder:text-white/25";
@@ -1325,7 +2963,18 @@ function PromosTab() {
               </div>
               <div><label className="text-xs text-white/50 block mb-1">Discount Value</label><Input {...form.register("discountValue")} type="number" placeholder="20" className={inputCls} /></div>
               <div><label className="text-xs text-white/50 block mb-1">Max Uses (blank = unlimited)</label><Input {...form.register("maxUses")} type="number" placeholder="Unlimited" className={inputCls} /></div>
+              <div className="col-span-2">
+                <label className="text-xs text-white/50 block mb-2">Restrict to Specific Plans <span className="text-white/25">(leave all unchecked = any plan)</span></label>
+                <PlanSelector selected={form.watch("applicablePlans") || []} onChange={(ids) => form.setValue("applicablePlans", ids)} />
+              </div>
               <div><label className="text-xs text-white/50 block mb-1">Expires At (optional)</label><Input {...form.register("expiresAt")} type="date" className={inputCls} /></div>
+              <div><label className="text-xs text-white/50 block mb-1">Applies To</label>
+                <select {...form.register("applicableTo")} className="w-full h-9 rounded-lg glass border border-white/10 bg-background/50 text-white/80 px-3 text-sm">
+                  <option value="subscriptions">Subscriptions only</option>
+                  <option value="bots">Bot Deployments only</option>
+                  <option value="all">All services</option>
+                </select>
+              </div>
             </div>
             <div className="flex gap-3">
               <Button type="submit" disabled={createMutation.isPending} className="bg-gradient-to-r from-amber-500 to-orange-600 border-0 text-white">
@@ -1364,6 +3013,12 @@ function PromosTab() {
                       {" · "}Used {promo.uses}/{promo.maxUses ?? "∞"}
                       {promo.expiresAt ? ` · Expires ${new Date(promo.expiresAt).toLocaleDateString()}` : ""}
                     </p>
+                    <div className="flex gap-1 mt-1">
+                      {promo.applicableTo === "bots" && <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded px-1.5 py-0.5">Bots only</span>}
+                      {promo.applicableTo === "all" && <span className="text-xs bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded px-1.5 py-0.5">All services</span>}
+                      {(!promo.applicableTo || promo.applicableTo === "subscriptions") && <span className="text-xs bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded px-1.5 py-0.5">Subscriptions only</span>}
+                      {promo.applicablePlans && promo.applicablePlans.length > 0 && <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded px-1.5 py-0.5">Plans: {promo.applicablePlans.join(", ")}</span>}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1530,7 +3185,12 @@ function TransactionsTab() {
                   return (
                     <TableRow key={tx.id} className="border-white/5 hover:bg-white/3" data-testid={`tx-row-${tx.id}`}>
                       <TableCell className="font-mono text-xs text-white/30">{tx.reference?.split("-").slice(-1)[0]}</TableCell>
-                      <TableCell className="font-medium text-sm text-white">{tx.planName}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium text-sm text-white">{tx.planName}</span>
+                          {tx.isBotOrder && <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded px-1.5 py-0.5">Bot Deploy</span>}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="text-sm text-white/80">{tx.customerName}</div>
                         <div className="text-xs text-white/30">{tx.customerEmail}</div>
@@ -1542,21 +3202,29 @@ function TransactionsTab() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {tx.emailSent
-                          ? <Badge className="bg-emerald-600/70 text-white border-0 text-xs">Sent</Badge>
-                          : <Badge className="glass border-white/10 text-white/40 text-xs">Pending</Badge>}
+                        {tx.isBotOrder
+                          ? <Badge className={`text-xs border ${tx.botStatus === "deployed" ? "bg-green-500/10 text-green-400 border-green-500/20" : tx.botStatus === "stopped" || tx.botStatus === "suspended" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>{tx.botStatus}</Badge>
+                          : tx.emailSent
+                            ? <Badge className="bg-emerald-600/70 text-white border-0 text-xs">Sent</Badge>
+                            : <Badge className="glass border-white/10 text-white/40 text-xs">Pending</Badge>}
                       </TableCell>
                       <TableCell className="text-xs text-white/30">{new Date(tx.createdAt).toLocaleDateString()}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          <Button size="sm" variant="ghost"
+                          {!tx.isBotOrder && <Button size="sm" variant="ghost"
                             className="h-7 px-2 text-white/40 hover:text-emerald-400 hover:bg-emerald-500/10"
                             onClick={() => loadDeliveryProof(tx.reference)}
                             title="View delivery proof"
                             data-testid={`button-proof-${tx.id}`}>
                             <ClipboardCheck className="w-3.5 h-3.5" />
-                          </Button>
-                          {tx.status === "success" && (
+                          </Button>}
+                          {tx.isBotOrder && tx.deployUrl && (
+                            <a href={tx.deployUrl} target="_blank" rel="noopener noreferrer"
+                              className="h-7 px-2 flex items-center text-emerald-400/60 hover:text-emerald-400 text-xs">
+                              <Bot className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          {!tx.isBotOrder && tx.status === "success" && (
                             <Button size="sm" variant="ghost"
                               className="h-7 px-2 text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10"
                               onClick={() => resendCredentials(tx.reference)}
@@ -1568,7 +3236,7 @@ function TransactionsTab() {
                                 : <RotateCcw className="w-3.5 h-3.5" />}
                             </Button>
                           )}
-                          {(tx.status === "pending" || tx.status === "failed") && (
+                          {!tx.isBotOrder && (tx.status === "pending" || tx.status === "failed") && (
                             <Button size="sm" variant="ghost"
                               className="h-7 px-2 text-white/40 hover:text-emerald-400 hover:bg-emerald-500/10"
                               onClick={() => manualVerify(tx.reference)}
@@ -1898,6 +3566,28 @@ function ApiKeysTab() {
                 <code className="text-xs text-white/70 font-mono">/api/v1/my-orders</code>
               </div>
               <p className="text-xs text-white/35">Get the linked customer's orders</p>
+            </div>
+            <p className="text-xs font-bold text-violet-400 uppercase tracking-wider mt-4">Public Reseller Endpoints</p>
+            <p className="text-xs text-white/30 mb-2">Use <code className="bg-black/30 px-1 rounded">X-Reseller-Key</code> header with an admin key that has reseller scope</p>
+            <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">GET</span>
+                <code className="text-xs text-white/70 font-mono">/api/v1/plans</code>
+              </div>
+              <p className="text-xs text-white/35 mb-2">List all available plans with prices (public reseller catalogue)</p>
+              <code className="text-[10px] text-white/30 bg-black/30 rounded px-2 py-1 block break-all">
+                curl -H "X-API-Key: YOUR_KEY" {window.location.origin}/api/v1/plans
+              </code>
+            </div>
+            <div className="rounded-lg p-3 bg-white/5 border border-white/8">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold text-orange-400 bg-orange-500/15 px-2 py-0.5 rounded">POST</span>
+                <code className="text-xs text-white/70 font-mono">/api/v1/orders</code>
+              </div>
+              <p className="text-xs text-white/35 mb-2">Create a reseller order — delivers account credentials instantly if in stock</p>
+              <code className="text-[10px] text-white/30 bg-black/30 rounded px-2 py-1 block break-all">
+                {`curl -X POST -H "X-API-Key: KEY" -H "Content-Type: application/json" -d '{"planId":"PLAN_ID","customerEmail":"customer@email.com","customerName":"John"}' ${window.location.origin}/api/v1/orders`}
+              </code>
             </div>
           </div>
         </div>
@@ -2382,10 +4072,119 @@ function SupportTab() {
 }
 
 // ─── Customers Tab ────────────────────────────────────────────
+function parseUA(ua: string) {
+  if (!ua) return { browser: "Unknown browser", os: "Unknown OS", device: "Desktop" };
+  const tablet = /ipad|tablet|(android(?!.*mobile))/i.test(ua);
+  const mobile = /mobile|android|iphone/i.test(ua);
+  const device = tablet ? "Tablet" : mobile ? "Mobile" : "Desktop";
+  let browser = "Browser";
+  if (/Edg\//i.test(ua)) browser = "Edge";
+  else if (/OPR\/|Opera/i.test(ua)) browser = "Opera";
+  else if (/Chrome\/\d/i.test(ua)) browser = "Chrome";
+  else if (/Firefox\/\d/i.test(ua)) browser = "Firefox";
+  else if (/Safari\/\d/i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
+  else if (/MSIE|Trident/i.test(ua)) browser = "IE";
+  const bVer = ua.match(new RegExp(browser.split(" ")[0] + "\\/(\\d+)", "i"));
+  if (bVer) browser += ` ${bVer[1]}`;
+  let os = "Unknown OS";
+  if (/Windows NT 10|Windows 11/i.test(ua)) os = "Windows 10/11";
+  else if (/Windows NT 6\.3/i.test(ua)) os = "Windows 8.1";
+  else if (/Windows NT 6\.1/i.test(ua)) os = "Windows 7";
+  else if (/Mac OS X/i.test(ua)) { const m = ua.match(/Mac OS X ([\d_]+)/); os = m ? `macOS ${m[1].replace(/_/g, ".")}` : "macOS"; }
+  else if (/Android/i.test(ua)) { const m = ua.match(/Android ([\d.]+)/); os = m ? `Android ${m[1]}` : "Android"; }
+  else if (/iPhone|iPad/i.test(ua)) { const m = ua.match(/OS ([\d_]+)/); os = m ? `iOS ${m[1].replace(/_/g, ".")}` : "iOS"; }
+  else if (/CrOS/i.test(ua)) os = "ChromeOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+  return { browser, os, device };
+}
+
 function CustomersTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkAction, setBulkAction] = useState<"suspend"|"unsuspend"|"delete"|"email">( "suspend");
+  const [bulkEmailSubject, setBulkEmailSubject] = useState("");
+  const [bulkEmailBody, setBulkEmailBody] = useState("");
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [avatarTargetId, setAvatarTargetId] = useState<number | null>(null);
+  const adminAvatarInputRef = useRef<HTMLInputElement>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [loginHistoryCache, setLoginHistoryCache] = useState<Record<number, any[]>>({});
+  const [loginHistoryLoading, setLoginHistoryLoading] = useState<number | null>(null);
+  const [walletTopupId, setWalletTopupId] = useState<number | null>(null);
+  const [walletAction, setWalletAction] = useState<"credit" | "deduct" | "history">("credit");
+  const [walletAmount, setWalletAmount] = useState("");
+  const [walletNote, setWalletNote] = useState("");
+  const [walletHistoryId, setWalletHistoryId] = useState<number | null>(null);
+  const [walletHistoryData, setWalletHistoryData] = useState<any>(null);
+  const [walletHistoryLoading, setWalletHistoryLoading] = useState(false);
+  const [profileId, setProfileId] = useState<number | null>(null);
+  const [profileData, setProfileData] = useState<any>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+
+  async function openProfile(id: number) {
+    setProfileId(id);
+    setProfileData(null);
+    setProfileLoading(true);
+    try {
+      const d = await authFetch(`/api/admin/customers/${id}/profile`);
+      if (d.success) setProfileData(d);
+    } catch {}
+    finally { setProfileLoading(false); }
+  }
+
+  async function loadLoginHistory(id: number) {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    if (loginHistoryCache[id]) return;
+    setLoginHistoryLoading(id);
+    try {
+      const data = await authFetch(`/api/admin/customers/${id}/login-history`);
+      setLoginHistoryCache(prev => ({ ...prev, [id]: data.logs || [] }));
+    } catch {
+      setLoginHistoryCache(prev => ({ ...prev, [id]: [] }));
+    } finally {
+      setLoginHistoryLoading(null);
+    }
+  }
+
+  async function handleAdminAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !avatarTargetId) return;
+    const form = new FormData();
+    form.append("avatar", file);
+    try {
+      const res = await fetch(`/api/admin/customers/${avatarTargetId}/avatar`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${localStorage.getItem("admin_token") || ""}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "Avatar updated!" });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/customers"] });
+      } else {
+        toast({ title: "Upload failed", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Upload failed", variant: "destructive" });
+    }
+    setAvatarTargetId(null);
+    if (adminAvatarInputRef.current) adminAvatarInputRef.current.value = "";
+  }
+
+  async function handleAdminAvatarRemove(id: number) {
+    try {
+      const res = await fetch(`/api/admin/customers/${id}/avatar`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${localStorage.getItem("admin_token") || ""}`, "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (data.success) { toast({ title: "Avatar removed" }); queryClient.invalidateQueries({ queryKey: ["/api/admin/customers"] }); }
+      else toast({ title: "Failed", description: data.error, variant: "destructive" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+  }
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/admin/customers"],
@@ -2414,12 +4213,93 @@ function CustomersTab() {
     },
   });
 
+  const walletTopupMutation = useMutation({
+    mutationFn: ({ id, amount, note }: { id: number; amount: string; note: string }) =>
+      authFetch(`/api/admin/customers/${id}/wallet/topup`, {
+        method: "POST",
+        body: JSON.stringify({ amount: parseFloat(amount), note }),
+      }),
+    onSuccess: (d) => {
+      if (d.success) {
+        toast({ title: "Wallet credited!", description: `New balance: KES ${d.newBalance.toLocaleString()}` });
+        setWalletTopupId(null); setWalletAmount(""); setWalletNote(""); refetch();
+      } else { toast({ title: "Credit failed", description: d.error, variant: "destructive" }); }
+    },
+  });
+
+  const walletDeductMutation = useMutation({
+    mutationFn: ({ id, amount, note }: { id: number; amount: string; note: string }) =>
+      authFetch(`/api/admin/customers/${id}/wallet/deduct`, {
+        method: "POST",
+        body: JSON.stringify({ amount: parseFloat(amount), note }),
+      }),
+    onSuccess: (d) => {
+      if (d.success) {
+        toast({ title: "Wallet deducted", description: `New balance: KES ${d.newBalance.toLocaleString()}` });
+        setWalletTopupId(null); setWalletAmount(""); setWalletNote(""); refetch();
+      } else { toast({ title: "Deduction failed", description: d.error, variant: "destructive" }); }
+    },
+  });
+
+  async function loadWalletHistory(customerId: number) {
+    if (walletHistoryId === customerId) { setWalletHistoryId(null); setWalletHistoryData(null); return; }
+    setWalletHistoryLoading(true);
+    setWalletTopupId(null);
+    try {
+      const d = await authFetch(`/api/admin/customers/${customerId}/wallet/history`);
+      setWalletHistoryId(customerId);
+      setWalletHistoryData(d);
+    } finally { setWalletHistoryLoading(false); }
+  }
+
   const customers = (data?.customers ?? []).filter((c: any) =>
     !search || c.email.toLowerCase().includes(search.toLowerCase()) || (c.name || "").toLowerCase().includes(search.toLowerCase())
   );
 
+  async function executeBulkAction() {
+    if (selectedIds.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const d = await authFetch("/api/admin/customers/bulk", {
+        method: "POST",
+        body: JSON.stringify({ action: bulkAction, ids: Array.from(selectedIds), emailSubject: bulkEmailSubject, emailBody: bulkEmailBody })
+      });
+      if (d.success) {
+        toast({ title: "Bulk action completed", description: `${d.affected} customer(s) affected` });
+        setSelectedIds(new Set());
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/customers"] });
+      } else { toast({ title: "Error", description: d.error, variant: "destructive" }); }
+    } catch { toast({ title: "Error", description: "Bulk action failed", variant: "destructive" }); }
+    finally { setBulkLoading(false); }
+  }
+
   return (
     <>
+      {selectedIds.size > 0 && (
+        <div className="mb-4 p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex flex-wrap items-center gap-3">
+          <span className="text-indigo-300 text-sm font-medium">{selectedIds.size} selected</span>
+          <select value={bulkAction} onChange={e => setBulkAction(e.target.value as any)}
+            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white">
+            <option value="suspend">Suspend</option>
+            <option value="unsuspend">Unsuspend</option>
+            <option value="delete">Delete</option>
+            <option value="email">Send Email</option>
+          </select>
+          {bulkAction === "email" && (
+            <>
+              <input value={bulkEmailSubject} onChange={e => setBulkEmailSubject(e.target.value)}
+                placeholder="Subject" className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white w-40" />
+              <input value={bulkEmailBody} onChange={e => setBulkEmailBody(e.target.value)}
+                placeholder="Message" className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white w-48" />
+            </>
+          )}
+          <button onClick={executeBulkAction} disabled={bulkLoading}
+            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50">
+            {bulkLoading ? "Processing..." : "Apply"}
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="text-xs text-white/40 hover:text-white">Clear</button>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-white">Customers</h1>
@@ -2434,6 +4314,17 @@ function CustomersTab() {
             className="glass border-white/10 bg-white/5 text-white placeholder:text-white/25 w-60"
             data-testid="input-search-customers"
           />
+          <Button size="sm" variant="outline" onClick={() => {
+            const link = document.createElement("a");
+            link.href = "/api/admin/export/customers";
+            fetch("/api/admin/export/customers", { headers: { Authorization: `Bearer ${getToken()}` } })
+              .then(r => r.blob()).then(blob => {
+                const url = URL.createObjectURL(blob);
+                link.href = url; link.download = "customers.csv"; link.click(); URL.revokeObjectURL(url);
+              });
+          }} className="glass border-white/10 text-white/60 hover:text-white shrink-0">
+            <Download className="w-3.5 h-3.5 mr-1.5" />Export
+          </Button>
         </div>
       </div>
 
@@ -2458,11 +4349,21 @@ function CustomersTab() {
             </TableHeader>
             <TableBody>
               {customers.map((c: any) => (
-                <TableRow key={c.id} className="border-white/5 hover:bg-white/3" data-testid={`row-customer-${c.id}`}>
+                <React.Fragment key={c.id}>
+                <TableRow className="border-white/5 hover:bg-white/3" data-testid={`row-customer-${c.id}`}>
+                  <TableCell className="w-8">
+                    <input type="checkbox" checked={selectedIds.has(c.id)}
+                      onChange={e => setSelectedIds(prev => { const n = new Set(prev); e.target.checked ? n.add(c.id) : n.delete(c.id); return n; })}
+                      className="accent-indigo-500 w-4 h-4 rounded cursor-pointer" />
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-indigo-600/20 flex items-center justify-center shrink-0">
-                        <span className="text-indigo-400 font-bold text-xs">{(c.email || "?")[0].toUpperCase()}</span>
+                      <div className="w-8 h-8 rounded-full bg-indigo-600/20 flex items-center justify-center shrink-0 overflow-hidden">
+                        {c.avatarUrl ? (
+                          <img src={c.avatarUrl} alt={c.name || c.email} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-indigo-400 font-bold text-xs">{(c.email || "?")[0].toUpperCase()}</span>
+                        )}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-white" data-testid={`text-customer-email-${c.id}`}>{c.email}</p>
@@ -2493,6 +4394,41 @@ function CustomersTab() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
+                      {/* View Profile button */}
+                      <button
+                        onClick={() => openProfile(c.id)}
+                        title="View full profile"
+                        className="p-1.5 rounded-lg transition-all text-xs font-medium px-2.5 py-1 flex items-center gap-1 text-white/30 hover:text-violet-400 hover:bg-violet-500/10"
+                      >
+                        <UserCircle className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Profile</span>
+                      </button>
+                      {/* Login history button */}
+                      <button
+                        onClick={() => loadLoginHistory(c.id)}
+                        title="Login history"
+                        className={`p-1.5 rounded-lg transition-all text-xs font-medium px-2.5 py-1 flex items-center gap-1 ${expandedId === c.id ? "bg-indigo-500/25 text-indigo-300" : "text-white/30 hover:text-indigo-400 hover:bg-indigo-500/10"}`}
+                      >
+                        {loginHistoryLoading === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+                        <span className="hidden sm:inline">Logins</span>
+                      </button>
+                      {/* Avatar button */}
+                      <button
+                        onClick={() => { setAvatarTargetId(c.id); setTimeout(() => adminAvatarInputRef.current?.click(), 50); }}
+                        title="Change profile photo"
+                        className="p-1.5 rounded-lg transition-all text-white/30 hover:text-indigo-400 hover:bg-indigo-500/10"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                      </button>
+                      {c.avatarUrl && (
+                        <button
+                          onClick={() => handleAdminAvatarRemove(c.id)}
+                          title="Remove profile photo"
+                          className="p-1.5 rounded-lg transition-all text-white/30 hover:text-red-400 hover:bg-red-500/10"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {!c.emailVerified && !c.suspended && (
                         <button
                           onClick={() => verifyMutation.mutate(c.id)}
@@ -2504,6 +4440,46 @@ function CustomersTab() {
                           <CheckCircle className="w-3.5 h-3.5" />Verify
                         </button>
                       )}
+                      <button
+                        onClick={() => {
+                          if (walletTopupId === c.id && walletAction === "credit") {
+                            setWalletTopupId(null); setWalletAmount(""); setWalletNote("");
+                          } else {
+                            setWalletTopupId(c.id); setWalletAction("credit");
+                            setWalletAmount(""); setWalletNote("");
+                            setWalletHistoryId(null);
+                          }
+                        }}
+                        title="Credit wallet"
+                        className={`p-1.5 rounded-lg transition-all text-xs font-medium px-2.5 py-1 flex items-center gap-1 ${walletTopupId === c.id && walletAction === "credit" ? "bg-emerald-500/25 text-emerald-300" : "text-white/30 hover:text-emerald-400 hover:bg-emerald-500/10"}`}
+                      >
+                        <Wallet className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Credit</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (walletTopupId === c.id && walletAction === "deduct") {
+                            setWalletTopupId(null); setWalletAmount(""); setWalletNote("");
+                          } else {
+                            setWalletTopupId(c.id); setWalletAction("deduct");
+                            setWalletAmount(""); setWalletNote("");
+                            setWalletHistoryId(null);
+                          }
+                        }}
+                        title="Deduct from wallet"
+                        className={`p-1.5 rounded-lg transition-all text-xs font-medium px-2.5 py-1 flex items-center gap-1 ${walletTopupId === c.id && walletAction === "deduct" ? "bg-red-500/25 text-red-300" : "text-white/30 hover:text-red-400 hover:bg-red-500/10"}`}
+                      >
+                        <MinusCircle className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Deduct</span>
+                      </button>
+                      <button
+                        onClick={() => loadWalletHistory(c.id)}
+                        title="View wallet history"
+                        className={`p-1.5 rounded-lg transition-all text-xs font-medium px-2.5 py-1 flex items-center gap-1 ${walletHistoryId === c.id ? "bg-indigo-500/25 text-indigo-300" : "text-white/30 hover:text-indigo-400 hover:bg-indigo-500/10"}`}
+                      >
+                        <History className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">{walletHistoryLoading ? "…" : "History"}</span>
+                      </button>
                       <button
                         onClick={() => suspendMutation.mutate({ id: c.id, suspended: !c.suspended })}
                         disabled={suspendMutation.isPending}
@@ -2520,12 +4496,391 @@ function CustomersTab() {
                     </div>
                   </TableCell>
                 </TableRow>
+
+                {/* ── Wallet Action Inline Panel ── */}
+                {walletTopupId === c.id && (
+                  <TableRow className="border-0">
+                    <TableCell colSpan={5} className="p-0">
+                      <div className={`px-4 pb-4 pt-3 border-b border-white/5 ${walletAction === "deduct" ? "bg-red-950/30" : "bg-emerald-950/30"}`}>
+                        <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                          {walletAction === "credit" ? <Wallet className="w-3 h-3 text-emerald-400" /> : <MinusCircle className="w-3 h-3 text-red-400" />}
+                          {walletAction === "credit" ? "Credit Wallet" : "Deduct Wallet"} · {c.email}
+                        </p>
+                        <div className="flex items-end gap-3 flex-wrap">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[10px] text-white/40 uppercase tracking-wider">Amount (KES)</label>
+                            <Input type="number" min="1" value={walletAmount} onChange={(e) => setWalletAmount(e.target.value)}
+                              placeholder="e.g. 500"
+                              className="w-36 h-8 text-sm glass border-white/10 bg-white/5 text-white placeholder:text-white/25"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
+                            <label className="text-[10px] text-white/40 uppercase tracking-wider">Note / Reason</label>
+                            <Input type="text" value={walletNote} onChange={(e) => setWalletNote(e.target.value)}
+                              placeholder={walletAction === "credit" ? "e.g. Compensation, gift…" : "e.g. Chargeback, fraud recovery…"}
+                              className="h-8 text-sm glass border-white/10 bg-white/5 text-white placeholder:text-white/25"
+                            />
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (!walletAmount || parseFloat(walletAmount) <= 0) return;
+                              if (walletAction === "credit") walletTopupMutation.mutate({ id: c.id, amount: walletAmount, note: walletNote });
+                              else walletDeductMutation.mutate({ id: c.id, amount: walletAmount, note: walletNote });
+                            }}
+                            disabled={(walletTopupMutation.isPending || walletDeductMutation.isPending) || !walletAmount || parseFloat(walletAmount) <= 0}
+                            className={`h-8 px-4 rounded-lg disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors ${walletAction === "credit" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-600 hover:bg-red-500"}`}
+                          >
+                            {(walletTopupMutation.isPending || walletDeductMutation.isPending)
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : walletAction === "credit" ? <Wallet className="w-3.5 h-3.5" /> : <MinusCircle className="w-3.5 h-3.5" />}
+                            {walletAction === "credit" ? "Credit" : "Deduct"}
+                          </button>
+                          <button onClick={() => { setWalletTopupId(null); setWalletAmount(""); setWalletNote(""); }}
+                            className="h-8 px-3 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/5 text-xs transition-colors">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {/* ── Wallet History Inline Panel ── */}
+                {walletHistoryId === c.id && walletHistoryData && (
+                  <TableRow className="border-0">
+                    <TableCell colSpan={5} className="p-0">
+                      <div className="px-4 pb-4 pt-3 bg-indigo-950/30 border-b border-white/5">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest flex items-center gap-1.5">
+                            <History className="w-3 h-3 text-indigo-400" />
+                            Wallet History · {c.email} · Balance: <span className="text-indigo-300 font-bold">KES {(walletHistoryData.balance ?? 0).toLocaleString()}</span>
+                          </p>
+                          <button onClick={() => { setWalletHistoryId(null); setWalletHistoryData(null); }}
+                            className="text-white/20 hover:text-white/50 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                        {(walletHistoryData.transactions ?? []).length === 0 ? (
+                          <p className="text-white/30 text-xs text-center py-4">No wallet transactions yet</p>
+                        ) : (
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                            {(walletHistoryData.transactions ?? []).slice(0, 30).map((t: any) => (
+                              <div key={t.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-white/3 hover:bg-white/5 transition-colors">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {t.type === "credit"
+                                    ? <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    : <ArrowDownCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+                                  <span className="text-white/60 truncate">{t.description}</span>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0 ml-2">
+                                  <span className={`font-bold ${t.type === "credit" ? "text-emerald-400" : "text-red-400"}`}>
+                                    {t.type === "credit" ? "+" : "-"}KES {t.amount}
+                                  </span>
+                                  <span className="text-white/25">{new Date(t.createdAt || t.created_at).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {/* ── Login History Expanded Row ── */}
+                {expandedId === c.id && (
+                  <TableRow className="border-0">
+                    <TableCell colSpan={5} className="p-0">
+                      <div className="px-4 pb-4 pt-2 bg-indigo-950/30 border-b border-white/5">
+                        <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                          <Activity className="w-3 h-3" />
+                          Login History · last 20 sessions
+                        </p>
+                        {loginHistoryLoading === c.id ? (
+                          <div className="flex items-center gap-2 py-4 text-white/30 text-xs">
+                            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                          </div>
+                        ) : !loginHistoryCache[c.id] || loginHistoryCache[c.id].length === 0 ? (
+                          <p className="text-xs text-white/25 py-3">No login records found for this account</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {loginHistoryCache[c.id].map((log: any, i: number) => {
+                              const { browser, os, device } = parseUA(log.user_agent || "");
+                              const deviceIcon = device === "Mobile" ? "📱" : device === "Tablet" ? "📲" : "🖥️";
+                              const flag = log.country_code ? `https://flagcdn.com/16x12/${log.country_code.toLowerCase()}.png` : null;
+                              return (
+                                <div key={i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl bg-white/3 border border-white/6">
+                                  <span className="text-base mt-0.5">{deviceIcon}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-semibold text-white">{browser}</span>
+                                      <span className="text-[10px] text-white/35">on {os}</span>
+                                      <span className="text-[10px] text-indigo-300/60 font-medium">{device}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                      <span className="font-mono text-[11px] text-white/50">{log.ip || "—"}</span>
+                                      {flag && <img src={flag} alt="" className="w-4 h-3 rounded-sm" />}
+                                      {(log.city || log.country) && (
+                                        <span className="text-[11px] text-white/40">{[log.city, log.country].filter(Boolean).join(", ")}</span>
+                                      )}
+                                      {log.isp && <span className="text-[10px] text-white/25 truncate max-w-[120px]">{log.isp}</span>}
+                                    </div>
+                                  </div>
+                                  <span className="text-[10px] text-white/25 shrink-0 mt-0.5">
+                                    {log.created_at ? new Date(log.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
         </div>
       )}
+      {/* Hidden file input for admin avatar upload */}
+      <input
+        ref={adminAvatarInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        className="hidden"
+        onChange={handleAdminAvatarUpload}
+      />
+
+      {/* ── Customer Profile Modal ── */}
+      {profileId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.75)", backdropFilter: "blur(10px)" }}>
+          <div className="w-full max-w-2xl rounded-2xl border border-white/15 flex flex-col overflow-hidden shadow-2xl"
+            style={{ background: "linear-gradient(135deg,rgba(11,16,32,.98),rgba(20,12,40,.98))", maxHeight: "90vh" }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 shrink-0">
+              <div className="flex items-center gap-3">
+                {profileData?.customer?.avatarUrl ? (
+                  <img src={profileData.customer.avatarUrl} className="w-10 h-10 rounded-full object-cover border border-white/15" alt="" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-indigo-600/30 flex items-center justify-center">
+                    <span className="text-indigo-300 font-bold text-base">{(profileData?.customer?.email || "?")[0].toUpperCase()}</span>
+                  </div>
+                )}
+                <div>
+                  <p className="text-white font-bold">{profileData?.customer?.name || profileData?.customer?.email || "Loading…"}</p>
+                  <p className="text-white/40 text-xs font-mono">{profileData?.customer?.email}</p>
+                </div>
+              </div>
+              <button onClick={() => { setProfileId(null); setProfileData(null); }} className="text-white/30 hover:text-white/70 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-6 space-y-5">
+              {profileLoading ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
+              ) : profileData ? (
+                <>
+                  {/* Status badges + wallet */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-xl p-3 border border-white/8 text-center" style={{ background: "rgba(255,255,255,.04)" }}>
+                      <p className="text-white/40 text-[11px] mb-1">Wallet</p>
+                      <p className="text-emerald-400 font-bold text-lg">KES {(profileData.wallet?.balance ?? 0).toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-xl p-3 border border-white/8 text-center" style={{ background: "rgba(255,255,255,.04)" }}>
+                      <p className="text-white/40 text-[11px] mb-1">Orders</p>
+                      <p className="text-white font-bold text-lg">{profileData.orders?.length ?? 0}</p>
+                    </div>
+                    <div className="rounded-xl p-3 border border-white/8 text-center" style={{ background: "rgba(255,255,255,.04)" }}>
+                      <p className="text-white/40 text-[11px] mb-1">Referrals</p>
+                      <p className="text-white font-bold text-lg">{profileData.referral?.completedReferrals ?? 0}</p>
+                    </div>
+                    <div className="rounded-xl p-3 border border-white/8 text-center" style={{ background: "rgba(255,255,255,.04)" }}>
+                      <p className="text-white/40 text-[11px] mb-1">Referral Earned</p>
+                      <p className="text-amber-400 font-bold text-lg">KES {(profileData.referral?.totalEarned ?? 0).toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  {/* Account info */}
+                  <div className="rounded-xl border border-white/8 p-4" style={{ background: "rgba(255,255,255,.03)" }}>
+                    <p className="text-white/40 text-xs font-semibold uppercase tracking-widest mb-3">Account Info</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                      {[
+                        ["Email Verified", profileData.customer.emailVerified ? "✅ Yes" : "❌ No"],
+                        ["2FA Enabled", profileData.customer.totpEnabled ? "🔐 On" : "Off"],
+                        ["Status", profileData.customer.suspended ? "🔴 Suspended" : "🟢 Active"],
+                        ["Member Since", profileData.customer.createdAt ? new Date(profileData.customer.createdAt).toLocaleDateString() : "—"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex items-center justify-between py-1 border-b border-white/5">
+                          <span className="text-white/40 text-xs">{label}</span>
+                          <span className="text-white/80 text-xs font-medium">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Recent orders */}
+                  {(profileData.orders?.length ?? 0) > 0 && (
+                    <div className="rounded-xl border border-white/8 overflow-hidden" style={{ background: "rgba(255,255,255,.03)" }}>
+                      <p className="text-white/40 text-xs font-semibold uppercase tracking-widest px-4 pt-3 pb-2">Recent Orders</p>
+                      <table className="w-full text-xs">
+                        <tbody>
+                          {profileData.orders.slice(0, 8).map((o: any) => (
+                            <tr key={o.reference || o.id} className="border-t border-white/5">
+                              <td className="px-4 py-2 text-white/70">{o.planName || "—"}</td>
+                              <td className="px-4 py-2 text-right text-indigo-300 font-mono">KES {(o.amount ?? 0).toLocaleString()}</td>
+                              <td className="px-4 py-2 text-right">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${o.status === "success" ? "bg-emerald-500/20 text-emerald-400" : o.status === "failed" ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"}`}>
+                                  {o.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-right text-white/30">{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Ratings given */}
+                  {(profileData.ratings?.length ?? 0) > 0 && (
+                    <div className="rounded-xl border border-white/8 p-4" style={{ background: "rgba(255,255,255,.03)" }}>
+                      <p className="text-white/40 text-xs font-semibold uppercase tracking-widest mb-3">Ratings Given</p>
+                      <div className="space-y-2">
+                        {profileData.ratings.map((r: any) => (
+                          <div key={r.id} className="flex items-center gap-3">
+                            <div className="flex items-center gap-0.5">
+                              {[1,2,3,4,5].map(s => <Star key={s} className={`w-3.5 h-3.5 ${s <= r.stars ? "text-amber-400 fill-amber-400" : "text-white/15"}`} />)}
+                            </div>
+                            <span className="text-white/60 text-xs">{r.planName || "—"}</span>
+                            {r.comment && <span className="text-white/35 text-xs italic truncate max-w-[200px]">"{r.comment}"</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recent logins */}
+                  {(profileData.loginHistory?.length ?? 0) > 0 && (
+                    <div className="rounded-xl border border-white/8 p-4" style={{ background: "rgba(255,255,255,.03)" }}>
+                      <p className="text-white/40 text-xs font-semibold uppercase tracking-widest mb-3">Recent Logins</p>
+                      <div className="space-y-1.5">
+                        {profileData.loginHistory.slice(0, 5).map((log: any, i: number) => (
+                          <div key={i} className="flex items-center gap-3 text-xs">
+                            <span className="font-mono text-white/40">{log.ip || "—"}</span>
+                            <span className="text-white/30 text-[11px]">{log.created_at ? new Date(log.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-white/30 text-center py-8">Failed to load profile</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+// ─── WhatsApp Tab (dedicated page for all admin roles) ───────────────────────
+function WhatsAppTab() {
+  const inputCls = "w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50";
+
+  const { data } = useQuery<any>({
+    queryKey: ["/api/admin/whatsapp/status"],
+    queryFn: () => fetch("/api/admin/whatsapp/status", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}` }
+    }).then(r => r.json()),
+    refetchInterval: (d) => {
+      const s = d?.state?.data?.status;
+      return (s === "connecting" || s === "qr_ready") ? 2000 : 5000;
+    },
+  });
+  const status = data?.status ?? "disconnected";
+  const isConnected = status === "connected";
+
+  const COMMANDS = [
+    { cmd: "stats", desc: "Today's revenue, weekly & all-time totals" },
+    { cmd: "orders 10", desc: "Last N completed orders with customer details" },
+    { cmd: "pending", desc: "All unprocessed/pending orders" },
+    { cmd: "customers", desc: "Total, verified, suspended, new in 24h" },
+    { cmd: "stock", desc: "Every plan — in stock or out of stock" },
+    { cmd: "tickets", desc: "Open & escalated support tickets" },
+    { cmd: "find email@x.com", desc: "Full customer profile with orders & wallet" },
+    { cmd: "wallet email@x.com", desc: "Check a customer's wallet balance" },
+    { cmd: "suspend email@x.com", desc: "Suspend a customer account instantly" },
+    { cmd: "unsuspend email@x.com", desc: "Restore a suspended account" },
+  ];
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      {/* Hero header */}
+      <div className="glass rounded-2xl overflow-hidden">
+        <div className="relative px-6 py-8 flex items-center gap-5"
+          style={{ background: "linear-gradient(135deg, rgba(37,211,102,.12) 0%, rgba(37,211,102,.04) 100%)", borderBottom: "1px solid rgba(37,211,102,.15)" }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-xl"
+            style={{ background: "linear-gradient(135deg,#128C7E,#25D366)", boxShadow: "0 0 30px rgba(37,211,102,.35)" }}>
+            <svg viewBox="0 0 24 24" className="w-8 h-8" fill="white">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/>
+            </svg>
+          </div>
+          <div className="flex-1">
+            <h1 className="text-xl font-bold text-white mb-1">WhatsApp Admin Bot</h1>
+            <p className="text-sm text-white/50 leading-relaxed">
+              Link your WhatsApp to command the store directly — check stats, manage customers, and monitor orders from your phone.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isConnected ? (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 px-3 py-1.5 rounded-full"
+                style={{ background: "rgba(37,211,102,.15)", border: "1px solid rgba(37,211,102,.3)" }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                Linked
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-white/40 px-3 py-1.5 rounded-full"
+                style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                Not linked
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Connection panel */}
+        <div className="p-6">
+          <WhatsAppWebPanel inputCls={inputCls} />
+        </div>
+      </div>
+
+      {/* Admin command reference */}
+      <div className="glass rounded-2xl p-6 space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "rgba(99,102,241,.2)" }}>
+            <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">Available Admin Commands</p>
+          <span className="text-[10px] text-white/20 ml-auto">Only works from your linked admin number</span>
+        </div>
+        <div className="space-y-1.5">
+          {COMMANDS.map(({ cmd, desc }) => (
+            <div key={cmd} className="flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: "rgba(255,255,255,.03)" }}>
+              <code className="text-xs font-mono font-bold text-emerald-400 shrink-0 min-w-[140px]">{cmd}</code>
+              <span className="text-xs text-white/40">{desc}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-white/20 pt-1">
+          Commands work with or without a leading slash. Just type <code className="text-white/35">help</code> in WhatsApp after linking to see the full list.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -2665,16 +5020,53 @@ function WhatsAppWebPanel({ inputCls }: { inputCls: string }) {
       {/* Blocked by WhatsApp */}
       {status === "blocked" && (
         <div className="space-y-3">
-          <div className="p-3 rounded-xl" style={{ background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.2)" }}>
-            <p className="text-xs font-semibold text-red-400 mb-1">Connection blocked by WhatsApp</p>
-            <p className="text-[11px] text-white/40 leading-relaxed">WhatsApp detects and blocks connections from cloud servers like Replit. This is a WhatsApp restriction, not a code bug.</p>
+          {/* Error banner */}
+          <div className="flex gap-2.5 p-3 rounded-xl" style={{ background: "rgba(239,68,68,.07)", border: "1px solid rgba(239,68,68,.18)" }}>
+            <svg className="w-4 h-4 text-red-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+            <div>
+              <p className="text-xs font-semibold text-red-400 mb-0.5">Blocked by WhatsApp</p>
+              <p className="text-[11px] text-white/40 leading-relaxed">WhatsApp actively blocks WebSocket connections from cloud-hosted servers (Replit, Render, AWS, etc.). This is a WhatsApp policy — not a bug in the code.</p>
+            </div>
           </div>
-          <div className="p-3 rounded-xl space-y-1.5" style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)" }}>
-            <p className="text-[11px] font-semibold text-white/50">What you can do:</p>
-            <p className="text-[11px] text-white/35">✅ <strong className="text-white/50">Telegram</strong> — works perfectly and is already set up for order notifications</p>
-            <p className="text-[11px] text-white/35">✅ <strong className="text-white/50">WhatsApp Channel</strong> — set your channel link in Site Settings for customers to follow</p>
+
+          {/* Option 1 — Official Meta API */}
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(99,102,241,.2)" }}>
+            <div className="px-3 py-2 flex items-center gap-2" style={{ background: "rgba(99,102,241,.1)" }}>
+              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Option 1 — Recommended</span>
+              <span className="ml-auto text-[9px] text-indigo-300/60 bg-indigo-500/10 px-1.5 py-0.5 rounded-full">Works from cloud</span>
+            </div>
+            <div className="p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-white/70">Official WhatsApp Business API (Meta)</p>
+              <p className="text-[11px] text-white/40 leading-relaxed">Meta's official API works from any server. Go to Settings → Credentials and fill in <strong className="text-white/55">WhatsApp Access Token</strong> + <strong className="text-white/55">Phone Number ID</strong> to enable it.</p>
+              <div className="text-[11px] text-white/30 space-y-1 pt-1">
+                <p>1. Go to <strong className="text-white/45">developers.facebook.com</strong></p>
+                <p>2. Create an app → Add WhatsApp product</p>
+                <p>3. Get your <strong className="text-white/45">Phone Number ID</strong> + <strong className="text-white/45">Access Token</strong></p>
+                <p>4. Paste both in Admin → Settings → Credentials</p>
+              </div>
+            </div>
           </div>
-          <button onClick={disconnect} className="text-xs text-white/30 hover:text-white/50 transition-all">Reset</button>
+
+          {/* Option 2 — Telegram */}
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(37,211,102,.15)" }}>
+            <div className="px-3 py-2 flex items-center gap-2" style={{ background: "rgba(37,211,102,.06)" }}>
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Option 2 — Already working</span>
+            </div>
+            <div className="p-3">
+              <p className="text-xs font-semibold text-white/70 mb-1">Telegram Admin Bot</p>
+              <p className="text-[11px] text-white/40">Your Telegram bot is already set up and works perfectly from cloud servers. You get instant order alerts, stock warnings, and weekly reports — all without any restrictions.</p>
+            </div>
+          </div>
+
+          {/* Option 3 — VPS */}
+          <div className="p-3 rounded-xl space-y-1" style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)" }}>
+            <p className="text-[11px] font-semibold text-white/40">Option 3 — Self-hosted VPS</p>
+            <p className="text-[11px] text-white/25">Deploy the app on a VPS with a residential or non-datacenter IP (e.g. Contabo, Hetzner). WhatsApp is less likely to block those IPs. Use Admin → VPS Manager to set one up.</p>
+          </div>
+
+          <button onClick={disconnect} className="text-[11px] text-white/20 hover:text-white/40 transition-all">
+            Clear session and try again
+          </button>
         </div>
       )}
 
@@ -2905,16 +5297,17 @@ function CredentialsEditor({ inputCls }: { inputCls: string }) {
           <CredRow label="Public Key" field="paystackPublicKey" placeholder="pk_live_..." hint="Used in the browser for Paystack popup" />
           <CredRow label="Secret Key" field="paystackSecretKey" type="password" placeholder="sk_live_..." hint="Used server-side to verify payments" />
         </div>
-        {/* Email */}
+        {/* Email — Resend */}
         <div className="glass rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2 mb-1">
             <Mail className="w-3.5 h-3.5 text-indigo-400" />
-            <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">Email (Gmail)</p>
+            <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">Email (Resend)</p>
             {effective.emailConfigured && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border-0 px-1.5">Active</Badge>}
           </div>
-          <CredRow label="Gmail Address" field="emailUser" placeholder="you@gmail.com" />
-          <CredRow label="App Password" field="emailPass" type="password" placeholder="xxxx xxxx xxxx xxxx"
-            hint="Generate at myaccount.google.com/apppasswords — not your regular password" />
+          <CredRow label="Resend API Key" field="resendApiKey" type="password" placeholder="re_••••••••••••"
+            hint="Get your key at resend.com/api-keys — starts with re_" />
+          <CredRow label="From Address" field="resendFrom" placeholder="hello@yourdomain.com"
+            hint="Must be a verified sender in your Resend account. Leave blank to use onboarding@resend.dev (test only)" />
         </div>
         {/* Admin Login */}
         <div className="glass rounded-xl p-4 space-y-3">
@@ -2961,6 +5354,39 @@ function CredentialsEditor({ inputCls }: { inputCls: string }) {
 
         {/* WhatsApp Bot */}
         <WhatsAppWebPanel inputCls={inputCls} />
+
+        {/* Cloudflare */}
+        <div className="glass rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Globe className="w-3.5 h-3.5 text-orange-400" />
+            <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">Cloudflare DNS</p>
+            {(creds.cloudflareApiTokenSet || !!envVarSet?.cloudflareApiToken) && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border-0 px-1.5">Active</Badge>}
+          </div>
+          <CredRow label="API Token" field="cloudflareApiToken" type="password" placeholder="••••••••••••••••••••••••••••••••••••••••"
+            hint="Create at dash.cloudflare.com → My Profile → API Tokens. Needs Zone:DNS:Edit permission for your domain." />
+        </div>
+
+        {/* Database */}
+        <div className="glass rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Database className="w-3.5 h-3.5 text-emerald-400" />
+            <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">PostgreSQL Database</p>
+            {(creds.externalDatabaseUrlSet || !!envVarSet?.externalDatabaseUrl) && (
+              <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border-0 px-1.5">Connected</Badge>
+            )}
+          </div>
+          <CredRow
+            label="External Database URL"
+            field="externalDatabaseUrl"
+            type="password"
+            placeholder="postgresql://user:pass@host:5432/dbname"
+            hint="PostgreSQL connection string from Neon, Supabase, or Render. Replaces SQLite — requires server restart to take effect."
+          />
+          <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/8 border border-amber-500/15">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-[10px] text-amber-300/70">After saving, restart the server for the database switch to take effect. Get a free PostgreSQL at <strong className="text-amber-300">neon.tech</strong> or <strong className="text-amber-300">render.com</strong></p>
+          </div>
+        </div>
 
         <div className="flex items-start gap-3 p-3 rounded-xl" style={{ background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.15)" }}>
           <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
@@ -3327,6 +5753,3544 @@ function GlassStatCard({ title, value, icon: Icon, gradient, glow }: { title: st
         </div>
       </div>
       <p className="text-2xl font-bold text-white">{value}</p>
+    </div>
+  );
+}
+
+// ─── Country / GEO RESTRICT TAB ──────────────────────────────────────────
+const COUNTRY_LIST = [
+  { code: "AF", name: "Afghanistan" }, { code: "AL", name: "Albania" },
+  { code: "DZ", name: "Algeria" }, { code: "AD", name: "Andorra" },
+  { code: "AO", name: "Angola" }, { code: "AG", name: "Antigua and Barbuda" },
+  { code: "AR", name: "Argentina" }, { code: "AM", name: "Armenia" },
+  { code: "AU", name: "Australia" }, { code: "AT", name: "Austria" },
+  { code: "AZ", name: "Azerbaijan" }, { code: "BS", name: "Bahamas" },
+  { code: "BH", name: "Bahrain" }, { code: "BD", name: "Bangladesh" },
+  { code: "BB", name: "Barbados" }, { code: "BY", name: "Belarus" },
+  { code: "BE", name: "Belgium" }, { code: "BZ", name: "Belize" },
+  { code: "BJ", name: "Benin" }, { code: "BT", name: "Bhutan" },
+  { code: "BO", name: "Bolivia" }, { code: "BA", name: "Bosnia and Herzegovina" },
+  { code: "BW", name: "Botswana" }, { code: "BR", name: "Brazil" },
+  { code: "BN", name: "Brunei" }, { code: "BG", name: "Bulgaria" },
+  { code: "BF", name: "Burkina Faso" }, { code: "BI", name: "Burundi" },
+  { code: "CV", name: "Cabo Verde" }, { code: "KH", name: "Cambodia" },
+  { code: "CM", name: "Cameroon" }, { code: "CA", name: "Canada" },
+  { code: "CF", name: "Central African Republic" }, { code: "TD", name: "Chad" },
+  { code: "CL", name: "Chile" }, { code: "CN", name: "China" },
+  { code: "CO", name: "Colombia" }, { code: "KM", name: "Comoros" },
+  { code: "CD", name: "Congo (DRC)" }, { code: "CG", name: "Congo (Republic)" },
+  { code: "CR", name: "Costa Rica" }, { code: "HR", name: "Croatia" },
+  { code: "CU", name: "Cuba" }, { code: "CY", name: "Cyprus" },
+  { code: "CZ", name: "Czech Republic" }, { code: "DK", name: "Denmark" },
+  { code: "DJ", name: "Djibouti" }, { code: "DM", name: "Dominica" },
+  { code: "DO", name: "Dominican Republic" }, { code: "EC", name: "Ecuador" },
+  { code: "EG", name: "Egypt" }, { code: "SV", name: "El Salvador" },
+  { code: "GQ", name: "Equatorial Guinea" }, { code: "ER", name: "Eritrea" },
+  { code: "EE", name: "Estonia" }, { code: "SZ", name: "Eswatini" },
+  { code: "ET", name: "Ethiopia" }, { code: "FJ", name: "Fiji" },
+  { code: "FI", name: "Finland" }, { code: "FR", name: "France" },
+  { code: "GA", name: "Gabon" }, { code: "GM", name: "Gambia" },
+  { code: "GE", name: "Georgia" }, { code: "DE", name: "Germany" },
+  { code: "GH", name: "Ghana" }, { code: "GR", name: "Greece" },
+  { code: "GD", name: "Grenada" }, { code: "GT", name: "Guatemala" },
+  { code: "GN", name: "Guinea" }, { code: "GW", name: "Guinea-Bissau" },
+  { code: "GY", name: "Guyana" }, { code: "HT", name: "Haiti" },
+  { code: "HN", name: "Honduras" }, { code: "HU", name: "Hungary" },
+  { code: "IS", name: "Iceland" }, { code: "IN", name: "India" },
+  { code: "ID", name: "Indonesia" }, { code: "IR", name: "Iran" },
+  { code: "IQ", name: "Iraq" }, { code: "IE", name: "Ireland" },
+  { code: "IL", name: "Israel" }, { code: "IT", name: "Italy" },
+  { code: "JM", name: "Jamaica" }, { code: "JP", name: "Japan" },
+  { code: "JO", name: "Jordan" }, { code: "KZ", name: "Kazakhstan" },
+  { code: "KE", name: "Kenya" }, { code: "KI", name: "Kiribati" },
+  { code: "KW", name: "Kuwait" }, { code: "KG", name: "Kyrgyzstan" },
+  { code: "LA", name: "Laos" }, { code: "LV", name: "Latvia" },
+  { code: "LB", name: "Lebanon" }, { code: "LS", name: "Lesotho" },
+  { code: "LR", name: "Liberia" }, { code: "LY", name: "Libya" },
+  { code: "LI", name: "Liechtenstein" }, { code: "LT", name: "Lithuania" },
+  { code: "LU", name: "Luxembourg" }, { code: "MG", name: "Madagascar" },
+  { code: "MW", name: "Malawi" }, { code: "MY", name: "Malaysia" },
+  { code: "MV", name: "Maldives" }, { code: "ML", name: "Mali" },
+  { code: "MT", name: "Malta" }, { code: "MH", name: "Marshall Islands" },
+  { code: "MR", name: "Mauritania" }, { code: "MU", name: "Mauritius" },
+  { code: "MX", name: "Mexico" }, { code: "FM", name: "Micronesia" },
+  { code: "MD", name: "Moldova" }, { code: "MC", name: "Monaco" },
+  { code: "MN", name: "Mongolia" }, { code: "ME", name: "Montenegro" },
+  { code: "MA", name: "Morocco" }, { code: "MZ", name: "Mozambique" },
+  { code: "MM", name: "Myanmar" }, { code: "NA", name: "Namibia" },
+  { code: "NR", name: "Nauru" }, { code: "NP", name: "Nepal" },
+  { code: "NL", name: "Netherlands" }, { code: "NZ", name: "New Zealand" },
+  { code: "NI", name: "Nicaragua" }, { code: "NE", name: "Niger" },
+  { code: "NG", name: "Nigeria" }, { code: "KP", name: "North Korea" },
+  { code: "MK", name: "North Macedonia" }, { code: "NO", name: "Norway" },
+  { code: "OM", name: "Oman" }, { code: "PK", name: "Pakistan" },
+  { code: "PW", name: "Palau" }, { code: "PA", name: "Panama" },
+  { code: "PG", name: "Papua New Guinea" }, { code: "PY", name: "Paraguay" },
+  { code: "PE", name: "Peru" }, { code: "PH", name: "Philippines" },
+  { code: "PL", name: "Poland" }, { code: "PT", name: "Portugal" },
+  { code: "QA", name: "Qatar" }, { code: "RO", name: "Romania" },
+  { code: "RU", name: "Russia" }, { code: "RW", name: "Rwanda" },
+  { code: "KN", name: "Saint Kitts and Nevis" }, { code: "LC", name: "Saint Lucia" },
+  { code: "VC", name: "Saint Vincent and the Grenadines" }, { code: "WS", name: "Samoa" },
+  { code: "SM", name: "San Marino" }, { code: "ST", name: "Sao Tome and Principe" },
+  { code: "SA", name: "Saudi Arabia" }, { code: "SN", name: "Senegal" },
+  { code: "RS", name: "Serbia" }, { code: "SC", name: "Seychelles" },
+  { code: "SL", name: "Sierra Leone" }, { code: "SG", name: "Singapore" },
+  { code: "SK", name: "Slovakia" }, { code: "SI", name: "Slovenia" },
+  { code: "SB", name: "Solomon Islands" }, { code: "SO", name: "Somalia" },
+  { code: "ZA", name: "South Africa" }, { code: "SS", name: "South Sudan" },
+  { code: "KR", name: "South Korea" }, { code: "ES", name: "Spain" },
+  { code: "LK", name: "Sri Lanka" }, { code: "SD", name: "Sudan" },
+  { code: "SR", name: "Suriname" }, { code: "SE", name: "Sweden" },
+  { code: "CH", name: "Switzerland" }, { code: "SY", name: "Syria" },
+  { code: "TW", name: "Taiwan" }, { code: "TJ", name: "Tajikistan" },
+  { code: "TZ", name: "Tanzania" }, { code: "TH", name: "Thailand" },
+  { code: "TL", name: "Timor-Leste" }, { code: "TG", name: "Togo" },
+  { code: "TO", name: "Tonga" }, { code: "TT", name: "Trinidad and Tobago" },
+  { code: "TN", name: "Tunisia" }, { code: "TR", name: "Turkey" },
+  { code: "TM", name: "Turkmenistan" }, { code: "TV", name: "Tuvalu" },
+  { code: "UG", name: "Uganda" }, { code: "UA", name: "Ukraine" },
+  { code: "AE", name: "United Arab Emirates" }, { code: "GB", name: "United Kingdom" },
+  { code: "US", name: "United States" }, { code: "UY", name: "Uruguay" },
+  { code: "UZ", name: "Uzbekistan" }, { code: "VU", name: "Vanuatu" },
+  { code: "VE", name: "Venezuela" }, { code: "VN", name: "Vietnam" },
+  { code: "YE", name: "Yemen" }, { code: "ZM", name: "Zambia" },
+  { code: "ZW", name: "Zimbabwe" },
+];
+
+function SuperAdminsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [saving, setSaving] = useState(false);
+  const [resetId, setResetId] = useState<number | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const inputCls = "w-full rounded-xl px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:ring-1 focus:ring-violet-500/50 transition-all";
+  const glassInput = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)" };
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/super-admins"],
+    queryFn: () => authFetch("/api/admin/super-admins"),
+  });
+  const admins: any[] = data?.superAdmins ?? [];
+
+  async function handleAdd() {
+    if (!form.email || !form.password) return toast({ title: "Email and password required", variant: "destructive" });
+    if (form.password.length < 8) return toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+    setSaving(true);
+    const r = await authFetch("/api/admin/super-admins", { method: "POST", body: JSON.stringify(form) });
+    setSaving(false);
+    if (r.success) {
+      toast({ title: "Super admin added" });
+      setForm({ name: "", email: "", password: "" });
+      setShowForm(false);
+      refetch();
+      qc.invalidateQueries({ queryKey: ["/api/admin/super-admins"] });
+    } else {
+      toast({ title: r.error || "Failed to add", variant: "destructive" });
+    }
+  }
+
+  async function handleToggle(id: number) {
+    const r = await authFetch(`/api/admin/super-admins/${id}/toggle`, { method: "PATCH" });
+    if (r.success) { refetch(); toast({ title: r.active ? "Activated" : "Deactivated" }); }
+    else toast({ title: r.error || "Failed", variant: "destructive" });
+  }
+
+  async function handleDelete(id: number, email: string) {
+    if (!confirm(`Remove super admin ${email}? This cannot be undone.`)) return;
+    const r = await authFetch(`/api/admin/super-admins/${id}`, { method: "DELETE" });
+    if (r.success) { refetch(); toast({ title: "Super admin removed" }); }
+    else toast({ title: r.error || "Failed", variant: "destructive" });
+  }
+
+  async function handleResetPassword() {
+    if (!newPassword || newPassword.length < 8) return toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+    setResetting(true);
+    const r = await authFetch(`/api/admin/super-admins/${resetId}/password`, { method: "PUT", body: JSON.stringify({ password: newPassword }) });
+    setResetting(false);
+    if (r.success) { toast({ title: "Password updated" }); setResetId(null); setNewPassword(""); }
+    else toast({ title: r.error || "Failed", variant: "destructive" });
+  }
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Shield className="w-5 h-5 text-violet-400" /> Super Admins
+          </h2>
+          <p className="text-sm text-white/40 mt-0.5">These accounts have full admin access, identical to yours. Only you can manage them.</p>
+        </div>
+        <button onClick={() => setShowForm(s => !s)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+          style={{ background: "rgba(139,92,246,.2)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,.3)" }}>
+          <Plus className="w-3.5 h-3.5" /> Add Super Admin
+        </button>
+      </div>
+
+      {/* Add form */}
+      {showForm && (
+        <div className="glass rounded-2xl p-5 space-y-3" style={{ border: "1px solid rgba(139,92,246,.2)" }}>
+          <p className="text-sm font-semibold text-white/70">New Super Admin</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="Display name (optional)" className={inputCls} style={glassInput} />
+            <input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="Email address *" type="email" className={inputCls} style={glassInput} />
+          </div>
+          <input value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+            placeholder="Password (min 8 characters) *" type="password" className={inputCls} style={glassInput} />
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleAdd} disabled={saving}
+              className="px-4 py-1.5 rounded-xl text-xs font-semibold text-white transition-all"
+              style={{ background: saving ? "rgba(139,92,246,.3)" : "rgba(139,92,246,.6)" }}>
+              {saving ? "Adding…" : "Add Super Admin"}
+            </button>
+            <button onClick={() => setShowForm(false)} className="px-4 py-1.5 rounded-xl text-xs text-white/40 hover:text-white/60 transition-all">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      {isLoading ? (
+        <div className="glass rounded-2xl p-8 text-center text-white/30 text-sm">Loading…</div>
+      ) : admins.length === 0 && !showForm ? (
+        <div className="glass rounded-2xl p-10 text-center space-y-2">
+          <Shield className="w-8 h-8 text-white/20 mx-auto" />
+          <p className="text-white/30 text-sm">No additional super admins yet</p>
+          <p className="text-white/20 text-xs">Click "Add Super Admin" to grant full admin access to another account.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {admins.map((sa: any) => (
+            <div key={sa.id} className="glass rounded-xl px-4 py-3 flex items-center gap-3" style={{ border: "1px solid rgba(255,255,255,.07)" }}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                style={{ background: sa.active ? "rgba(139,92,246,.25)" : "rgba(255,255,255,.06)", color: sa.active ? "#c4b5fd" : "rgba(255,255,255,.3)" }}>
+                {(sa.name || sa.email).slice(0, 2).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">{sa.name}</p>
+                <p className="text-xs text-white/40 truncate">{sa.email}</p>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${sa.active ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+                {sa.active ? "Active" : "Suspended"}
+              </span>
+              <div className="flex items-center gap-1 shrink-0">
+                {resetId === sa.id ? (
+                  <div className="flex items-center gap-1">
+                    <input value={newPassword} onChange={e => setNewPassword(e.target.value)} type="password"
+                      placeholder="New password" className="text-xs px-2 py-1 rounded-lg w-32"
+                      style={{ background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.1)" }} />
+                    <button onClick={handleResetPassword} disabled={resetting}
+                      className="text-xs px-2 py-1 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-all">
+                      {resetting ? "…" : "Save"}
+                    </button>
+                    <button onClick={() => { setResetId(null); setNewPassword(""); }}
+                      className="text-xs px-2 py-1 rounded-lg text-white/30 hover:text-white/50">✕</button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setResetId(sa.id); setNewPassword(""); }}
+                    className="text-[11px] px-2 py-1 rounded-lg text-white/30 hover:text-white/60 transition-all">
+                    Reset pw
+                  </button>
+                )}
+                <button onClick={() => handleToggle(sa.id)}
+                  className="text-[11px] px-2 py-1 rounded-lg transition-all"
+                  style={{ color: sa.active ? "#fca5a5" : "#86efac" }}>
+                  {sa.active ? "Suspend" : "Activate"}
+                </button>
+                <button onClick={() => handleDelete(sa.id, sa.email)}
+                  className="text-[11px] px-2 py-1 rounded-lg text-red-400/60 hover:text-red-400 transition-all">
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Reset password modal for inline is already inline above */}
+
+      <div className="p-3 rounded-xl text-[11px] text-white/30 leading-relaxed" style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)" }}>
+        <strong className="text-white/50">Note:</strong> Secondary super admins have full access to the admin panel — plans, orders, customers, settings, and everything else. The only thing they cannot do is manage other super admins (only your primary account can do that).
+      </div>
+    </div>
+  );
+}
+
+function GeoRestrictTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  // Use Authorization: Bearer — the middleware reads req.headers.authorization
+  const geoFetch = (url: string, opts: any = {}) => fetch(url, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${localStorage.getItem("admin_token") || ""}`,
+      ...(opts.headers || {}),
+    },
+    body: opts.body,
+  }).then(async (r) => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json?.error || `Request failed (${r.status})`);
+    return json;
+  });
+
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/country-restrictions"],
+    queryFn: () => geoFetch("/api/admin/country-restrictions"),
+  });
+
+  const config = data?.config;
+  const [search, setSearch] = useState("");
+  const [adding, setAdding] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const mode: "blacklist" | "whitelist" = config?.mode || "blacklist";
+  const blocked: string[] = Array.isArray(config?.countries) ? config.countries : [];
+
+  const filteredList = COUNTRY_LIST.filter((c) =>
+    !blocked.includes(c.code) &&
+    (c.name.toLowerCase().includes(search.toLowerCase()) || c.code.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const setModeMutation = useMutation({
+    mutationFn: (m: string) => geoFetch("/api/admin/country-restrictions", { method: "PUT", body: JSON.stringify({ mode: m }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/admin/country-restrictions"] }),
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const addCountryMutation = useMutation({
+    mutationFn: (code: string) => geoFetch("/api/admin/country-restrictions/add", { method: "POST", body: JSON.stringify({ code }) }),
+    onSuccess: (_data, code) => {
+      qc.invalidateQueries({ queryKey: ["/api/admin/country-restrictions"] });
+      const name = COUNTRY_LIST.find((c) => c.code === code)?.name || code;
+      toast({ title: `${name} added` });
+      setSearch("");
+      // keep panel open so user can add more; they can close with the × button
+    },
+    onError: (e: any) => toast({ title: "Failed to add", description: e.message, variant: "destructive" }),
+  });
+
+  const removeCountryMutation = useMutation({
+    mutationFn: (code: string) => geoFetch(`/api/admin/country-restrictions/${code}`, { method: "DELETE" }),
+    onSuccess: (_data, code) => {
+      qc.invalidateQueries({ queryKey: ["/api/admin/country-restrictions"] });
+      const name = COUNTRY_LIST.find((c) => c.code === code)?.name || code;
+      toast({ title: `${name} removed` });
+    },
+    onError: (e: any) => toast({ title: "Failed to remove", description: e.message, variant: "destructive" }),
+  });
+
+  // Focus search input when panel opens
+  useEffect(() => {
+    if (adding) setTimeout(() => searchRef.current?.focus(), 60);
+  }, [adding]);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-white">Geo Restrictions</h2>
+        <p className="text-sm text-white/40 mt-1">Control which countries can access your store</p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
+      ) : (
+        <>
+          {/* Mode Toggle */}
+          <div className="glass-card rounded-2xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-4">Restriction Mode</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {(["blacklist", "whitelist"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setModeMutation.mutate(m)}
+                  disabled={setModeMutation.isPending}
+                  className={`p-4 rounded-xl border transition-all text-left ${mode === m ? "border-indigo-500/60 bg-indigo-500/10" : "border-white/8 bg-white/3 opacity-60 hover:opacity-80"}`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    {m === "blacklist" ? <Ban className="w-4 h-4 text-red-400" /> : <Globe className="w-4 h-4 text-emerald-400" />}
+                    <span className="font-semibold text-white capitalize">{m}</span>
+                    {mode === m && <Badge className="bg-indigo-600/70 text-white border-0 text-xs ml-auto">Active</Badge>}
+                  </div>
+                  <p className="text-xs text-white/40">
+                    {m === "blacklist" ? "Block listed countries, allow everyone else" : "Only allow listed countries, block everyone else"}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Active country list + Add panel */}
+          <div className="glass-card rounded-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/8">
+              <div>
+                <h3 className="text-sm font-semibold text-white">
+                  {mode === "blacklist" ? "Blocked Countries" : "Allowed Countries"}
+                  {blocked.length > 0 && (
+                    <span className="ml-2 inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold bg-indigo-600/40 text-indigo-300">{blocked.length}</span>
+                  )}
+                </h3>
+                <p className="text-xs text-white/30 mt-0.5">
+                  {mode === "blacklist" ? "Visitors from these countries see a 403 error" : "Only these countries can access the store"}
+                </p>
+              </div>
+              <button
+                onClick={() => { setAdding((v) => !v); setSearch(""); }}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all ${adding ? "bg-white/8 text-white/60 border border-white/10" : "bg-indigo-600 hover:bg-indigo-500 text-white"}`}
+              >
+                {adding ? <><X className="w-4 h-4" /> Close</> : <><Plus className="w-4 h-4" /> Add Country</>}
+              </button>
+            </div>
+
+            {/* Add panel — search & pick */}
+            {adding && (
+              <div className="px-5 py-4 border-b border-white/8 bg-indigo-950/20">
+                <p className="text-xs text-white/40 mb-2.5">
+                  Search and click a country to {mode === "blacklist" ? "block" : "allow"} it:
+                </p>
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    placeholder="Search country name or code…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder:text-white/25 outline-none focus:border-indigo-500/50"
+                  />
+                  {search && (
+                    <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-52 overflow-y-auto rounded-xl border border-white/8 bg-white/3">
+                  {filteredList.length === 0 ? (
+                    <p className="text-xs text-white/30 text-center py-6">
+                      {search ? "No countries match your search" : "All countries already added"}
+                    </p>
+                  ) : (
+                    filteredList.slice(0, 30).map((c) => (
+                      <button
+                        key={c.code}
+                        onClick={() => addCountryMutation.mutate(c.code)}
+                        disabled={addCountryMutation.isPending}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/70 hover:bg-indigo-500/15 hover:text-white text-left transition-colors border-b border-white/4 last:border-0 disabled:opacity-50"
+                      >
+                        <img src={`https://flagcdn.com/16x12/${c.code.toLowerCase()}.png`} alt="" className="w-5 h-3.5 rounded-sm object-cover shrink-0" />
+                        <span className="flex-1">{c.name}</span>
+                        <span className="text-[10px] text-white/25 font-mono">{c.code}</span>
+                        <Plus className="w-3.5 h-3.5 text-indigo-400 opacity-0 group-hover:opacity-100" />
+                      </button>
+                    ))
+                  )}
+                </div>
+                {filteredList.length > 30 && (
+                  <p className="text-[10px] text-white/20 mt-2 text-center">Showing 30 of {filteredList.length} — type to narrow down</p>
+                )}
+              </div>
+            )}
+
+            {/* Current list */}
+            <div className="p-5">
+              {blocked.length === 0 ? (
+                <div className="text-center py-10">
+                  <Globe className="w-8 h-8 text-white/15 mx-auto mb-2" />
+                  <p className="text-white/30 text-sm">No countries {mode === "blacklist" ? "blocked" : "allowed"} yet</p>
+                  <p className="text-white/20 text-xs mt-1">
+                    {mode === "blacklist" ? "All visitors can access the store" : "Click \"Add Country\" to allow a country"}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {blocked.map((code) => {
+                    const country = COUNTRY_LIST.find((c) => c.code === code);
+                    return (
+                      <div key={code} className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border ${mode === "blacklist" ? "border-red-500/15 bg-red-500/5" : "border-emerald-500/15 bg-emerald-500/5"}`}>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img src={`https://flagcdn.com/16x12/${code.toLowerCase()}.png`} alt="" className="w-5 h-3.5 rounded-sm object-cover shrink-0" />
+                          <span className="text-sm text-white truncate">{country?.name || code}</span>
+                          <span className="text-[10px] text-white/25 font-mono shrink-0">{code}</span>
+                        </div>
+                        <button
+                          onClick={() => removeCountryMutation.mutate(code)}
+                          disabled={removeCountryMutation.isPending}
+                          title="Remove"
+                          className="p-1.5 rounded-lg text-white/25 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Info box */}
+          <div className="rounded-xl p-4 border border-amber-500/20 bg-amber-500/5">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+              <div className="text-xs text-amber-200/70 space-y-1">
+                <p><strong>Blacklist mode:</strong> Countries in the list are blocked. Empty list = no restrictions.</p>
+                <p><strong>Whitelist mode:</strong> Only countries in the list can access. Empty list = everyone blocked.</p>
+                <p>The admin panel is always accessible regardless of geo restrictions.</p>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── VPS SELLER DASHBOARD TAB ───────────────────────────────────────────────
+const VPS_PLANS = [
+  { name: "Starter",  ram: "1 GB",  cpu: "1 vCPU",  storage: "25 GB SSD",  bandwidth: "1 TB/mo",  price: 800 },
+  { name: "Standard", ram: "2 GB",  cpu: "2 vCPU",  storage: "50 GB SSD",  bandwidth: "2 TB/mo",  price: 1500 },
+  { name: "Pro",      ram: "4 GB",  cpu: "4 vCPU",  storage: "100 GB SSD", bandwidth: "4 TB/mo",  price: 2800 },
+  { name: "Custom",   ram: "",      cpu: "",         storage: "",           bandwidth: "",          price: 0 },
+];
+
+const VPS_STATUS_COLORS: Record<string, string> = {
+  pending:   "bg-yellow-500/15 text-yellow-400 border-yellow-500/25",
+  active:    "bg-green-500/15 text-green-400 border-green-500/25",
+  expired:   "bg-red-500/15 text-red-400 border-red-500/25",
+  suspended: "bg-orange-500/15 text-orange-400 border-orange-500/25",
+  cancelled: "bg-gray-500/15 text-gray-400 border-gray-500/25",
+};
+
+function VpsSellerTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  function aFetch(url: string, opts: any = {}) {
+    return fetch(url, {
+      ...opts,
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("admin_token") || ""}`, ...(opts.headers || {}) },
+      body: opts.body,
+    }).then((r) => r.json());
+  }
+
+  const [view, setView] = useState<"orders" | "plans">("orders");
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/vps-orders"],
+    queryFn: () => aFetch("/api/admin/vps-orders"),
+    refetchInterval: 30000,
+  });
+
+  const { data: plansData, isLoading: plansLoading, refetch: refetchPlans } = useQuery<any>({
+    queryKey: ["/api/admin/vps-plans"],
+    queryFn: () => aFetch("/api/admin/vps-plans"),
+  });
+
+  const orders: any[] = data?.orders || [];
+  const stats = data?.stats || {};
+  const allPlans: any[] = plansData?.plans || [];
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [showCreate, setShowCreate] = useState(false);
+  const [editOrder, setEditOrder] = useState<any | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [showPass, setShowPass] = useState<Record<number, boolean>>({});
+
+  // Plans CRUD state
+  const emptyPlanForm = { name: "", ram: "", cpu: "", storage: "", bandwidth: "", price_kes: "", popular: false, active: true, description: "", sort_order: "0" };
+  const [planForm, setPlanForm] = useState({ ...emptyPlanForm });
+  const [showPlanCreate, setShowPlanCreate] = useState(false);
+  const [editPlan, setEditPlan] = useState<any | null>(null);
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [confirmDeletePlan, setConfirmDeletePlan] = useState<number | null>(null);
+
+  async function handleCreatePlan() {
+    setSavingPlan(true);
+    try {
+      const d = await aFetch("/api/admin/vps-plans", { method: "POST", body: JSON.stringify({ ...planForm, price_kes: Number(planForm.price_kes) || 0, sort_order: Number(planForm.sort_order) || 0 }) });
+      if (d.success) { toast({ title: "Plan created" }); setShowPlanCreate(false); setPlanForm({ ...emptyPlanForm }); qc.invalidateQueries({ queryKey: ["/api/admin/vps-plans"] }); }
+      else toast({ title: "Error", description: d.error, variant: "destructive" });
+    } finally { setSavingPlan(false); }
+  }
+  async function handleUpdatePlan() {
+    if (!editPlan) return;
+    setSavingPlan(true);
+    try {
+      const d = await aFetch(`/api/admin/vps-plans/${editPlan.id}`, { method: "PUT", body: JSON.stringify({ ...planForm, price_kes: Number(planForm.price_kes) || 0, sort_order: Number(planForm.sort_order) || 0 }) });
+      if (d.success) { toast({ title: "Plan updated" }); setEditPlan(null); qc.invalidateQueries({ queryKey: ["/api/admin/vps-plans"] }); }
+      else toast({ title: "Error", description: d.error, variant: "destructive" });
+    } finally { setSavingPlan(false); }
+  }
+  async function handleDeletePlan(id: number) {
+    const d = await aFetch(`/api/admin/vps-plans/${id}`, { method: "DELETE" });
+    if (d.success) { toast({ title: "Plan deleted" }); setConfirmDeletePlan(null); qc.invalidateQueries({ queryKey: ["/api/admin/vps-plans"] }); }
+    else toast({ title: "Error", description: d.error, variant: "destructive" });
+  }
+  function openEditPlan(p: any) {
+    setPlanForm({ name: p.name || "", ram: p.ram || "", cpu: p.cpu || "", storage: p.storage || "", bandwidth: p.bandwidth || "", price_kes: String(p.price_kes || ""), popular: !!p.popular, active: p.active !== false && p.active !== 0, description: p.description || "", sort_order: String(p.sort_order || 0) });
+    setEditPlan(p);
+  }
+
+  const PlanFormModal = ({ title, onSubmit, onClose }: { title: string; onSubmit: () => void; onClose: () => void }) => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-gray-900 border border-white/10 rounded-2xl shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-white/8">
+          <h3 className="font-bold text-white">{title}</h3>
+          <button onClick={onClose} className="text-white/40 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            {([["name","Plan Name"],["price_kes","Price (KES)"],["ram","RAM"],["cpu","CPU"],["storage","Storage"],["bandwidth","Bandwidth"],["sort_order","Sort Order"],["description","Description"]] as [string,string][]).map(([k,l]) => (
+              <div key={k} className={k === "description" || k === "name" ? "col-span-2" : ""}>
+                <label className="text-xs text-white/50 block mb-1">{l}</label>
+                <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50" value={(planForm as any)[k]} onChange={e => setPlanForm(f => ({ ...f, [k]: e.target.value }))} placeholder={l} />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-4 pt-1">
+            {([["popular","⭐ Mark as Popular"],["active","✅ Active (visible)"]] as [string,string][]).map(([k,l]) => (
+              <label key={k} className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" className="w-4 h-4 accent-cyan-500" checked={(planForm as any)[k]} onChange={e => setPlanForm(f => ({ ...f, [k]: e.target.checked }))} />
+                <span className="text-sm text-white/60">{l}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-3 p-5 border-t border-white/8">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 text-sm">Cancel</button>
+          <button onClick={onSubmit} disabled={savingPlan} className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+            {savingPlan && <Loader2 className="w-4 h-4 animate-spin" />}{savingPlan ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const emptyForm = { customer_name: "", customer_email: "", customer_phone: "", plan_name: "Standard", ram: "2 GB", cpu: "2 vCPU", storage: "50 GB SSD", bandwidth: "2 TB/mo", price_kes: "1500", status: "pending", assigned_ip: "", server_username: "root", server_password: "", ssh_port: "22", os_type: "ubuntu", notes: "", paid_at: "", expires_at: "" };
+  const [form, setForm] = useState({ ...emptyForm });
+
+  function applyPlanPreset(planName: string) {
+    const plan = VPS_PLANS.find(p => p.name === planName);
+    if (plan) setForm(f => ({ ...f, plan_name: plan.name, ram: plan.ram, cpu: plan.cpu, storage: plan.storage, bandwidth: plan.bandwidth, price_kes: String(plan.price) }));
+  }
+
+  const filtered = orders.filter(o => {
+    const q = search.toLowerCase();
+    const matchQ = !q || o.customer_name?.toLowerCase().includes(q) || o.customer_email?.toLowerCase().includes(q) || o.assigned_ip?.includes(q) || o.reference?.toLowerCase().includes(q);
+    const matchS = statusFilter === "all" || o.status === statusFilter;
+    return matchQ && matchS;
+  });
+
+  async function handleCreate() {
+    setSaving(true);
+    try {
+      const d = await aFetch("/api/admin/vps-orders", { method: "POST", body: JSON.stringify({ ...form, price_kes: Number(form.price_kes) || 0, ssh_port: Number(form.ssh_port) || 22 }) });
+      if (d.success) { toast({ title: "Order created", description: d.order.reference }); setShowCreate(false); setForm({ ...emptyForm }); qc.invalidateQueries({ queryKey: ["/api/admin/vps-orders"] }); }
+      else toast({ title: "Error", description: d.error, variant: "destructive" });
+    } finally { setSaving(false); }
+  }
+
+  async function handleUpdate() {
+    if (!editOrder) return;
+    setSaving(true);
+    try {
+      const d = await aFetch(`/api/admin/vps-orders/${editOrder.id}`, { method: "PUT", body: JSON.stringify({ ...form, price_kes: Number(form.price_kes) || 0, ssh_port: Number(form.ssh_port) || 22 }) });
+      if (d.success) { toast({ title: "Updated" }); setEditOrder(null); qc.invalidateQueries({ queryKey: ["/api/admin/vps-orders"] }); }
+      else toast({ title: "Error", description: d.error, variant: "destructive" });
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete(id: number) {
+    const d = await aFetch(`/api/admin/vps-orders/${id}`, { method: "DELETE" });
+    if (d.success) { toast({ title: "Deleted" }); setConfirmDelete(null); qc.invalidateQueries({ queryKey: ["/api/admin/vps-orders"] }); }
+    else toast({ title: "Error", description: d.error, variant: "destructive" });
+  }
+
+  function openEdit(o: any) {
+    setForm({ customer_name: o.customer_name || "", customer_email: o.customer_email || "", customer_phone: o.customer_phone || "", plan_name: o.plan_name || "Custom", ram: o.ram || "", cpu: o.cpu || "", storage: o.storage || "", bandwidth: o.bandwidth || "", price_kes: String(o.price_kes || ""), status: o.status || "pending", assigned_ip: o.assigned_ip || "", server_username: o.server_username || "root", server_password: o.server_password || "", ssh_port: String(o.ssh_port || 22), os_type: o.os_type || "ubuntu", notes: o.notes || "", paid_at: o.paid_at ? o.paid_at.slice(0, 10) : "", expires_at: o.expires_at ? o.expires_at.slice(0, 10) : "" });
+    setEditOrder(o);
+  }
+
+  const FormModal = ({ title, onSubmit, onClose }: { title: string; onSubmit: () => void; onClose: () => void }) => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-lg bg-gray-900 border border-white/10 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-white/8">
+          <h3 className="font-bold text-white text-base">{title}</h3>
+          <button onClick={onClose} className="text-white/40 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {/* Plan preset */}
+          <div>
+            <label className="text-xs text-white/50 block mb-1.5">Plan Preset</label>
+            <div className="flex flex-wrap gap-2">
+              {VPS_PLANS.map(p => (
+                <button key={p.name} onClick={() => applyPlanPreset(p.name)} className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${form.plan_name === p.name ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300" : "border-white/10 text-white/50 hover:border-white/20"}`}>{p.name}</button>
+              ))}
+            </div>
+          </div>
+          {/* Customer */}
+          <div className="grid grid-cols-2 gap-3">
+            {[["customer_name","Customer Name"],["customer_email","Email"],["customer_phone","Phone (optional)"],["price_kes","Price (KES)"]].map(([k,l]) => (
+              <div key={k}>
+                <label className="text-xs text-white/50 block mb-1">{l}</label>
+                <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50" value={(form as any)[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={l} />
+              </div>
+            ))}
+          </div>
+          {/* Specs */}
+          <div className="grid grid-cols-2 gap-3">
+            {[["ram","RAM"],["cpu","CPU"],["storage","Storage"],["bandwidth","Bandwidth"]].map(([k,l]) => (
+              <div key={k}>
+                <label className="text-xs text-white/50 block mb-1">{l}</label>
+                <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50" value={(form as any)[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={l} />
+              </div>
+            ))}
+          </div>
+          {/* Server credentials */}
+          <div className="border-t border-white/6 pt-3">
+            <p className="text-xs text-white/40 mb-2 font-semibold uppercase tracking-wider">Server Credentials</p>
+            <div className="grid grid-cols-2 gap-3">
+              {[["assigned_ip","Server IP"],["server_username","Username"],["ssh_port","SSH Port"],["os_type","OS Type"]].map(([k,l]) => (
+                <div key={k}>
+                  <label className="text-xs text-white/50 block mb-1">{l}</label>
+                  <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50" value={(form as any)[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={l} />
+                </div>
+              ))}
+            </div>
+            <div className="mt-2">
+              <label className="text-xs text-white/50 block mb-1">Password / Key</label>
+              <input type="password" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50" value={form.server_password} onChange={e => setForm(f => ({ ...f, server_password: e.target.value }))} placeholder="Server password" />
+            </div>
+          </div>
+          {/* Status & dates */}
+          <div className="grid grid-cols-3 gap-3 border-t border-white/6 pt-3">
+            <div>
+              <label className="text-xs text-white/50 block mb-1">Status</label>
+              <select className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500/50" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+                {["pending","active","expired","suspended","cancelled"].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            {[["paid_at","Paid Date"],["expires_at","Expires"]].map(([k,l]) => (
+              <div key={k}>
+                <label className="text-xs text-white/50 block mb-1">{l}</label>
+                <input type="date" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500/50" value={(form as any)[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
+              </div>
+            ))}
+          </div>
+          {/* Notes */}
+          <div>
+            <label className="text-xs text-white/50 block mb-1">Notes</label>
+            <textarea rows={2} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50 resize-none" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Internal notes…" />
+          </div>
+        </div>
+        <div className="flex gap-3 p-5 border-t border-white/8">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 hover:text-white text-sm transition-colors">Cancel</button>
+          <button onClick={onSubmit} disabled={saving} className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}{saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2"><Server className="w-5 h-5 text-cyan-400" /> VPS Sales Dashboard</h2>
+          <p className="text-white/40 text-sm mt-0.5">Manage VPS plans and customer orders</p>
+        </div>
+        <div className="flex gap-2">
+          {/* View toggle */}
+          <div className="flex bg-white/5 rounded-xl p-1 border border-white/8">
+            <button onClick={() => setView("orders")} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${view === "orders" ? "bg-cyan-600 text-white" : "text-white/50 hover:text-white"}`}>Orders</button>
+            <button onClick={() => setView("plans")} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${view === "plans" ? "bg-cyan-600 text-white" : "text-white/50 hover:text-white"}`}>Plans</button>
+          </div>
+          {view === "orders" && <>
+            <button onClick={() => refetch()} className="px-3 py-2 rounded-xl border border-white/10 text-white/60 hover:text-white text-sm flex items-center gap-1.5 transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>
+            <button onClick={() => { setForm({ ...emptyForm }); setShowCreate(true); }} className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm flex items-center gap-1.5 transition-colors"><Plus className="w-4 h-4" />New Order</button>
+          </>}
+          {view === "plans" && <>
+            <button onClick={() => refetchPlans()} className="px-3 py-2 rounded-xl border border-white/10 text-white/60 hover:text-white text-sm flex items-center gap-1.5 transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>
+            <button onClick={() => { setPlanForm({ ...emptyPlanForm }); setShowPlanCreate(true); }} className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm flex items-center gap-1.5 transition-colors"><Plus className="w-4 h-4" />New Plan</button>
+          </>}
+        </div>
+      </div>
+
+      {/* ── PLANS VIEW ─────────────────────────────────────────────── */}
+      {view === "plans" && (
+        <div className="space-y-4">
+          {plansLoading ? (
+            <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-cyan-400 animate-spin" /></div>
+          ) : allPlans.length === 0 ? (
+            <div className="text-center py-16 text-white/30">
+              <Server className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No VPS plans yet</p>
+              <p className="text-sm mt-1">Click "New Plan" to create your first plan. It'll appear on the VPS page for customers to purchase.</p>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {allPlans.map((p: any) => (
+                <div key={p.id} className={`relative rounded-2xl border p-5 flex flex-col gap-3 ${p.popular ? "border-cyan-500/30 bg-cyan-950/20" : "border-white/8 bg-white/3"}`}>
+                  {p.popular && <span className="absolute -top-2 left-4 bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">Popular</span>}
+                  {!p.active && <span className="absolute -top-2 right-4 bg-gray-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">Hidden</span>}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-bold text-white text-base">{p.name}</h3>
+                      {p.description && <p className="text-white/40 text-xs mt-0.5">{p.description}</p>}
+                    </div>
+                    <span className="text-cyan-400 font-bold text-sm whitespace-nowrap">KES {Number(p.price_kes || 0).toLocaleString()}/mo</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-white/50">
+                    {[["CPU", p.cpu],["RAM", p.ram],["Storage", p.storage],["Bandwidth", p.bandwidth]].filter(([,v]) => v).map(([k,v]) => (
+                      <span key={k} className="flex gap-1"><span className="text-white/25">{k}:</span>{v}</span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mt-auto pt-1">
+                    <button onClick={() => openEditPlan(p)} className="flex-1 py-2 rounded-lg bg-white/6 hover:bg-white/10 text-white/70 hover:text-white text-xs font-medium flex items-center justify-center gap-1 transition-colors"><Pencil className="w-3.5 h-3.5" />Edit</button>
+                    <button onClick={() => setConfirmDeletePlan(p.id)} className="py-2 px-3 rounded-lg hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Plan modals */}
+          {showPlanCreate && <PlanFormModal title="New VPS Plan" onSubmit={handleCreatePlan} onClose={() => setShowPlanCreate(false)} />}
+          {editPlan && <PlanFormModal title={`Edit — ${editPlan.name}`} onSubmit={handleUpdatePlan} onClose={() => setEditPlan(null)} />}
+          {confirmDeletePlan !== null && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <div className="bg-gray-900 border border-red-500/20 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+                <Trash2 className="w-10 h-10 text-red-400 mx-auto mb-3" />
+                <h3 className="text-white font-bold mb-2">Delete this plan?</h3>
+                <p className="text-white/40 text-sm mb-5">Existing orders will not be affected.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmDeletePlan(null)} className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 text-sm">Cancel</button>
+                  <button onClick={() => handleDeletePlan(confirmDeletePlan!)} className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm">Delete</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ORDERS VIEW ────────────────────────────────────────────── */}
+      {view === "orders" && <>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {[
+          { label: "Total Orders",    val: stats.total ?? 0,      color: "text-white",        bg: "bg-white/4" },
+          { label: "Active",          val: stats.active ?? 0,     color: "text-green-400",    bg: "bg-green-500/8" },
+          { label: "Pending",         val: stats.pending ?? 0,    color: "text-yellow-400",   bg: "bg-yellow-500/8" },
+          { label: "Expiring 7d",     val: stats.expiring7d ?? 0, color: "text-orange-400",   bg: "bg-orange-500/8" },
+          { label: "Active Revenue",  val: `KES ${(stats.revenueKes ?? 0).toLocaleString()}`, color: "text-cyan-400", bg: "bg-cyan-500/8" },
+        ].map(({ label, val, color, bg }) => (
+          <div key={label} className={`${bg} border border-white/6 rounded-2xl p-4 text-center`}>
+            <p className={`text-2xl font-bold ${color}`}>{val}</p>
+            <p className="text-xs text-white/40 mt-1">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+          <input className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-white/25 focus:outline-none focus:border-cyan-500/40" placeholder="Search name, email, IP…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="flex gap-2">
+          {["all","pending","active","expired","suspended","cancelled"].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-2 rounded-xl text-xs font-medium border transition-all capitalize ${statusFilter === s ? "bg-cyan-500/20 border-cyan-500/30 text-cyan-300" : "border-white/8 text-white/40 hover:text-white/60"}`}>{s}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Orders table */}
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-cyan-400 animate-spin" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-white/30">
+          <Server className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="font-medium">No VPS orders yet</p>
+          <p className="text-sm mt-1">Click "New Order" to create the first one.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-white/8">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-white/3 border-b border-white/8">
+                {["Reference","Customer","Plan","IP / Credentials","Status","Expires","Actions"].map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-white/40 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((o: any) => (
+                <tr key={o.id} className="border-b border-white/5 hover:bg-white/2 transition-colors">
+                  <td className="px-4 py-3">
+                    <span className="font-mono text-xs text-cyan-400/80">{o.reference}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="text-white text-sm font-medium">{o.customer_name}</p>
+                    <p className="text-white/40 text-xs">{o.customer_email}</p>
+                    {o.customer_phone && <p className="text-white/30 text-xs">{o.customer_phone}</p>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="text-white font-medium">{o.plan_name}</p>
+                    <p className="text-white/40 text-xs">{[o.ram, o.cpu, o.storage].filter(Boolean).join(" · ")}</p>
+                    <p className="text-cyan-400 text-xs font-semibold">KES {Number(o.price_kes || 0).toLocaleString()}/mo</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    {o.assigned_ip ? (
+                      <div>
+                        <span className="font-mono text-xs text-green-400">{o.assigned_ip}</span>
+                        {o.server_username && <p className="text-white/40 text-xs">user: {o.server_username}</p>}
+                        {o.server_password && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="font-mono text-xs text-white/30">{showPass[o.id] ? o.server_password : "••••••••"}</span>
+                            <button onClick={() => setShowPass(p => ({ ...p, [o.id]: !p[o.id] }))} className="text-white/20 hover:text-white/50">
+                              <Eye className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : <span className="text-white/20 text-xs italic">Not assigned</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border capitalize ${VPS_STATUS_COLORS[o.status] || "bg-gray-500/15 text-gray-400 border-gray-500/25"}`}>{o.status}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {o.expires_at ? (
+                      <span className={`text-xs ${new Date(o.expires_at) <= new Date(Date.now() + 7*24*60*60*1000) && o.status === "active" ? "text-orange-400 font-semibold" : "text-white/50"}`}>
+                        {new Date(o.expires_at).toLocaleDateString()}
+                      </span>
+                    ) : <span className="text-white/20 text-xs">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => openEdit(o)} className="p-1.5 rounded-lg hover:bg-white/8 text-white/40 hover:text-white transition-colors" title="Edit">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => setConfirmDelete(o.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-colors" title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Create modal */}
+      {showCreate && <FormModal title="New VPS Order" onSubmit={handleCreate} onClose={() => setShowCreate(false)} />}
+
+      {/* Edit modal */}
+      {editOrder && <FormModal title={`Edit — ${editOrder.reference}`} onSubmit={handleUpdate} onClose={() => setEditOrder(null)} />}
+
+      {/* Delete confirm */}
+      {confirmDelete !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-red-500/20 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center">
+            <Trash2 className="w-10 h-10 text-red-400 mx-auto mb-3" />
+            <h3 className="text-white font-bold text-base mb-2">Delete this order?</h3>
+            <p className="text-white/40 text-sm mb-5">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmDelete(null)} className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 text-sm">Cancel</button>
+              <button onClick={() => handleDelete(confirmDelete!)} className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      </>}
+    </div>
+  );
+}
+
+// ─── VPS MANAGER TAB ────────────────────────────────────────────────────────
+function VpsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const authFetch = (url: string, opts: any = {}) => fetch(url, {
+    ...opts,
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("admin_token") || ""}`, ...(opts.headers || {}) },
+    body: opts.body,
+  }).then((r) => r.json());
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/vps"],
+    queryFn: () => authFetch("/api/admin/vps"),
+  });
+
+  const servers: any[] = data?.servers || [];
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ label: "", host: "", port: "22", username: "root", authType: "password", password: "", privateKey: "", osType: "ubuntu" });
+  const [pingResults, setPingResults] = useState<Record<string, any>>({});
+  const [agentScriptVps, setAgentScriptVps] = useState<string | null>(null);
+  const [agentScript, setAgentScript] = useState<string>("");
+  const [agentScriptLoading, setAgentScriptLoading] = useState(false);
+
+  const OS_OPTIONS = [
+    { group: "Debian-based", items: [
+      { value: "ubuntu",   label: "Ubuntu",           icon: "🟠" },
+      { value: "debian",   label: "Debian",           icon: "🔴" },
+      { value: "kali",     label: "Kali Linux",       icon: "🐉" },
+      { value: "mint",     label: "Linux Mint",       icon: "🟢" },
+      { value: "pop",      label: "Pop!_OS",          icon: "🟡" },
+      { value: "raspbian", label: "Raspberry Pi OS",  icon: "🍓" },
+    ]},
+    { group: "RHEL-based", items: [
+      { value: "almalinux", label: "AlmaLinux",      icon: "🔵" },
+      { value: "centos",    label: "CentOS",         icon: "🟣" },
+      { value: "rocky",     label: "Rocky Linux",   icon: "🪨" },
+      { value: "fedora",    label: "Fedora",         icon: "🎩" },
+      { value: "rhel",      label: "RHEL",           icon: "🔴" },
+      { value: "oracle",    label: "Oracle Linux",   icon: "🔴" },
+    ]},
+    { group: "Other", items: [
+      { value: "windows", label: "Windows (RDP/SSH)", icon: "🪟" },
+      { value: "arch",    label: "Arch Linux",        icon: "🏔️" },
+      { value: "other",   label: "Other Linux",       icon: "🐧" },
+    ]},
+  ];
+  const allOsItems = OS_OPTIONS.flatMap(g => g.items);
+  const getOsInfo = (val: string) => allOsItems.find(o => o.value === val) ?? { icon: "🐧", label: val || "Unknown OS" };
+  const [pingLoading, setPingLoading] = useState<Record<string, boolean>>({});
+  const [rebootLoading, setRebootLoading] = useState<Record<string, boolean>>({});
+  const [terminalState, setTerminalState] = useState<Record<string, { open: boolean; cmd: string; output: string; loading: boolean }>>({});
+  const [confirmReboot, setConfirmReboot] = useState<string | null>(null);
+
+  const addMutation = useMutation({
+    mutationFn: () => authFetch("/api/admin/vps", { method: "POST", body: JSON.stringify({ ...form, port: parseInt(form.port) || 22 }) }),
+    onSuccess: (res) => {
+      if (res.success) {
+        toast({ title: "VPS added!", description: res.server.label });
+        setShowAdd(false);
+        setForm({ label: "", host: "", port: "22", username: "root", authType: "password", password: "", privateKey: "", osType: "ubuntu" });
+        qc.invalidateQueries({ queryKey: ["/api/admin/vps"] });
+      } else {
+        toast({ title: "Failed", description: res.error, variant: "destructive" });
+      }
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => authFetch(`/api/admin/vps/${id}`, { method: "DELETE" }),
+    onSuccess: () => { toast({ title: "Server removed" }); qc.invalidateQueries({ queryKey: ["/api/admin/vps"] }); },
+  });
+
+  const pingServer = async (id: string) => {
+    setPingLoading((p) => ({ ...p, [id]: true }));
+    try {
+      const res = await authFetch(`/api/admin/vps/${id}/ping`);
+      setPingResults((p) => ({ ...p, [id]: { success: res.success, ...(res.ping || {}) } }));
+    } catch { setPingResults((p) => ({ ...p, [id]: { success: false } })); }
+    finally { setPingLoading((p) => ({ ...p, [id]: false })); }
+  };
+
+  const loadAgentScript = async (id: string) => {
+    setAgentScriptVps(id);
+    setAgentScript("");
+    setAgentScriptLoading(true);
+    try {
+      const data = await authFetch(`/api/agent/script/${id}`);
+      setAgentScript(data.script || "Error: empty script returned");
+    } catch (e: any) { setAgentScript("Error: " + e.message); }
+    finally { setAgentScriptLoading(false); }
+  };
+
+  const rebootServer = async (id: string) => {
+    setRebootLoading((r) => ({ ...r, [id]: true }));
+    setConfirmReboot(null);
+    try {
+      const res = await authFetch(`/api/admin/vps/${id}/reboot`, { method: "POST" });
+      toast({ title: res.success ? "Rebooting!" : "Failed", description: res.message });
+    } finally { setRebootLoading((r) => ({ ...r, [id]: false })); }
+  };
+
+  const execCommand = async (id: string) => {
+    const t = terminalState[id];
+    if (!t?.cmd.trim()) return;
+    setTerminalState((s) => ({ ...s, [id]: { ...t, loading: true, output: "" } }));
+    try {
+      const res = await authFetch(`/api/admin/vps/${id}/exec`, { method: "POST", body: JSON.stringify({ command: t.cmd }) });
+      setTerminalState((s) => ({ ...s, [id]: { ...s[id], loading: false, output: res.stdout || res.stderr || res.error || "No output" } }));
+    } catch (err: any) {
+      setTerminalState((s) => ({ ...s, [id]: { ...s[id], loading: false, output: err.message } }));
+    }
+  };
+
+  const inputCls = "bg-white/5 border-white/10 text-white placeholder-white/30 focus:border-indigo-500/50";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white">VPS Manager</h2>
+          <p className="text-sm text-white/40 mt-1">Monitor, reboot and manage your servers via SSH</p>
+        </div>
+        <Button onClick={() => setShowAdd(!showAdd)} className="bg-indigo-600 hover:bg-indigo-500 text-white">
+          <Plus className="w-4 h-4 mr-1.5" />Add VPS
+        </Button>
+      </div>
+
+      {/* ── Agent script modal ─────────────────────────────────────────────── */}
+      {agentScriptVps && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.85)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setAgentScriptVps(null); }}>
+          <div className="w-full max-w-2xl rounded-2xl border border-emerald-500/20 overflow-hidden" style={{ background: "#0a0f1e", boxShadow: "0 25px 60px rgba(0,0,0,.6)" }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+              <div>
+                <h3 className="font-bold text-white text-sm">Deploy Agent Install Script</h3>
+                <p className="text-xs text-white/40 mt-0.5">Copy and paste this into your VPS terminal — runs everything automatically</p>
+              </div>
+              <button onClick={() => setAgentScriptVps(null)} className="text-white/30 hover:text-white text-lg leading-none">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4 text-xs text-emerald-300 space-y-1">
+                <p className="font-semibold text-emerald-200">What this does:</p>
+                <p>✓ Installs Node.js + PM2 if not already installed</p>
+                <p>✓ Creates a deploy agent at <code className="text-white/70">/opt/deploy-agent/agent.js</code></p>
+                <p>✓ Starts the agent with PM2 (survives reboots)</p>
+                <p>✓ Agent polls your app every <strong>60 seconds</strong> for new paid orders and deploys them automatically</p>
+              </div>
+              {agentScriptLoading ? (
+                <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 text-emerald-400 animate-spin" /></div>
+              ) : (
+                <>
+                  <div className="relative rounded-xl border border-white/10 bg-black/50 overflow-hidden">
+                    <pre className="text-xs text-white/70 font-mono p-4 overflow-auto max-h-72 whitespace-pre-wrap">{agentScript}</pre>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(agentScript); toast({ title: "Copied to clipboard!" }); }}
+                      className="absolute top-2 right-2 px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white/60 hover:text-white text-xs rounded-lg transition-colors">
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-xs text-white/30">Run as <code className="text-white/50">root</code> or with <code className="text-white/50">sudo</code>. After install: <code className="text-white/50">pm2 logs chege-deploy-agent</code> to monitor.</p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAdd && (
+        <div className="glass-card rounded-2xl p-5 border border-indigo-500/20">
+          <h3 className="text-sm font-semibold text-white mb-4">Add New VPS Server</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label className="text-xs text-white/40 block mb-1">Label / Name</label>
+              <Input placeholder="My Production Server" value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} className={inputCls} /></div>
+            <div><label className="text-xs text-white/40 block mb-1">Host / IP Address *</label>
+              <Input placeholder="123.45.67.89" value={form.host} onChange={(e) => setForm((f) => ({ ...f, host: e.target.value }))} className={inputCls} /></div>
+            <div><label className="text-xs text-white/40 block mb-1">SSH Port</label>
+              <Input placeholder="22" value={form.port} onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))} className={inputCls} /></div>
+            <div><label className="text-xs text-white/40 block mb-1">Username *</label>
+              <Input placeholder="root" value={form.username} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} className={inputCls} /></div>
+            <div><label className="text-xs text-white/40 block mb-1">Operating System *</label>
+              <select value={form.osType} onChange={(e) => setForm((f) => ({ ...f, osType: e.target.value }))}
+                className="w-full rounded-lg px-3 py-2 text-sm text-white bg-white/5 border border-white/10 outline-none">
+                {OS_OPTIONS.map(group => (
+                  <optgroup key={group.group} label={group.group}>
+                    {group.items.map(os => (
+                      <option key={os.value} value={os.value}>{os.icon} {os.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select></div>
+            <div><label className="text-xs text-white/40 block mb-1">Auth Type</label>
+              <select value={form.authType} onChange={(e) => setForm((f) => ({ ...f, authType: e.target.value }))}
+                className="w-full rounded-lg px-3 py-2 text-sm text-white bg-white/5 border border-white/10 outline-none">
+                <option value="password">Password</option>
+                <option value="key">Private Key (PEM)</option>
+              </select></div>
+            {form.authType === "password" ? (
+              <div><label className="text-xs text-white/40 block mb-1">Password</label>
+                <Input type="password" placeholder="••••••••" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className={inputCls} /></div>
+            ) : (
+              <div className="sm:col-span-2"><label className="text-xs text-white/40 block mb-1">Private Key (PEM format)</label>
+                <textarea value={form.privateKey} onChange={(e) => setForm((f) => ({ ...f, privateKey: e.target.value }))}
+                  rows={4} placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;..." className="w-full rounded-lg px-3 py-2 text-xs text-white bg-white/5 border border-white/10 outline-none resize-none font-mono" /></div>
+            )}
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button onClick={() => addMutation.mutate()} disabled={!form.host || !form.username || addMutation.isPending} className="bg-indigo-600 hover:bg-indigo-500 text-white">
+              {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}<span className="ml-1.5">Add Server</span>
+            </Button>
+            <Button variant="ghost" onClick={() => setShowAdd(false)} className="text-white/40 hover:text-white">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
+      ) : servers.length === 0 ? (
+        <div className="glass-card rounded-2xl text-center py-16">
+          <Server className="w-10 h-10 text-white/15 mx-auto mb-3" />
+          <p className="text-white/40 font-medium">No VPS servers added yet</p>
+          <p className="text-white/25 text-sm mt-1">Add your first server to start managing it</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {servers.map((server: any) => {
+            const ping = pingResults[server.id];
+            const isTermOpen = terminalState[server.id]?.open;
+            return (
+              <div key={server.id} className="glass-card rounded-2xl overflow-hidden">
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(99,102,241,.2)" }}>
+                        <Server className="w-5 h-5 text-indigo-400" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-white">{server.label}</p>
+                        <p className="text-xs text-white/40 font-mono">{server.username}@{server.host}:{server.port}</p>
+                        <p className="text-xs text-white/30 mt-0.5">
+                          {server.osType && <span className="mr-2">{getOsInfo(server.osType).icon} {getOsInfo(server.osType).label}</span>}
+                          Auth: {server.authType} · Added {new Date(server.addedAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => pingServer(server.id)} disabled={pingLoading[server.id]}
+                        variant="outline" className="border-white/10 text-white/60 hover:text-white hover:bg-white/5">
+                        {pingLoading[server.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
+                        <span className="ml-1.5">Ping</span>
+                      </Button>
+                      <Button size="sm" onClick={() => setTerminalState((s) => ({ ...s, [server.id]: { open: !isTermOpen, cmd: s[server.id]?.cmd || "", output: s[server.id]?.output || "", loading: false } }))}
+                        variant="outline" className="border-white/10 text-white/60 hover:text-white hover:bg-white/5">
+                        <Terminal className="w-3.5 h-3.5" /><span className="ml-1.5">Terminal</span>
+                      </Button>
+                      <Button size="sm" onClick={() => loadAgentScript(server.id)}
+                        variant="outline" className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10">
+                        <Zap className="w-3.5 h-3.5" /><span className="ml-1.5">Get Script</span>
+                      </Button>
+                      <Button size="sm" onClick={() => setConfirmReboot(server.id)} disabled={rebootLoading[server.id]}
+                        className="bg-amber-600/70 hover:bg-amber-600 text-white border-0">
+                        {rebootLoading[server.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+                        <span className="ml-1.5">Reboot</span>
+                      </Button>
+                      <Button size="sm" onClick={() => deleteMutation.mutate(server.id)}
+                        variant="outline" className="border-red-500/20 text-red-400 hover:bg-red-500/10">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {confirmReboot === server.id && (
+                    <div className="mt-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/8 flex items-center justify-between gap-3">
+                      <p className="text-xs text-amber-300">⚠️ Are you sure you want to reboot <strong>{server.label}</strong>? This will cause a brief downtime.</p>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => rebootServer(server.id)} className="bg-amber-600 hover:bg-amber-500 text-white h-7 text-xs">Reboot Now</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setConfirmReboot(null)} className="text-white/40 h-7 text-xs">Cancel</Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {ping && (
+                    <div className={`mt-3 p-3 rounded-xl border ${ping.success ? "border-emerald-500/20 bg-emerald-500/5" : "border-red-500/20 bg-red-500/5"}`}>
+                      {ping.success ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                          <div><p className="text-white/40 mb-0.5"><Cpu className="w-3 h-3 inline mr-1" />Load</p><p className="text-white font-mono">{ping.load || "—"}</p></div>
+                          <div><p className="text-white/40 mb-0.5"><MemoryStick className="w-3 h-3 inline mr-1" />Memory</p><p className="text-white font-mono">{ping.memory || "—"}</p></div>
+                          <div><p className="text-white/40 mb-0.5"><HardDrive className="w-3 h-3 inline mr-1" />Disk</p><p className="text-white font-mono">{ping.disk || "—"}</p></div>
+                          <div><p className="text-white/40 mb-0.5"><Power className="w-3 h-3 inline mr-1" />Uptime</p><p className="text-white font-mono text-xs">{ping.uptime || "—"}</p></div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-red-400">⚠️ Could not connect to server — check host, port, and credentials</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {isTermOpen && (
+                  <div className="border-t border-white/8 p-4 bg-black/20">
+                    <p className="text-xs text-white/40 mb-2"><Terminal className="w-3 h-3 inline mr-1" />Remote Terminal — {server.username}@{server.host}</p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={terminalState[server.id]?.cmd || ""}
+                        onChange={(e) => setTerminalState((s) => ({ ...s, [server.id]: { ...s[server.id], cmd: e.target.value } }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") execCommand(server.id); }}
+                        placeholder="e.g. df -h / | cat /etc/os-release | systemctl status nginx"
+                        className="flex-1 font-mono text-xs bg-black/30 border-white/10 text-green-300 placeholder-white/20"
+                      />
+                      <Button size="sm" onClick={() => execCommand(server.id)} disabled={terminalState[server.id]?.loading || !terminalState[server.id]?.cmd?.trim()}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white">
+                        {terminalState[server.id]?.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                    {terminalState[server.id]?.output && (
+                      <pre className="mt-2 p-3 rounded-lg bg-black/40 text-green-300 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-48 overflow-y-auto border border-white/5">
+                        {terminalState[server.id].output}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── DOMAINS TAB ────────────────────────────────────────────────────────────
+function DomainsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const authFetchD = (url: string, opts: any = {}) =>
+    fetch(url, {
+      ...opts,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`, ...(opts.headers || {}) },
+      body: opts.body,
+    }).then((r) => r.json());
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/domains"],
+    queryFn: () => authFetchD("/api/admin/domains"),
+  });
+
+  const domains: any[] = data?.domains || [];
+  const replitDomain: string | null = data?.replitDomain || null;
+
+  const [newDomain, setNewDomain] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingCname, setEditingCname] = useState(false);
+  const [cnameInput, setCnameInput] = useState("");
+
+  const inputCls = "bg-white/5 border-white/10 text-white placeholder-white/30 focus:border-indigo-500/50";
+
+  const addMutation = useMutation({
+    mutationFn: () => authFetchD("/api/admin/domains", { method: "POST", body: JSON.stringify({ domain: newDomain, label: newLabel || newDomain }) }),
+    onSuccess: (res) => {
+      if (res.success) {
+        toast({ title: "Domain added!", description: res.domain.domain });
+        setNewDomain(""); setNewLabel(""); setShowAdd(false);
+        qc.invalidateQueries({ queryKey: ["/api/admin/domains"] });
+      } else {
+        toast({ title: "Failed", description: res.error, variant: "destructive" });
+      }
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => authFetchD(`/api/admin/domains/${id}`, { method: "DELETE" }),
+    onSuccess: () => { toast({ title: "Domain removed" }); qc.invalidateQueries({ queryKey: ["/api/admin/domains"] }); },
+  });
+
+  const setPrimaryMutation = useMutation({
+    mutationFn: (id: string) => authFetchD(`/api/admin/domains/${id}/primary`, { method: "PUT" }),
+    onSuccess: () => { toast({ title: "Primary domain updated" }); qc.invalidateQueries({ queryKey: ["/api/admin/domains"] }); },
+  });
+
+  const saveCnameMutation = useMutation({
+    mutationFn: () => authFetchD("/api/admin/domains/cname-target", { method: "PUT", body: JSON.stringify({ appDomain: cnameInput.trim() }) }),
+    onSuccess: (res) => {
+      if (res.success) {
+        toast({ title: "CNAME target saved" });
+        setEditingCname(false);
+        qc.invalidateQueries({ queryKey: ["/api/admin/domains"] });
+      } else {
+        toast({ title: "Failed to save", variant: "destructive" });
+      }
+    },
+  });
+
+  const [cfVerifyingId, setCfVerifyingId] = useState<string | null>(null);
+  const cfVerifyMutation = useMutation({
+    mutationFn: (id: string) => {
+      setCfVerifyingId(id);
+      return authFetchD(`/api/admin/domains/${id}/cloudflare-verify`, { method: "POST" });
+    },
+    onSuccess: (res, id) => {
+      setCfVerifyingId(null);
+      if (res.success) {
+        toast({ title: `DNS record ${res.action === "updated" ? "updated" : "created"} on Cloudflare`, description: `${res.record?.name} → ${res.record?.content}` });
+      } else {
+        toast({ title: "Cloudflare error", description: res.error, variant: "destructive" });
+      }
+    },
+    onError: (_err, _id) => { setCfVerifyingId(null); toast({ title: "Request failed", variant: "destructive" }); },
+  });
+
+  const [dnsResults, setDnsResults] = useState<Record<string, { verified: boolean; found: string | null; expected: string | null; propagated: boolean } | null>>({});
+  const [dnsCheckingId, setDnsCheckingId] = useState<string | null>(null);
+  async function checkDns(id: string) {
+    setDnsCheckingId(id);
+    try {
+      const res = await authFetchD(`/api/admin/domains/${id}/verify`);
+      setDnsResults((prev) => ({ ...prev, [id]: res.success ? res : null }));
+      if (!res.success) toast({ title: "DNS check failed", description: res.error, variant: "destructive" });
+    } catch {
+      toast({ title: "DNS check failed", variant: "destructive" });
+    } finally {
+      setDnsCheckingId(null);
+    }
+  }
+
+  function copyText(text: string, id: string) {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  const cnameDest = replitDomain
+    ? replitDomain.split(",")[0].trim()
+    : "";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white">Custom Domains</h2>
+          <p className="text-sm text-white/40 mt-1">Manage additional domains that point to your store</p>
+        </div>
+        <Button onClick={() => setShowAdd(!showAdd)} className="bg-indigo-600 hover:bg-indigo-500 text-white">
+          <Plus className="w-4 h-4 mr-1.5" />Add Domain
+        </Button>
+      </div>
+
+      {/* CNAME target — always shown, always editable */}
+      <div className="glass-card rounded-2xl p-5 border border-indigo-500/20">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">CNAME Target (Points To)</p>
+          </div>
+          {!editingCname && (
+            <Button size="sm" variant="outline" onClick={() => { setCnameInput(cnameDest); setEditingCname(true); }}
+              className="border-white/10 text-white/50 hover:text-white h-7 text-xs">
+              <Pencil className="w-3 h-3 mr-1" />Edit
+            </Button>
+          )}
+        </div>
+        {editingCname ? (
+          <div className="space-y-3">
+            <Input
+              value={cnameInput}
+              onChange={(e) => setCnameInput(e.target.value)}
+              placeholder="your-app.replit.app or myapp.onrender.com"
+              className={inputCls + " font-mono"}
+            />
+            <p className="text-xs text-white/35">Enter your deployed app domain — this is what DNS CNAME records should point to.</p>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => saveCnameMutation.mutate()} disabled={saveCnameMutation.isPending || !cnameInput.trim()}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white">
+                {saveCnameMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}Save
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditingCname(false)} className="text-white/40 hover:text-white">Cancel</Button>
+            </div>
+          </div>
+        ) : cnameDest ? (
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="font-mono text-white font-medium">{cnameDest}</p>
+              <p className="text-xs text-white/40 mt-0.5">All custom domains should CNAME to this address</p>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => copyText(cnameDest, "replit")}
+                className="border-white/10 text-white/60 hover:text-white">
+                {copiedId === "replit" ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span className="ml-1.5">Copy</span>
+              </Button>
+              <a href={`https://${cnameDest}`} target="_blank" rel="noreferrer">
+                <Button size="sm" variant="outline" className="border-white/10 text-white/60 hover:text-white">
+                  <ExternalLink className="w-3.5 h-3.5" /><span className="ml-1.5">Open</span>
+                </Button>
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <p className="text-sm text-white/40">No CNAME target set yet.</p>
+            <p className="text-xs text-white/25 mt-1">Click <strong className="text-white/40">Edit</strong> to enter your deployed app domain (e.g. <span className="font-mono">myapp.onrender.com</span>).</p>
+          </div>
+        )}
+      </div>
+
+      {/* Add domain form */}
+      {showAdd && (
+        <div className="glass-card rounded-2xl p-5 border border-indigo-500/20">
+          <h3 className="text-sm font-semibold text-white mb-4">Add Custom Domain</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-white/40 block mb-1">Domain name *</label>
+              <Input
+                placeholder="shop.yourdomain.com"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                className={inputCls}
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/40 block mb-1">Label (optional)</label>
+              <Input
+                placeholder="My Store Domain"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          {/* DNS instructions preview */}
+          {newDomain && (
+            <div className="mt-4 p-4 rounded-xl border border-white/8 bg-white/3">
+              <p className="text-xs text-white/50 mb-3 font-medium">DNS record to add at your registrar:</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs font-mono">
+                  <thead>
+                    <tr className="text-white/30">
+                      <th className="text-left pb-2 pr-4">Type</th>
+                      <th className="text-left pb-2 pr-4">Name / Host</th>
+                      <th className="text-left pb-2">Points to</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="text-white/70">
+                      <td className="pr-4 py-1"><Badge className="bg-blue-600/40 text-blue-300 border-0 text-xs">CNAME</Badge></td>
+                      <td className="pr-4 py-1">{newDomain.replace(/\..+$/, "") || "@"}</td>
+                      <td className="py-1 text-indigo-300">{cnameDest}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 mt-4">
+            <Button
+              onClick={() => addMutation.mutate()}
+              disabled={!newDomain.trim() || addMutation.isPending}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white"
+            >
+              {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Plus className="w-4 h-4 mr-1.5" />}
+              Add Domain
+            </Button>
+            <Button variant="ghost" onClick={() => setShowAdd(false)} className="text-white/40 hover:text-white">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Domain list */}
+      {isLoading ? (
+        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
+      ) : domains.length === 0 ? (
+        <div className="glass-card rounded-2xl text-center py-16">
+          <Link2 className="w-10 h-10 text-white/15 mx-auto mb-3" />
+          <p className="text-white/40 font-medium">No custom domains added yet</p>
+          <p className="text-white/25 text-sm mt-1">Add a domain to serve your store under your own brand</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {domains.map((d: any) => (
+            <div key={d.id} className={`glass-card rounded-2xl p-5 border ${d.primary ? "border-indigo-500/30" : "border-white/8"}`}>
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${d.primary ? "bg-indigo-500/20" : "bg-white/5"}`}>
+                    <Link2 className={`w-4 h-4 ${d.primary ? "text-indigo-400" : "text-white/40"}`} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-white font-mono">{d.domain}</p>
+                      {d.primary && <Badge className="bg-indigo-600/60 text-white border-0 text-xs">Primary</Badge>}
+                    </div>
+                    {d.label !== d.domain && <p className="text-xs text-white/40">{d.label}</p>}
+                    <p className="text-xs text-white/25 mt-0.5">Added {new Date(d.addedAt).toLocaleDateString()}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => copyText(d.domain, d.id + "-copy")}
+                    className="border-white/10 text-white/50 hover:text-white h-8">
+                    {copiedId === d.id + "-copy" ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span className="ml-1.5 text-xs">Copy</span>
+                  </Button>
+                  <a href={`https://${d.domain}`} target="_blank" rel="noreferrer">
+                    <Button size="sm" variant="outline" className="border-white/10 text-white/50 hover:text-white h-8">
+                      <ExternalLink className="w-3.5 h-3.5" /><span className="ml-1.5 text-xs">Visit</span>
+                    </Button>
+                  </a>
+                  {!d.primary && (
+                    <Button size="sm" variant="outline" onClick={() => setPrimaryMutation.mutate(d.id)} disabled={setPrimaryMutation.isPending}
+                      className="border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 h-8">
+                      <Star className="w-3.5 h-3.5" /><span className="ml-1.5 text-xs">Set Primary</span>
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline"
+                    onClick={() => cfVerifyMutation.mutate(d.id)}
+                    disabled={cfVerifyingId === d.id}
+                    title="Auto-add CNAME record on Cloudflare"
+                    className="border-orange-500/25 text-orange-400 hover:bg-orange-500/10 h-8">
+                    {cfVerifyingId === d.id
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Zap className="w-3.5 h-3.5" />}
+                    <span className="ml-1.5 text-xs">CF Auto</span>
+                  </Button>
+                  <Button size="sm" variant="outline"
+                    onClick={() => checkDns(d.id)}
+                    disabled={dnsCheckingId === d.id}
+                    title="Check if DNS is pointing correctly"
+                    className="border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10 h-8">
+                    {dnsCheckingId === d.id
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    <span className="ml-1.5 text-xs">Verify</span>
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => deleteMutation.mutate(d.id)} disabled={deleteMutation.isPending}
+                    className="border-red-500/20 text-red-400 hover:bg-red-500/10 h-8">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* DNS instruction per domain */}
+              <div className="mt-4 p-3 rounded-xl bg-black/20 border border-white/5">
+                <p className="text-xs text-white/35 mb-2 font-medium">DNS Configuration</p>
+                <div className="flex items-center gap-4 text-xs font-mono flex-wrap">
+                  <span className="text-white/30">Type:</span><Badge className="bg-blue-600/40 text-blue-300 border-0">CNAME</Badge>
+                  <span className="text-white/30">Host:</span><span className="text-white/60">{d.domain.split(".")[0]}</span>
+                  <span className="text-white/30">Points to:</span>
+                  <span className="text-indigo-300">{cnameDest}</span>
+                  <button onClick={() => copyText(cnameDest, d.id + "-dns")} className="text-white/30 hover:text-white transition-colors">
+                    {copiedId === d.id + "-dns" ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* DNS verify result */}
+              {dnsResults[d.id] !== undefined && dnsResults[d.id] !== null && (() => {
+                const r = dnsResults[d.id]!;
+                return (
+                  <div className={`mt-2 p-3 rounded-xl border text-xs font-mono flex flex-col gap-1 ${r.verified ? "bg-emerald-500/8 border-emerald-500/20" : "bg-red-500/8 border-red-500/20"}`}>
+                    <div className="flex items-center gap-2">
+                      {r.verified
+                        ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        : <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+                      <span className={r.verified ? "text-emerald-300 font-semibold" : "text-red-300 font-semibold"}>
+                        {r.verified ? "DNS verified — pointing correctly" : r.propagated ? "DNS found but points elsewhere" : "DNS not yet propagated"}
+                      </span>
+                    </div>
+                    {r.found && <span className="text-white/40 pl-5">Found: <span className="text-white/70">{r.found}</span></span>}
+                    {!r.found && <span className="text-white/40 pl-5">No CNAME record found yet — may still be propagating (up to 48h)</span>}
+                    {r.expected && !r.verified && <span className="text-white/40 pl-5">Expected: <span className="text-white/70">{r.expected}</span></span>}
+                  </div>
+                );
+              })()}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* How it works */}
+      <div className="rounded-xl p-4 border border-white/8 bg-white/3">
+        <p className="text-xs font-semibold text-white/50 mb-3">How to connect a custom domain</p>
+        <ol className="space-y-2 text-xs text-white/40 list-none">
+          {[
+            "Go to your domain registrar (Namecheap, Cloudflare, GoDaddy, etc.)",
+            `Add a CNAME record pointing to: ${cnameDest}`,
+            "Wait for DNS to propagate (can take up to 48 hours, usually under 1 hour)",
+            "Click 'Visit' to verify your domain is live",
+          ].map((step, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-indigo-500/20 text-indigo-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FEATURE REQUESTS TAB (Admin)
+// ═══════════════════════════════════════════════════════════════
+
+const FR_STATUS: Record<string, { label: string; color: string }> = {
+  pending:  { label: "Pending",    color: "bg-amber-500/20 text-amber-300" },
+  planned:  { label: "Planned",    color: "bg-indigo-500/20 text-indigo-300" },
+  building: { label: "Building",   color: "bg-violet-500/20 text-violet-300" },
+  done:     { label: "Done ✓",     color: "bg-emerald-500/20 text-emerald-300" },
+  declined: { label: "Declined",   color: "bg-red-500/20 text-red-400" },
+};
+
+function FeatureRequestsAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [noteId, setNoteId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/feature-requests"],
+    queryFn: () => authFetch("/api/admin/feature-requests"),
+    refetchInterval: 60000,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, status, adminNote }: { id: string; status?: string; adminNote?: string }) =>
+      authFetch(`/api/admin/feature-requests/${id}`, { method: "PATCH", body: JSON.stringify({ status, adminNote }) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/admin/feature-requests"] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => authFetch(`/api/admin/feature-requests/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast({ title: "Request deleted" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/feature-requests"] });
+    },
+  });
+
+  const all = data?.requests ?? [];
+  const requests = filterStatus === "all" ? all : all.filter((r: any) => r.status === filterStatus);
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-white">Feature Requests</h2>
+          <p className="text-white/40 text-sm mt-0.5">Ideas and requests submitted by your customers</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {["all", "pending", "planned", "building", "done", "declined"].map(s => (
+            <button key={s} onClick={() => setFilterStatus(s)}
+              className={`text-[11px] px-3 py-1.5 rounded-lg capitalize font-medium transition-colors ${filterStatus === s ? "bg-white/12 text-white" : "text-white/35 hover:text-white/60"}`}>
+              {s === "all" ? `All (${all.length})` : s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
+      ) : requests.length === 0 ? (
+        <div className="text-center py-16 rounded-2xl border border-white/8" style={{ background: "rgba(255,255,255,.03)" }}>
+          <Sparkles className="w-10 h-10 mx-auto mb-3 text-white/10" />
+          <p className="text-white/30">No feature requests {filterStatus !== "all" ? `with status "${filterStatus}"` : "yet"}</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((r: any) => {
+            const st = FR_STATUS[r.status] || FR_STATUS.pending;
+            return (
+              <div key={r.id} className="rounded-xl border border-white/8 p-4" style={{ background: "rgba(255,255,255,.03)" }}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${st.color}`}>{st.label}</span>
+                      <span className="text-[11px] text-white/35 flex items-center gap-1">
+                        <span className="text-amber-400">▲</span> {r.votes || 1} vote{r.votes !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <p className="text-white font-semibold text-sm mb-0.5">{r.title}</p>
+                    {r.description && <p className="text-white/50 text-xs leading-relaxed">{r.description}</p>}
+                    <p className="text-white/25 text-[11px] mt-2">
+                      by <span className="text-white/40">{r.customerName || r.customerEmail}</span>
+                      {r.createdAt && <span> · {new Date(r.createdAt).toLocaleDateString()}</span>}
+                    </p>
+                    {r.adminNote && (
+                      <p className="mt-2 text-xs text-indigo-300/80 border-l-2 border-indigo-500/40 pl-2">Admin: {r.adminNote}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <select
+                      value={r.status}
+                      onChange={e => updateMutation.mutate({ id: r.id, status: e.target.value })}
+                      className="text-[11px] bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-white focus:outline-none"
+                    >
+                      {Object.keys(FR_STATUS).map(s => <option key={s} value={s}>{FR_STATUS[s].label}</option>)}
+                    </select>
+                    <button onClick={() => { setNoteId(r.id); setNoteText(r.adminNote || ""); }}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 transition-colors">
+                      Note
+                    </button>
+                    <button onClick={() => deleteMutation.mutate(r.id)}
+                      className="p-1.5 rounded-lg text-white/25 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Inline note editor */}
+                {noteId === r.id && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      value={noteText}
+                      onChange={e => setNoteText(e.target.value)}
+                      placeholder="Add admin note (visible to customer)…"
+                      className="flex-1 text-xs bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white placeholder:text-white/25 focus:outline-none focus:border-indigo-500/50"
+                    />
+                    <button onClick={() => { updateMutation.mutate({ id: r.id, adminNote: noteText }); setNoteId(null); toast({ title: "Note saved" }); }}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors">Save</button>
+                    <button onClick={() => setNoteId(null)} className="text-white/30 hover:text-white/60"><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RATINGS TAB
+// ═══════════════════════════════════════════════════════════════
+
+function RatingsTab() {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/ratings"],
+    queryFn: () => authFetch("/api/admin/ratings"),
+    refetchInterval: 60000,
+  });
+  const ratings = data?.ratings ?? [];
+  const avg = data?.average ?? 0;
+  const count = data?.count ?? 0;
+
+  const starDist = [5,4,3,2,1].map(n => ({
+    stars: n,
+    count: ratings.filter((r: any) => r.stars === n).length,
+  }));
+
+  function StarDisplay({ stars, size = "w-4 h-4" }: { stars: number; size?: string }) {
+    return (
+      <div className="flex items-center gap-0.5">
+        {[1,2,3,4,5].map(s => (
+          <Star key={s} className={`${size} ${s <= stars ? "text-amber-400 fill-amber-400" : "text-white/15"}`} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-white">Customer Ratings</h2>
+        <p className="text-white/40 text-sm mt-0.5">Reviews submitted by customers after completed orders</p>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-xl p-4 border border-white/10" style={{ background: "rgba(255,255,255,.04)" }}>
+          <p className="text-white/50 text-xs mb-1">Average Rating</p>
+          <p className="text-3xl font-bold text-amber-400">{avg > 0 ? avg.toFixed(1) : "—"}</p>
+          <div className="mt-1"><StarDisplay stars={Math.round(avg)} /></div>
+        </div>
+        <div className="rounded-xl p-4 border border-white/10" style={{ background: "rgba(255,255,255,.04)" }}>
+          <p className="text-white/50 text-xs mb-1">Total Reviews</p>
+          <p className="text-3xl font-bold text-white">{count}</p>
+        </div>
+        <div className="rounded-xl p-4 border border-white/10 space-y-1" style={{ background: "rgba(255,255,255,.04)" }}>
+          <p className="text-white/50 text-xs mb-2">Distribution</p>
+          {starDist.map(({ stars, count: c }) => (
+            <div key={stars} className="flex items-center gap-2 text-xs">
+              <span className="text-white/50 w-4 text-right">{stars}</span>
+              <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
+              <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full rounded-full bg-amber-400" style={{ width: count > 0 ? `${(c / count) * 100}%` : "0%" }} />
+              </div>
+              <span className="text-white/40 w-5 text-right">{c}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-xl border border-white/10 overflow-hidden" style={{ background: "rgba(255,255,255,.03)" }}>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
+        ) : ratings.length === 0 ? (
+          <div className="text-center py-16 text-white/30">
+            <Star className="w-10 h-10 mx-auto mb-3 text-white/10" />
+            <p>No ratings yet</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/8">
+                <th className="text-left px-4 py-3 text-white/40 font-medium">Customer</th>
+                <th className="text-left px-4 py-3 text-white/40 font-medium">Plan</th>
+                <th className="text-left px-4 py-3 text-white/40 font-medium">Stars</th>
+                <th className="text-left px-4 py-3 text-white/40 font-medium">Comment</th>
+                <th className="text-left px-4 py-3 text-white/40 font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ratings.map((r: any) => (
+                <tr key={r.id} className="border-b border-white/5 hover:bg-white/2 transition-colors">
+                  <td className="px-4 py-3">
+                    <p className="text-white/80 font-medium">{r.customerName || r.customerEmail?.split("@")[0]}</p>
+                    <p className="text-white/30 text-xs font-mono">{r.customerEmail}</p>
+                  </td>
+                  <td className="px-4 py-3 text-white/60 text-xs">{r.planName || "—"}</td>
+                  <td className="px-4 py-3"><StarDisplay stars={r.stars} size="w-3.5 h-3.5" /></td>
+                  <td className="px-4 py-3 text-white/50 text-xs max-w-[220px]">
+                    <p className="line-clamp-2">{r.comment || <span className="text-white/20 italic">No comment</span>}</p>
+                  </td>
+                  <td className="px-4 py-3 text-white/30 text-xs whitespace-nowrap">
+                    {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CampaignsTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [segment, setSegment] = useState("all");
+  const [name, setName] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/campaigns"],
+    queryFn: () => authFetch("/api/admin/campaigns"),
+    refetchInterval: 10000,
+  });
+
+  async function createCampaign(sendNow = false) {
+    if (!subject.trim() || !body.trim()) { toast({ title: "Subject and body are required", variant: "destructive" }); return; }
+    setCreating(true);
+    try {
+      const res = await authFetch("/api/admin/campaigns", {
+        method: "POST",
+        body: JSON.stringify({ name: name || subject, subject, body, segment, scheduledAt: scheduledAt || undefined, sendNow }),
+      });
+      if (res.success) {
+        toast({ title: sendNow ? "Campaign sending..." : "Campaign saved!" });
+        setSubject(""); setBody(""); setName(""); setScheduledAt(""); setShowForm(false);
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] });
+      } else toast({ title: res.error || "Failed", variant: "destructive" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setCreating(false); }
+  }
+
+  async function sendNow(id: string) {
+    const res = await authFetch(`/api/admin/campaigns/${id}/send`, { method: "POST" });
+    if (res.success) { toast({ title: "Sending..." }); queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] }); }
+    else toast({ title: res.error || "Failed", variant: "destructive" });
+  }
+
+  async function deleteCampaign(id: string) {
+    const res = await authFetch(`/api/admin/campaigns/${id}`, { method: "DELETE" });
+    if (res.success) { toast({ title: "Deleted" }); queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] }); }
+  }
+
+  const campaigns = data?.campaigns ?? [];
+  const segmentLabels: Record<string, string> = { all: "All Customers", active: "Active Buyers", recent: "Last 30 Days" };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">Email Campaigns</h1>
+          <p className="text-xs text-white/40 mt-0.5">Schedule or send bulk email campaigns to customer segments</p>
+        </div>
+        <Button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 hover:bg-indigo-500 text-white">
+          <Plus className="w-4 h-4 mr-2" />New Campaign
+        </Button>
+      </div>
+
+      {showForm && (
+        <div className="glass-card rounded-2xl p-6 space-y-4 border border-indigo-500/20">
+          <h2 className="text-base font-bold text-white">Create Campaign</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-white/40 uppercase mb-1.5 block">Campaign Name</label>
+              <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. December Promo" className="glass border-white/10 bg-white/5 text-white placeholder:text-white/25" />
+            </div>
+            <div>
+              <label className="text-xs text-white/40 uppercase mb-1.5 block">Audience</label>
+              <select value={segment} onChange={e => setSegment(e.target.value)} className="w-full h-10 px-3 rounded-lg glass border border-white/10 bg-white/5 text-white text-sm">
+                {Object.entries(segmentLabels).map(([v, l]) => <option key={v} value={v} className="bg-gray-900">{l}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-white/40 uppercase mb-1.5 block">Subject Line</label>
+            <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="🔥 Special offer just for you!" className="glass border-white/10 bg-white/5 text-white placeholder:text-white/25" />
+          </div>
+          <div>
+            <label className="text-xs text-white/40 uppercase mb-1.5 block">Email Body</label>
+            <textarea value={body} onChange={e => setBody(e.target.value)} rows={6} placeholder="Write your email message here..." className="w-full px-3 py-2.5 rounded-lg glass border border-white/10 bg-white/5 text-white placeholder:text-white/25 text-sm resize-none focus:outline-none focus:border-indigo-500/50" />
+          </div>
+          <div>
+            <label className="text-xs text-white/40 uppercase mb-1.5 block">Schedule (optional — leave empty to save as draft)</label>
+            <Input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} className="glass border-white/10 bg-white/5 text-white" />
+          </div>
+          <div className="flex gap-3">
+            <Button onClick={() => createCampaign(false)} disabled={creating} variant="outline" className="glass border-white/10 text-white/70 hover:text-white">
+              {scheduledAt ? "Schedule" : "Save Draft"}
+            </Button>
+            <Button onClick={() => createCampaign(true)} disabled={creating} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+              {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Sending...</> : "Send Now"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-16 glass rounded-xl animate-pulse" />)}</div>
+      ) : campaigns.length === 0 ? (
+        <div className="text-center py-20 glass-card rounded-2xl">
+          <Send className="w-10 h-10 text-white/20 mx-auto mb-3" />
+          <p className="text-white/40">No campaigns yet. Create your first one!</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {campaigns.map((c: any) => (
+            <div key={c.id} className="glass-card rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="font-semibold text-white text-sm truncate">{c.name}</p>
+                  <Badge className={`text-xs px-2 py-0 border-0 ${
+                    c.status === "sent" ? "bg-emerald-500/20 text-emerald-400" :
+                    c.status === "sending" ? "bg-blue-500/20 text-blue-400" :
+                    c.status === "scheduled" ? "bg-amber-500/20 text-amber-400" :
+                    "bg-white/5 text-white/40"}`}>{c.status}</Badge>
+                </div>
+                <p className="text-xs text-white/40 truncate">{c.subject}</p>
+                <p className="text-xs text-white/30 mt-0.5">
+                  {segmentLabels[c.segment] ?? c.segment}
+                  {c.sentCount && ` · ${c.sentCount} sent`}
+                  {c.scheduledAt && c.status === "scheduled" && ` · Scheduled ${new Date(c.scheduledAt).toLocaleString()}`}
+                  {c.sentAt && ` · Sent ${new Date(c.sentAt).toLocaleDateString()}`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {(c.status === "draft" || c.status === "scheduled") && (
+                  <Button size="sm" onClick={() => sendNow(c.id)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs h-7 px-3">Send Now</Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => deleteCampaign(c.id)} className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10 h-7 w-7 p-0">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONVERSION FUNNEL TAB
+// ═══════════════════════════════════════════════════════════════
+function ConversionFunnelTab() {
+  const { toast } = useToast();
+  const [days, setDays] = useState(30);
+  const authFetch = (url: string, opts: any = {}) => fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${localStorage.getItem("admin_token")}`, "Content-Type": "application/json" } });
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/funnel", days],
+    queryFn: () => authFetch(`/api/admin/funnel?days=${days}`).then(r => r.json()),
+  });
+
+  const funnel: any[] = data?.funnel ?? [];
+  const maxCount = Math.max(...funnel.map((f: any) => f.count), 1);
+
+  const STEP_META: Record<string, { label: string; color: string }> = {
+    page_view:         { label: "Store Visits",        color: "from-blue-600 to-blue-500" },
+    plan_view:         { label: "Plan Interactions",   color: "from-indigo-600 to-indigo-500" },
+    checkout_start:    { label: "Checkout Started",    color: "from-violet-600 to-violet-500" },
+    checkout_complete: { label: "Paid Orders",         color: "from-emerald-600 to-emerald-500" },
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-white">Conversion Funnel</h2>
+          <p className="text-xs text-white/40 mt-0.5">Track how visitors move from browsing to paying</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {[7, 30, 90].map(d => (
+            <button key={d} onClick={() => setDays(d)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors border ${days === d ? "bg-indigo-600 border-indigo-500 text-white" : "bg-white/5 border-white/10 text-white/50 hover:text-white"}`}>
+              {d}d
+            </button>
+          ))}
+          <button onClick={() => refetch()} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white transition-colors">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-4 flex items-center gap-4" style={{ background: "linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.08))", border: "1px solid rgba(99,102,241,.2)" }}>
+        <div className="w-12 h-12 rounded-xl bg-indigo-600/20 flex items-center justify-center shrink-0">
+          <TrendingUp className="w-6 h-6 text-indigo-400" />
+        </div>
+        <div>
+          <p className="text-white/50 text-xs">Overall conversion rate (visits → paid)</p>
+          <p className="text-3xl font-bold text-white mt-0.5">{data?.conversionRate ?? 0}%</p>
+        </div>
+        <div className="ml-auto text-right">
+          <p className="text-white/30 text-xs">Period</p>
+          <p className="text-white font-semibold text-sm">Last {days} days</p>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
+      ) : (
+        <div className="space-y-3">
+          {funnel.map((step: any, i: number) => {
+            const meta = STEP_META[step.step] || { label: step.step, color: "from-gray-600 to-gray-500" };
+            const widthPct = maxCount > 0 ? Math.max((step.count / maxCount) * 100, 4) : 4;
+            const dropoff = i > 0 && funnel[i - 1].count > 0
+              ? Math.round(((funnel[i - 1].count - step.count) / funnel[i - 1].count) * 100) : null;
+            return (
+              <div key={step.step}>
+                {dropoff !== null && (
+                  <div className="flex items-center gap-2 py-1 px-2">
+                    <div className="w-px h-4 bg-white/10 mx-4" />
+                    <span className="text-[11px] text-red-400/70">▼ {dropoff}% dropped off</span>
+                  </div>
+                )}
+                <div className="rounded-xl border border-white/8 p-4" style={{ background: "rgba(255,255,255,.03)" }}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-baseline justify-between">
+                        <p className="text-sm font-semibold text-white">{meta.label}</p>
+                        <p className="text-xl font-bold text-white">{step.count.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                    <div className={`h-full rounded-full bg-gradient-to-r ${meta.color} transition-all duration-700`}
+                      style={{ width: `${widthPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-white/8 p-4" style={{ background: "rgba(255,255,255,.03)" }}>
+          <p className="text-sm font-semibold text-white mb-3">🔥 Most Viewed Plans</p>
+          {(data?.topPlans ?? []).length === 0 ? (
+            <p className="text-white/25 text-xs">No plan views recorded yet</p>
+          ) : (
+            <div className="space-y-2">
+              {(data.topPlans as any[]).map((p: any, i: number) => (
+                <div key={i} className="flex items-center justify-between">
+                  <p className="text-xs text-white/70 truncate max-w-[180px]">{p.plan_name}</p>
+                  <span className="text-xs font-bold text-indigo-400 ml-2">{p.cnt}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="rounded-xl border border-white/8 p-4" style={{ background: "rgba(255,255,255,.03)" }}>
+          <p className="text-sm font-semibold text-white mb-3">⚡ Live Activity</p>
+          {(data?.recentEvents ?? []).length === 0 ? (
+            <p className="text-white/25 text-xs">No events recorded yet</p>
+          ) : (
+            <div className="space-y-1.5 max-h-52 overflow-y-auto">
+              {(data.recentEvents as any[]).map((e: any, i: number) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                    e.event_type === "page_view" ? "bg-blue-500/20 text-blue-400" :
+                    e.event_type === "plan_view" ? "bg-indigo-500/20 text-indigo-400" :
+                    e.event_type === "checkout_start" ? "bg-violet-500/20 text-violet-400" :
+                    "bg-emerald-500/20 text-emerald-400"
+                  }`}>{e.event_type.replace("_"," ")}</span>
+                  {e.plan_name && <span className="text-[10px] text-white/50 truncate">{e.plan_name}</span>}
+                  <span className="text-[10px] text-white/20 ml-auto">{e.created_at?.slice(11,16)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CUSTOMER GROUPS TAB
+// ═══════════════════════════════════════════════════════════════
+function CustomerGroupsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const authFetch = (url: string, opts: any = {}) => fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${localStorage.getItem("admin_token")}`, "Content-Type": "application/json" } });
+
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/customer-groups"],
+    queryFn: () => authFetch("/api/admin/customer-groups").then(r => r.json()),
+  });
+
+  const groups: any[] = data?.groups ?? [];
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#6366f1");
+  const [discountPct, setDiscountPct] = useState(0);
+  const [isBanned, setIsBanned] = useState(false);
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<any>(null);
+  const [members, setMembers] = useState<any[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [assignEmail, setAssignEmail] = useState("");
+  const [assignLoading, setAssignLoading] = useState(false);
+
+  const GROUP_COLORS = ["#6366f1","#8b5cf6","#ec4899","#f59e0b","#10b981","#ef4444","#3b82f6","#14b8a6","#f97316","#64748b"];
+
+  function openCreate() { setEditing(null); setName(""); setColor("#6366f1"); setDiscountPct(0); setIsBanned(false); setDescription(""); setShowForm(true); }
+  function openEdit(g: any) { setEditing(g); setName(g.name); setColor(g.color||"#6366f1"); setDiscountPct(g.discount_percent||0); setIsBanned(!!g.is_banned); setDescription(g.description||""); setShowForm(true); }
+
+  async function saveGroup() {
+    if (!name.trim()) { toast({ title: "Name required", variant: "destructive" }); return; }
+    setSaving(true);
+    try {
+      const body = JSON.stringify({ name, color, discount_percent: discountPct, is_banned: isBanned, description });
+      const url = editing ? `/api/admin/customer-groups/${editing.id}` : "/api/admin/customer-groups";
+      const d = await authFetch(url, { method: editing ? "PUT" : "POST", body }).then(r => r.json());
+      if (d.success) { toast({ title: editing ? "Group updated" : "Group created ✅" }); qc.invalidateQueries({ queryKey: ["/api/admin/customer-groups"] }); setShowForm(false); }
+      else toast({ title: d.error || "Failed", variant: "destructive" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    setSaving(false);
+  }
+
+  async function deleteGroup(id: number) {
+    if (!confirm("Delete this group? Members will be unassigned.")) return;
+    await authFetch(`/api/admin/customer-groups/${id}`, { method: "DELETE" });
+    qc.invalidateQueries({ queryKey: ["/api/admin/customer-groups"] });
+    toast({ title: "Group deleted" });
+    if (selectedGroup?.id === id) setSelectedGroup(null);
+  }
+
+  async function loadMembers(g: any) {
+    setSelectedGroup(g); setMembersLoading(true); setMembers([]);
+    const d = await authFetch(`/api/admin/customer-groups/${g.id}/members`).then(r => r.json());
+    setMembers(d.members || []); setMembersLoading(false);
+  }
+
+  async function assignCustomer() {
+    if (!assignEmail.trim() || !selectedGroup) return;
+    setAssignLoading(true);
+    try {
+      const custsR = await authFetch("/api/admin/customers").then(r => r.json());
+      const cust = (custsR.customers || []).find((c: any) => c.email.toLowerCase() === assignEmail.trim().toLowerCase());
+      if (!cust) { toast({ title: "Customer not found", variant: "destructive" }); setAssignLoading(false); return; }
+      const d = await authFetch(`/api/admin/customers/${cust.id}/group`, { method: "PATCH", body: JSON.stringify({ group_id: selectedGroup.id }) }).then(r => r.json());
+      if (d.success) { toast({ title: `${cust.email} assigned to ${selectedGroup.name}` }); setAssignEmail(""); loadMembers(selectedGroup); qc.invalidateQueries({ queryKey: ["/api/admin/customer-groups"] }); }
+      else toast({ title: d.error || "Failed", variant: "destructive" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    setAssignLoading(false);
+  }
+
+  async function removeFromGroup(custId: number) {
+    await authFetch(`/api/admin/customers/${custId}/group`, { method: "PATCH", body: JSON.stringify({ group_id: null }) });
+    loadMembers(selectedGroup); qc.invalidateQueries({ queryKey: ["/api/admin/customer-groups"] });
+    toast({ title: "Removed from group" });
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-lg font-bold text-white">Customer Groups</h2>
+          <p className="text-xs text-white/40 mt-0.5">Tag customers as VIP, Reseller, Banned etc. and apply group discounts</p>
+        </div>
+        <Button onClick={openCreate} className="bg-gradient-to-r from-indigo-600 to-violet-600 border-0 text-white font-bold hover:opacity-90 gap-2 h-9">
+          <Plus className="w-4 h-4" /> New Group
+        </Button>
+      </div>
+
+      {showForm && (
+        <div className="rounded-2xl border border-indigo-500/25 p-5 space-y-4" style={{ background: "rgba(99,102,241,.07)" }}>
+          <p className="text-sm font-semibold text-indigo-300">{editing ? "Edit Group" : "Create New Group"}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-white/50 mb-1 block">Group Name *</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. VIP Customers"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-indigo-500/60" />
+            </div>
+            <div>
+              <label className="text-xs text-white/50 mb-1 block">Discount % (0 = none)</label>
+              <input type="number" min="0" max="100" value={discountPct} onChange={e => setDiscountPct(parseInt(e.target.value)||0)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500/60" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-white/50 mb-1.5 block">Group Color</label>
+            <div className="flex gap-2 flex-wrap">
+              {GROUP_COLORS.map(c => (
+                <button key={c} onClick={() => setColor(c)}
+                  className={`w-7 h-7 rounded-full border-2 transition-all ${color===c?"border-white scale-110":"border-transparent hover:scale-105"}`}
+                  style={{ background: c }} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-white/50 mb-1 block">Description (optional)</label>
+            <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Internal note about this group"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-indigo-500/60" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch checked={isBanned} onCheckedChange={setIsBanned} />
+            <span className="text-sm text-white/70">Banned group — suspend all members automatically</span>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={saveGroup} disabled={saving} className="bg-indigo-600 hover:bg-indigo-500 border-0 text-white font-bold gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? "Saving…" : editing ? "Save Changes" : "Create Group"}
+            </Button>
+            <Button variant="ghost" onClick={() => setShowForm(false)} className="text-white/50 hover:text-white">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
+      ) : groups.length === 0 ? (
+        <div className="text-center py-14 rounded-xl border border-white/8" style={{ background: "rgba(255,255,255,.02)" }}>
+          <Users className="w-8 h-8 text-white/10 mx-auto mb-2" />
+          <p className="text-white/30 text-sm">No groups yet — create your first one</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {groups.map((g: any) => (
+            <div key={g.id}
+              className={`rounded-xl border p-4 cursor-pointer transition-all ${selectedGroup?.id===g.id?"border-indigo-500/50 bg-indigo-600/10":"border-white/8 hover:border-white/15"}`}
+              style={selectedGroup?.id!==g.id?{background:"rgba(255,255,255,.03)"}:{}}
+              onClick={() => loadMembers(g)}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: (g.color||"#6366f1")+"22" }}>
+                  <div className="w-4 h-4 rounded-full" style={{ background: g.color||"#6366f1" }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{g.name}</p>
+                  {g.is_banned ? <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Banned</span>
+                    : g.discount_percent>0 ? <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded">{g.discount_percent}% off</span> : null}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-white/40">{g.member_count||0} member{g.member_count!==1?"s":""}</span>
+                <div className="flex gap-1">
+                  <button onClick={e => { e.stopPropagation(); openEdit(g); }} className="p-1 rounded hover:bg-white/10 text-white/30 hover:text-white transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={e => { e.stopPropagation(); deleteGroup(g.id); }} className="p-1 rounded hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selectedGroup && (
+        <div className="rounded-2xl border border-white/10 p-5 space-y-4" style={{ background: "rgba(255,255,255,.03)" }}>
+          <div className="flex items-center gap-3">
+            <div className="w-3 h-3 rounded-full" style={{ background: selectedGroup.color||"#6366f1" }} />
+            <h3 className="text-sm font-bold text-white">{selectedGroup.name} — Members</h3>
+            <span className="ml-auto text-xs text-white/30">{members.length} member{members.length!==1?"s":""}</span>
+          </div>
+          <div className="flex gap-2">
+            <input value={assignEmail} onChange={e => setAssignEmail(e.target.value)} placeholder="customer@email.com"
+              onKeyDown={e => e.key==="Enter" && assignCustomer()}
+              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-indigo-500/60" />
+            <Button onClick={assignCustomer} disabled={assignLoading||!assignEmail.trim()}
+              className="bg-indigo-600 hover:bg-indigo-500 border-0 text-white font-bold gap-1.5 shrink-0">
+              {assignLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              Assign
+            </Button>
+          </div>
+          {membersLoading ? (
+            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-indigo-400 animate-spin" /></div>
+          ) : members.length===0 ? (
+            <p className="text-white/25 text-sm text-center py-4">No members yet — assign a customer above</p>
+          ) : (
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {members.map((m: any) => (
+                <div key={m.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-white/5" style={{ background: "rgba(255,255,255,.03)" }}>
+                  <div className="w-7 h-7 rounded-full bg-indigo-600/30 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-indigo-400">{(m.name||m.email)[0].toUpperCase()}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-white truncate">{m.name||"—"}</p>
+                    <p className="text-[11px] text-white/40 truncate">{m.email}</p>
+                  </div>
+                  {m.suspended?<span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 rounded">Suspended</span>:null}
+                  <button onClick={() => removeFromGroup(m.id)} className="p-1 rounded hover:bg-red-500/10 text-white/20 hover:text-red-400 transition-colors shrink-0">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FLASH SALES TAB
+// ═══════════════════════════════════════════════════════════════
+function FlashSalesTab() {
+  const { toast } = useToast();
+  const [planId, setPlanId] = useState("");
+  const [planName, setPlanName] = useState("");
+  const [discountPct, setDiscountPct] = useState("20");
+  const [label, setLabel] = useState("");
+  const [durationHours, setDurationHours] = useState("2");
+  const [creating, setCreating] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  // Live countdown ticker
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const { data, isLoading, refetch } = useQuery<{ success: boolean; sales: any[] }>({
+    queryKey: ["/api/admin/flash-sales"],
+    queryFn: async () => {
+      const token = localStorage.getItem("admin_token");
+      const r = await fetch("/api/admin/flash-sales", { headers: { Authorization: `Bearer ${token}` } });
+      return r.json();
+    },
+    refetchInterval: 10000,
+  });
+
+  const sales = data?.sales ?? [];
+  const active = sales.filter((s: any) => new Date(s.endsAt).getTime() > now);
+  const expired = sales.filter((s: any) => new Date(s.endsAt).getTime() <= now);
+
+  function countdown(endsAt: string) {
+    const ms = new Date(endsAt).getTime() - now;
+    if (ms <= 0) return "Expired";
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${h > 0 ? `${h}h ` : ""}${m}m ${s}s`;
+  }
+
+  async function create() {
+    if (!planId.trim() || !discountPct || !durationHours) {
+      toast({ title: "Plan ID, discount %, and duration are required", variant: "destructive" }); return;
+    }
+    setCreating(true);
+    try {
+      const token = localStorage.getItem("admin_token");
+      const r = await fetch("/api/admin/flash-sales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ planId: planId.trim(), planName: planName.trim() || planId.trim(), discountPct: parseInt(discountPct), label: label.trim(), durationHours: parseFloat(durationHours) }),
+      });
+      const d = await r.json();
+      if (!d.success) { toast({ title: d.error || "Failed to create", variant: "destructive" }); return; }
+      toast({ title: `Flash sale created! Ends in ${durationHours}h` });
+      setPlanId(""); setPlanName(""); setLabel(""); setDiscountPct("20"); setDurationHours("2");
+      refetch();
+    } finally { setCreating(false); }
+  }
+
+  async function deleteSale(id: string) {
+    const token = localStorage.getItem("admin_token");
+    await fetch(`/api/admin/flash-sales/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    toast({ title: "Flash sale removed" });
+    refetch();
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg">
+          <Zap className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-white">Flash Sales</h2>
+          <p className="text-sm text-white/40">Time-limited discounts that countdown live on the store</p>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">{active.length} active</span>
+          {expired.length > 0 && <span className="text-xs px-2 py-1 rounded-full bg-white/5 text-white/30 border border-white/10">{expired.length} expired</span>}
+        </div>
+      </div>
+
+      {/* Create form */}
+      <div className="glass-card rounded-2xl p-5 border border-white/8">
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Plus className="w-4 h-4 text-amber-400" /> Create Flash Sale
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs text-white/40 block mb-1">Plan ID <span className="text-red-400">*</span></label>
+            <input
+              className="w-full glass border border-white/10 rounded-xl px-3 py-2 text-sm text-white bg-white/5 focus:outline-none focus:border-amber-500/50"
+              placeholder="e.g. netflix-4k"
+              value={planId}
+              onChange={e => setPlanId(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-white/40 block mb-1">Plan Display Name</label>
+            <input
+              className="w-full glass border border-white/10 rounded-xl px-3 py-2 text-sm text-white bg-white/5 focus:outline-none focus:border-amber-500/50"
+              placeholder="e.g. Netflix 4K"
+              value={planName}
+              onChange={e => setPlanName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-white/40 block mb-1">Discount % <span className="text-red-400">*</span></label>
+            <input
+              type="number" min={1} max={99}
+              className="w-full glass border border-white/10 rounded-xl px-3 py-2 text-sm text-white bg-white/5 focus:outline-none focus:border-amber-500/50"
+              placeholder="e.g. 30"
+              value={discountPct}
+              onChange={e => setDiscountPct(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-white/40 block mb-1">Duration (hours) <span className="text-red-400">*</span></label>
+            <input
+              type="number" min={0.5} step={0.5}
+              className="w-full glass border border-white/10 rounded-xl px-3 py-2 text-sm text-white bg-white/5 focus:outline-none focus:border-amber-500/50"
+              placeholder="e.g. 2"
+              value={durationHours}
+              onChange={e => setDurationHours(e.target.value)}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-xs text-white/40 block mb-1">Banner Label (optional)</label>
+            <input
+              className="w-full glass border border-white/10 rounded-xl px-3 py-2 text-sm text-white bg-white/5 focus:outline-none focus:border-amber-500/50"
+              placeholder="e.g. 🔥 Weekend Flash — 30% Off!"
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <Button
+            onClick={create}
+            disabled={creating}
+            className="bg-gradient-to-r from-amber-500 to-orange-600 text-white border-0 shadow-lg hover:opacity-90"
+          >
+            <Zap className="w-4 h-4 mr-1.5" />
+            {creating ? "Creating..." : "Launch Flash Sale"}
+          </Button>
+          <p className="text-xs text-white/30">The countdown timer will appear live on your storefront immediately.</p>
+        </div>
+      </div>
+
+      {/* Active sales */}
+      {isLoading ? (
+        <div className="text-center py-10 text-white/30 text-sm">Loading flash sales...</div>
+      ) : active.length === 0 && expired.length === 0 ? (
+        <div className="glass-card rounded-2xl p-10 text-center border border-white/8">
+          <Zap className="w-12 h-12 text-amber-400/30 mx-auto mb-3" />
+          <p className="text-white/40 text-sm">No flash sales yet. Create one above to show a live countdown on your store.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {active.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-widest mb-2">Active</h3>
+              {active.map((s: any) => (
+                <div key={s.id} className="glass-card rounded-xl p-4 border border-amber-500/20 bg-amber-500/5 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0">
+                    <Zap className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-white text-sm truncate">{s.label}</p>
+                    <p className="text-xs text-white/40">{s.planName} · {s.discountPct}% off</p>
+                  </div>
+                  <div className="text-center shrink-0">
+                    <p className="text-lg font-bold text-amber-400 tabular-nums">{countdown(s.endsAt)}</p>
+                    <p className="text-[10px] text-white/30">remaining</p>
+                  </div>
+                  <button
+                    onClick={() => deleteSale(s.id)}
+                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/20 hover:text-red-400 transition-colors shrink-0"
+                    title="End flash sale"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {expired.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-white/20 uppercase tracking-widest mb-2">Expired</h3>
+              {expired.map((s: any) => (
+                <div key={s.id} className="glass-card rounded-xl p-4 border border-white/8 opacity-50 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
+                    <Zap className="w-5 h-5 text-white/30" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-white/50 text-sm truncate">{s.label}</p>
+                    <p className="text-xs text-white/30">{s.planName} · {s.discountPct}% off · ended {new Date(s.endsAt).toLocaleDateString()}</p>
+                  </div>
+                  <button
+                    onClick={() => deleteSale(s.id)}
+                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/20 hover:text-red-400 transition-colors shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Bot Store Admin Tab ──────────────────────────────────────────────────────
+function BotStoreAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({
+    name: "", description: "", repoUrl: "", imageUrl: "", price: 70,
+    category: "Multi-Purpose", features: "", requiresSessionId: true, requiresDbUrl: false,
+  });
+
+  const { data, isLoading } = useQuery<{ success: boolean; bots: any[] }>({
+    queryKey: ["/api/admin/bots"],
+    queryFn: () => fetch("/api/admin/bots", { headers: authHeaders() as any }).then((r) => r.json()),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const url = editing ? `/api/admin/bots/${editing.id}` : "/api/admin/bots";
+      const method = editing ? "PUT" : "POST";
+      return fetch(url, { method, headers: { ...authHeaders() as any, "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: editing ? "Bot updated" : "Bot added" });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/bots"] });
+        setShowForm(false); setEditing(null);
+        setForm({ name: "", description: "", repoUrl: "", imageUrl: "", price: 70, category: "Multi-Purpose", features: "", requiresSessionId: true, requiresDbUrl: false });
+      } else { toast({ title: "Error", description: data.error, variant: "destructive" }); }
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => fetch(`/api/admin/bots/${id}`, { method: "DELETE", headers: authHeaders() as any }).then((r) => r.json()),
+    onSuccess: () => { toast({ title: "Bot deleted" }); queryClient.invalidateQueries({ queryKey: ["/api/admin/bots"] }); },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, active }: { id: number; active: boolean }) =>
+      fetch(`/api/admin/bots/${id}`, { method: "PUT", headers: { ...authHeaders() as any, "Content-Type": "application/json" }, body: JSON.stringify({ active }) }).then((r) => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/admin/bots"] }),
+  });
+
+  function openEdit(bot: any) {
+    setEditing(bot);
+    setForm({ name: bot.name, description: bot.description, repoUrl: bot.repoUrl, imageUrl: bot.imageUrl || "", price: bot.price, category: bot.category || "Multi-Purpose", features: (bot.features || []).join(", "), requiresSessionId: bot.requiresSessionId, requiresDbUrl: bot.requiresDbUrl });
+    setShowForm(true);
+  }
+
+  function handleSave() {
+    const payload = { ...form, features: form.features.split(",").map((s: string) => s.trim()).filter(Boolean) };
+    saveMutation.mutate(payload);
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-white">Bot Store Management</h2>
+        <Button onClick={() => { setEditing(null); setShowForm(true); }} className="bg-green-600 hover:bg-green-700 text-white text-sm">
+          <Plus className="w-4 h-4 mr-1" /> Add Bot
+        </Button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-4">
+          <h3 className="font-semibold text-white">{editing ? "Edit Bot" : "New Bot"}</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><label className="text-xs text-gray-400 mb-1 block">Name *</label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+            <div><label className="text-xs text-gray-400 mb-1 block">Price (KES) *</label>
+              <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: parseInt(e.target.value) || 70 })} className="bg-white/5 border-white/10 text-white" /></div>
+          </div>
+          <div><label className="text-xs text-gray-400 mb-1 block">Description *</label>
+            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+          <div><label className="text-xs text-gray-400 mb-1 block">GitHub Repo URL *</label>
+            <Input value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} placeholder="https://github.com/..." className="bg-white/5 border-white/10 text-white" /></div>
+          <div><label className="text-xs text-gray-400 mb-1 block">Image URL</label>
+            <Input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+          <div><label className="text-xs text-gray-400 mb-1 block">Category</label>
+            <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Multi-Purpose, AI, etc." className="bg-white/5 border-white/10 text-white" /></div>
+          <div><label className="text-xs text-gray-400 mb-1 block">Features (comma-separated)</label>
+            <Input value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder="Auto-reply, Group tools, Media download..." className="bg-white/5 border-white/10 text-white" /></div>
+          <div className="flex gap-6">
+            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+              <Switch checked={form.requiresSessionId} onCheckedChange={(v) => setForm({ ...form, requiresSessionId: v })} />
+              Requires Session ID
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+              <Switch checked={form.requiresDbUrl} onCheckedChange={(v) => setForm({ ...form, requiresDbUrl: v })} />
+              Requires DB URL
+            </label>
+          </div>
+          <div className="flex gap-3">
+            <Button onClick={handleSave} disabled={saveMutation.isPending} className="bg-green-600 hover:bg-green-700 text-white">
+              {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-1" />} Save
+            </Button>
+            <Button variant="outline" onClick={() => { setShowForm(false); setEditing(null); }} className="border-white/10 text-gray-400">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="text-center py-10"><Loader2 className="w-6 h-6 animate-spin text-green-400 mx-auto" /></div>
+      ) : (
+        <div className="bg-white/[0.03] border border-white/5 rounded-2xl overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-white/5">
+                <TableHead className="text-gray-400">Bot</TableHead>
+                <TableHead className="text-gray-400">Category</TableHead>
+                <TableHead className="text-gray-400">Price</TableHead>
+                <TableHead className="text-gray-400">Active</TableHead>
+                <TableHead className="text-gray-400">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(data?.bots || []).map((bot) => (
+                <TableRow key={bot.id} className="border-white/5 hover:bg-white/[0.02]">
+                  <TableCell>
+                    <div>
+                      <p className="text-white font-medium text-sm">{bot.name}</p>
+                      <p className="text-gray-500 text-xs truncate max-w-xs">{bot.description}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell><Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-xs">{bot.category}</Badge></TableCell>
+                  <TableCell className="text-white font-semibold">KES {bot.price}</TableCell>
+                  <TableCell>
+                    <Switch checked={!!bot.active} onCheckedChange={(v) => toggleMutation.mutate({ id: bot.id, active: v })} />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openEdit(bot)} className="border-white/10 text-gray-400 hover:text-white h-7 px-2"><Edit2 className="w-3 h-3" /></Button>
+                      <Button size="sm" variant="outline" onClick={() => deleteMutation.mutate(bot.id)} className="border-red-500/20 text-red-400 hover:text-red-300 h-7 px-2"><Trash2 className="w-3 h-3" /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!(data?.bots?.length) && (
+                <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-8">No bots yet. Add your first bot above.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Bot Orders Admin Tab ─────────────────────────────────────────────────────
+function VpsServerSelector({ value, onChange }) {
+  const { data } = useQuery({
+    queryKey: ["/api/admin/vps"],
+    queryFn: () => fetch("/api/admin/vps", { headers: authHeaders() }).then(r => r.json()),
+  });
+  const servers = data?.servers || [];
+  return (
+    <div>
+      <label className="text-xs text-white/50 mb-1.5 block">Select VPS Server</label>
+      {servers.length === 0 ? (
+        <p className="text-xs text-amber-400 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">No VPS servers added. Go to VPS Manager tab first.</p>
+      ) : (
+        <div className="grid gap-2">
+          {servers.map((s) => (
+            <button key={s.id} onClick={() => onChange(s.id)}
+              className={`w-full text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${value === s.id ? "bg-violet-600/20 border-violet-500/40 text-violet-200" : "bg-white/[0.03] border-white/8 text-white/70 hover:bg-white/5"}`}>
+              <span className="font-medium">{s.label}</span>
+              <span className="text-xs text-white/40 ml-2">{s.username}@{s.host}:{s.port}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BotOrdersAdminTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [notes, setNotes] = useState("");
+  const [newStatus, setNewStatus] = useState("");
+  const [vpsStatus, setVpsStatus] = useState<any>(null);
+  const [vpsLoading, setVpsLoading] = useState(false);
+  const [configVars, setConfigVars] = useState<Record<string, string>>({});
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configEditing, setConfigEditing] = useState(false);
+  const [configDraft, setConfigDraft] = useState<{ key: string; value: string }[]>([]);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [vpsDeployOpen, setVpsDeployOpen] = useState(false);
+  const [vpsDeployVpsId, setVpsDeployVpsId] = useState("");
+  const [vpsDeployLoading, setVpsDeployLoading] = useState(false);
+  const [vpsDeployLog, setVpsDeployLog] = useState("");
+  const [vpsDeployStatus, setVpsDeployStatus] = useState<"idle"|"success"|"failed">("idle");
+const [bulkLoading, setBulkLoading] = useState<string | null>(null);
+const [bulkResult, setBulkResult] = useState<string | null>(null);
+const [bulkVpsId, setBulkVpsId] = useState("");
+const [deployStreamLog, setDeployStreamLog] = useState<string[]>([]);
+const [deployStreaming, setDeployStreaming] = useState(false);
+const [deployStreamStatus, setDeployStreamStatus] = useState<"idle"|"running"|"success"|"failed">("idle");
+const deployLogRef = useRef<HTMLDivElement>(null);
+const [botLogs, setBotLogs] = useState<string[]>([]);
+const [botLogsLoading, setBotLogsLoading] = useState(false);
+const [botLogsTs, setBotLogsTs] = useState<Date | null>(null);
+const [botLogsAuto, setBotLogsAuto] = useState(true);
+const botLogsRef = useRef<HTMLDivElement>(null);
+
+  const { data, isLoading } = useQuery<{ success: boolean; orders: any[] }>({
+    queryKey: ["/api/admin/bot-orders"],
+    queryFn: () => fetch("/api/admin/bot-orders", { headers: authHeaders() as any }).then((r) => r.json()),
+    refetchInterval: (query) => {
+      const orders = (query.state.data as any)?.orders ?? [];
+      return orders.some((o: any) => o.status === "deploying") ? 3000 : 30000;
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, status, deploymentNotes, redeploy }: any) =>
+      fetch(`/api/admin/bot-orders/${id}/status`, {
+        method: "PATCH",
+        headers: { ...authHeaders() as any, "Content-Type": "application/json" },
+        body: JSON.stringify({ status, deploymentNotes, redeploy }),
+      }).then((r) => r.json()),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: "Order updated" });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/bot-orders"] });
+        setSelectedOrder((o: any) => o ? { ...o, status: newStatus, deploymentNotes: notes } : null);
+      } else { toast({ title: "Error", description: data.error, variant: "destructive" }); }
+    },
+  });
+
+  const vpsAction = async (orderId: number, action: string, body?: any) => {
+    setActionLoading(action);
+    try {
+      const method = body ? "PATCH" : "POST";
+      const res = await fetch(`/api/admin/bot-orders/${orderId}/vps/${action}`, {
+        method,
+        headers: { ...authHeaders() as any, "Content-Type": "application/json" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const data = await res.json();
+      if (data.success !== false) {
+        toast({ title: data.message || "Done" });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/bot-orders"] });
+        loadVpsStatus(selectedOrder);
+      } else {
+        toast({ title: "VPS Error", description: data.error, variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const doBulkAction = async (actionType: string) => {
+    setBulkLoading(actionType); setBulkResult(null);
+    try {
+      const url = actionType === "restart-all" ? "/api/admin/bots/bulk/restart-all"
+        : actionType === "suspend-expired" ? "/api/admin/bots/bulk/suspend-expired"
+        : actionType === "deploy-pending" ? "/api/admin/bots/bulk/deploy-pending"
+        : `/api/admin/bots/bulk/restart-vps/${bulkVpsId}`;
+      if (actionType === "restart-vps" && !bulkVpsId) { setBulkResult("Enter a VPS ID first"); setBulkLoading(null); return; }
+      const r = await fetch(url, { method: "POST", headers: authHeaders() as any });
+      const d = await r.json();
+      if (d.success) {
+        const msg = actionType === "restart-all" ? `Restarted ${d.restarted}/${d.total} bots`
+          : actionType === "suspend-expired" ? `Suspended ${d.suspended} expired bots`
+          : actionType === "deploy-pending" ? (d.message || `Deploying ${d.count} pending bots…`)
+          : `Restarted ${d.restarted}/${d.total} bots on VPS`;
+        setBulkResult(msg);
+        toast({ title: msg });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/bot-orders"] });
+      } else { setBulkResult("Error: " + (d.error || "Unknown")); }
+    } catch (e: any) { setBulkResult("Error: " + e.message); }
+    finally { setBulkLoading(null); }
+  };
+
+  async function deployViaVps() {
+    if (!selectedOrder || !vpsDeployVpsId) return;
+    setVpsDeployLoading(true);
+    setVpsDeployLog("");
+    setVpsDeployStatus("idle");
+    try {
+      const res = await fetch(`/api/admin/bot-orders/${selectedOrder.id}/deploy-vps`, {
+        method: "POST",
+        headers: { ...authHeaders() as any, "Content-Type": "application/json" },
+        body: JSON.stringify({ vpsId: vpsDeployVpsId }),
+      });
+      const data = await res.json();
+      setVpsDeployLog(data.log || data.error || "No output");
+      setVpsDeployStatus(data.success ? "success" : "failed");
+      if (data.success) {
+        toast({ title: "Bot deployed!", description: "Bot is running on your VPS" });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/bot-orders"] });
+        setSelectedOrder((o: any) => o ? { ...o, status: "deployed" } : null);
+      } else {
+        toast({ title: "Deploy failed", description: data.error || "Check the log below", variant: "destructive" });
+      }
+    } catch (e: any) {
+      setVpsDeployLog(e.message);
+      setVpsDeployStatus("failed");
+    } finally {
+      setVpsDeployLoading(false);
+    }
+  }
+
+  const patchOrderInCache = (id: number, patch: any) => {
+    queryClient.setQueryData(["/api/admin/bot-orders"], (old: any) => {
+      if (!old?.orders) return old;
+      return { ...old, orders: old.orders.map((o: any) => o.id === id ? { ...o, ...patch } : o) };
+    });
+  };
+
+  async function deployWithStream(orderId: number, vpsId?: string) {
+    setDeployStreamLog([]);
+    setDeployStreaming(true);
+    setDeployStreamStatus("running");
+    // Optimistically mark as deploying in the list immediately
+    patchOrderInCache(orderId, { status: "deploying" });
+    setSelectedOrder((o: any) => o ? { ...o, status: "deploying" } : null);
+    try {
+      const res = await fetch(`/api/admin/bot-orders/${orderId}/deploy-stream`, {
+        method: "POST",
+        headers: { ...authHeaders() as any, "Content-Type": "application/json" },
+        body: vpsId ? JSON.stringify({ vpsId }) : undefined,
+      });
+      if (!res.body) throw new Error("No response stream");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line === "__DONE__:success") {
+            setDeployStreamStatus("success");
+            patchOrderInCache(orderId, { status: "deployed" });
+            setSelectedOrder((o: any) => o ? { ...o, status: "deployed" } : null);
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/bot-orders"] });
+          } else if (line === "__DONE__:failed") {
+            setDeployStreamStatus("failed");
+            patchOrderInCache(orderId, { status: "deploy_failed" });
+            setSelectedOrder((o: any) => o ? { ...o, status: "deploy_failed" } : null);
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/bot-orders"] });
+          } else {
+            setDeployStreamLog(prev => { const next = [...prev, line]; setTimeout(() => { deployLogRef.current?.scrollTo({ top: 99999, behavior: "smooth" }); }, 30); return next; });
+          }
+        }
+      }
+    } catch (e: any) {
+      setDeployStreamLog(prev => [...prev, "❌ " + e.message]);
+      setDeployStreamStatus("failed");
+      patchOrderInCache(orderId, { status: "deploy_failed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/bot-orders"] });
+    } finally {
+      setDeployStreaming(false);
+    }
+  }
+
+  const loadVpsStatus = async (order: any) => {
+    if (!order?.id) return;
+    setVpsLoading(true);
+    try {
+      const r = await fetch(`/api/admin/bot-orders/${order.id}/vps-status`, { headers: authHeaders() as any });
+      const d = await r.json();
+      setVpsStatus(d);
+    } catch { setVpsStatus(null); }
+    setVpsLoading(false);
+  };
+
+  const loadConfigVars = async (order: any) => {
+    if (!order.pm2Name) return;
+    setConfigLoading(true);
+    try {
+      const r = await fetch(`/api/admin/bot-orders/${order.id}/vps/config-vars`, { headers: authHeaders() as any });
+      const d = await r.json();
+      if (d.success && d.configVars) {
+        setConfigVars(d.configVars);
+        setConfigDraft(Object.entries(d.configVars).map(([key, value]) => ({ key, value: value as string })));
+      }
+    } catch {}
+    setConfigLoading(false);
+    setConfigEditing(true);
+  };
+
+  const saveConfigVars = async (order: any) => {
+    const vars: Record<string, string> = {};
+    configDraft.forEach(({ key, value }) => { if (key.trim()) vars[key.trim()] = value; });
+    setActionLoading("config-save");
+    try {
+      const r = await fetch(`/api/admin/bot-orders/${order.id}/vps/config-vars`, {
+        method: "PATCH",
+        headers: { ...authHeaders() as any, "Content-Type": "application/json" },
+        body: JSON.stringify({ configVars: vars }),
+      });
+      const d = await r.json();
+      if (d.success) { toast({ title: "Config vars updated — bot will restart" }); setConfigEditing(false); }
+      else toast({ title: "Error", description: d.error, variant: "destructive" });
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    setActionLoading(null);
+  };
+
+  const fetchBotLogs = async (order: any) => {
+    if (!order?.id) return;
+    setBotLogsLoading(true);
+    try {
+      const r = await fetch(`/api/admin/bot-orders/${order.id}/live-logs`, { headers: authHeaders() as any });
+      const d = await r.json();
+      if (d.success) {
+        setBotLogs(d.logs || []);
+        setBotLogsTs(new Date());
+        setTimeout(() => { botLogsRef.current?.scrollTo({ top: 99999, behavior: "smooth" }); }, 50);
+      } else {
+        setBotLogs([`❌ ${d.error || "Failed to fetch logs"}`]);
+      }
+    } catch (e: any) { setBotLogs([`❌ ${e.message}`]); }
+    setBotLogsLoading(false);
+  };
+
+  // Auto-refresh bot logs every 5s when bot is deployed
+  React.useEffect(() => {
+    if (!selectedOrder || !["deployed", "stopped"].includes(selectedOrder.status)) return;
+    if (!botLogsAuto) return;
+    fetchBotLogs(selectedOrder);
+    const iv = setInterval(() => fetchBotLogs(selectedOrder), 5000);
+    return () => clearInterval(iv);
+  }, [selectedOrder?.id, botLogsAuto, selectedOrder?.status]);
+
+  const selectOrder = (order: any) => {
+    setSelectedOrder(order);
+    setNewStatus(order.status);
+    setNotes(order.deploymentNotes || "");
+    setVpsStatus(null);
+    setConfigEditing(false);
+    setDeployStreaming(false);
+    setBotLogs([]);
+    setBotLogsTs(null);
+    // Restore persisted deployment log from DB if available
+    if (order.deploymentLog) {
+      const lines = order.deploymentLog.split("\n").filter((l: string) => !l.startsWith("__DONE__"));
+      setDeployStreamLog(lines);
+      setDeployStreamStatus(
+        order.status === "deployed" ? "success"
+        : order.status === "deploy_failed" ? "failed"
+        : "idle"
+      );
+    } else {
+      setDeployStreamLog([]);
+      setDeployStreamStatus("idle");
+    }
+    loadVpsStatus(order);
+  };
+
+  const STATUS_BADGES: Record<string, string> = {
+    pending:       "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+    paid:          "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    deploying:     "bg-purple-500/10 text-purple-400 border-purple-500/20",
+    deployed:      "bg-green-500/10 text-green-400 border-green-500/20",
+    stopped:       "bg-orange-500/10 text-orange-400 border-orange-500/20",
+    suspended:     "bg-red-500/10 text-red-400 border-red-500/20",
+    failed:        "bg-red-500/10 text-red-400 border-red-500/20",
+    deploy_failed: "bg-red-500/10 text-red-400 border-red-500/20",
+  };
+
+  const allOrders = data?.orders || [];
+  const filtered = statusFilter === "all" ? allOrders : allOrders.filter((o: any) => o.status === statusFilter);
+  const isDeployed = selectedOrder && (selectedOrder.pm2Name || selectedOrder.pm2_name || selectedOrder.status === "deployed");
+
+  return (
+    <div className="space-y-5">
+      {/* VPS Deploy Modal */}
+      {vpsDeployOpen && selectedOrder && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.8)" }} onClick={(e) => { if (e.target === e.currentTarget) setVpsDeployOpen(false); }}>
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 p-6 space-y-4" style={{ background: "#0f0e1c", boxShadow: "0 25px 50px rgba(0,0,0,.5)" }}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-white text-base flex items-center gap-2">
+                <Server className="w-4 h-4 text-violet-400" />Deploy via VPS — {selectedOrder.botName}
+              </h3>
+              <button onClick={() => setVpsDeployOpen(false)} className="text-white/30 hover:text-white">✕</button>
+            </div>
+            <p className="text-xs text-white/50">SSH into your VPS, clone the bot repo, install dependencies automatically, then start the bot.</p>
+            <VpsServerSelector value={vpsDeployVpsId} onChange={setVpsDeployVpsId} />
+            {vpsDeployLog && (
+              <div className={`rounded-xl p-3 font-mono text-xs whitespace-pre-wrap overflow-auto max-h-56 border ${vpsDeployStatus === "success" ? "bg-emerald-900/30 text-emerald-300 border-emerald-500/20" : vpsDeployStatus === "failed" ? "bg-red-900/30 text-red-300 border-red-500/20" : "bg-white/5 text-white/70 border-white/10"}`}>
+                {vpsDeployLog}
+              </div>
+            )}
+            <div className="flex gap-2 justify-end pt-1">
+              <Button size="sm" variant="outline" onClick={() => setVpsDeployOpen(false)} className="border-white/10 text-white/60 h-8">Cancel</Button>
+              <Button size="sm" onClick={() => { setVpsDeployOpen(false); deployWithStream(selectedOrder.id, vpsDeployVpsId); }} disabled={!vpsDeployVpsId || vpsDeployLoading}
+                className="bg-violet-600 hover:bg-violet-700 text-white h-8 px-4">
+                <Zap className="w-3 h-3 mr-1.5" />Deploy Now
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header + filters */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-xl font-bold text-white">Bot Orders</h2>
+        <div className="flex gap-2 flex-wrap text-xs">
+          {["all","pending","paid","deploying","deployed","stopped","suspended","failed"].map((s) => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-full font-medium transition-all capitalize ${statusFilter === s ? "bg-green-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`}
+            >{s}</button>
+          ))}
+        </div>
+      </div>
+
+              {/* ── Bulk Actions Panel ─────────────────────────────────────────────── */}
+              <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xs font-bold text-white/60 uppercase tracking-wide">Bulk Actions</span>
+                  {bulkResult && <span className={`text-xs px-2 py-0.5 rounded ${bulkResult.startsWith("Error") ? "bg-red-500/20 text-red-300" : "bg-emerald-500/20 text-emerald-300"}`}>{bulkResult}</span>}
+                </div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <button onClick={() => doBulkAction("deploy-pending")} disabled={!!bulkLoading} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 font-medium disabled:opacity-50 flex items-center gap-1.5">
+                    {bulkLoading === "deploy-pending" ? <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block" /> : "🚀"} Deploy Pending Bots
+                  </button>
+                  <button onClick={() => doBulkAction("suspend-expired")} disabled={!!bulkLoading} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 font-medium disabled:opacity-50 flex items-center gap-1.5">
+                    {bulkLoading === "suspend-expired" ? <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block" /> : "⏸"} Suspend All Expired
+                  </button>
+                  <button onClick={() => doBulkAction("restart-all")} disabled={!!bulkLoading} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 font-medium disabled:opacity-50 flex items-center gap-1.5">
+                    {bulkLoading === "restart-all" ? <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block" /> : "↻"} Restart All Bots
+                  </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input placeholder="VPS ID" value={bulkVpsId} onChange={e => setBulkVpsId(e.target.value)} className="text-xs bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-white/70 w-36 focus:outline-none focus:border-indigo-500/50" />
+                    <button onClick={() => doBulkAction("restart-vps")} disabled={!!bulkLoading || !bulkVpsId} className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 font-medium disabled:opacity-50 flex items-center gap-1.5">
+                      {bulkLoading === "restart-vps" ? <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block" /> : "🔄"} Restart VPS Bots
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+
+      {/* Management panel */}
+      {selectedOrder && (
+        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-5">
+          {/* Title row */}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="font-semibold text-white text-base">{selectedOrder.botName}</h3>
+              <p className="text-xs text-gray-500 font-mono mt-0.5">{selectedOrder.reference}</p>
+              {selectedOrder.deployUrl && (
+                <a href={selectedOrder.deployUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-emerald-400 hover:underline mt-1 inline-block">
+                  {selectedOrder.deployUrl}
+                </a>
+              )}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setSelectedOrder(null)} className="border-white/10 text-gray-400 h-7 px-2 shrink-0">
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+
+          {/* Customer info grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            <div><p className="text-xs text-gray-500">Customer</p><p className="text-gray-200">{selectedOrder.customerName}</p></div>
+            <div><p className="text-xs text-gray-500">Email</p><p className="text-gray-200 truncate">{selectedOrder.customerEmail}</p></div>
+            <div><p className="text-xs text-gray-500">Phone</p><p className="text-gray-200">{selectedOrder.customerPhone}</p></div>
+            <div><p className="text-xs text-gray-500">Amount</p><p className="text-gray-200 font-bold">KES {selectedOrder.amount}</p></div>
+            <div><p className="text-xs text-gray-500">Mode</p><p className="text-gray-200 capitalize">{selectedOrder.mode}</p></div>
+            <div><p className="text-xs text-gray-500">Timezone</p><p className="text-gray-200">{selectedOrder.timezone}</p></div>
+            {selectedOrder.sessionId && (
+              <div className="col-span-2"><p className="text-xs text-gray-500">Session ID</p>
+                <p className="text-gray-200 font-mono text-xs break-all">{selectedOrder.sessionId}</p></div>
+            )}
+            {selectedOrder.pm2Name && (
+              <div><p className="text-xs text-gray-500">PM2 Name</p><p className="text-emerald-400 text-xs">{selectedOrder.pm2Name || selectedOrder.pm2_name}</p></div>
+            )}
+            {selectedOrder.vpsLabel && (
+              <div><p className="text-xs text-gray-500">VPS Server</p><p className="text-sky-300 text-xs font-medium">{selectedOrder.vpsLabel}</p></div>
+            )}
+            {selectedOrder.deployedAt && (
+              <div><p className="text-xs text-gray-500">Last Deployed</p><p className="text-gray-200 text-xs">{new Date(selectedOrder.deployedAt).toLocaleString()}</p></div>
+            )}
+          </div>
+
+          {/* ── Live Deploy Terminal ───────────────────────────────── */}
+          <div className="rounded-2xl border border-violet-500/20 bg-black/30 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
+                <span className="text-xs text-white/40 ml-1 font-mono">deployment — {selectedOrder.reference}</span>
+              </div>
+              <button
+                onClick={() => deployWithStream(selectedOrder.id)}
+                disabled={deployStreaming}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  deployStreaming ? "bg-violet-800/50 text-violet-400 cursor-not-allowed"
+                  : deployStreamStatus === "success" ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  : deployStreamStatus === "failed" ? "bg-red-600 hover:bg-red-500 text-white"
+                  : "bg-violet-600 hover:bg-violet-500 text-white"
+                }`}
+              >
+                {deployStreaming
+                  ? <><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />Deploying...</>
+                  : deployStreamStatus === "success" ? <><Zap className="w-3 h-3" />Redeploy</>
+                  : deployStreamStatus === "failed" ? <><Zap className="w-3 h-3" />Retry Deploy</>
+                  : <><Zap className="w-3 h-3" />Deploy to VPS</>}
+              </button>
+            </div>
+            <div ref={deployLogRef} className="font-mono text-xs p-4 h-52 overflow-y-auto space-y-0.5 scroll-smooth">
+              {deployStreamLog.length === 0 && !deployStreaming ? (
+                <div className="space-y-1">
+                  {selectedOrder?.deploymentNotes ? (
+                    <>
+                      <div className={`leading-relaxed mb-2 ${selectedOrder.status === 'deployed' ? 'text-emerald-400' : selectedOrder.status === 'deploy_failed' ? 'text-red-400' : 'text-amber-300'}`}>
+                        {selectedOrder.status === 'deployed' ? '✅ Deployed successfully' : selectedOrder.status === 'deploy_failed' ? '❌ Deployment failed' : `ℹ️ Status: ${selectedOrder.status}`}
+                      </div>
+                      {selectedOrder.deploymentNotes.split('\n').map((line: string, i: number) => (
+                        <div key={i} className={`leading-relaxed whitespace-pre-wrap ${line.startsWith('❌') || line.includes('FAILED') || line.includes('failed') ? 'text-red-400' : line.startsWith('✅') || line.includes('success') ? 'text-emerald-400' : 'text-white/50'}`}>{line || '\u00a0'}</div>
+                      ))}
+                      {selectedOrder.pm2Name && <div className="mt-2 text-emerald-400/60">PM2: {selectedOrder.pm2Name}</div>}
+                      {selectedOrder.deployedAt && <div className="text-white/30">Deployed: {new Date(selectedOrder.deployedAt).toLocaleString()}</div>}
+                      <div className="mt-2 text-white/20 border-t border-white/5 pt-2">Click "Deploy to VPS" to redeploy manually.</div>
+                    </>
+                  ) : (
+                    <span className="text-white/20">Click "Deploy to VPS" to start — VPS is auto-selected, logs stream here live.</span>
+                  )}
+                </div>
+              ) : (
+                deployStreamLog.map((line, i) => (
+                  <div key={i} className={`leading-relaxed whitespace-pre ${
+                    line.startsWith("✅") ? "text-emerald-400 font-bold"
+                    : line.startsWith("   ✓") ? "text-emerald-400"
+                    : line.startsWith("❌") || line.startsWith("   ⚠") ? "text-red-400"
+                    : line.startsWith("🎯") || line.startsWith("📦") || line.startsWith("📋") ? "text-sky-300"
+                    : line.startsWith("⚡") || line.startsWith("🔍") || line.startsWith("📂") || line.startsWith("📝") || line.startsWith("🚀") ? "text-amber-300"
+                    : line.startsWith("─") ? "text-white/20"
+                    : "text-white/65"
+                  }`}>{line || "\u00a0"}</div>
+                ))
+              )}
+              {deployStreaming && <div className="text-violet-400 animate-pulse mt-1">▋</div>}
+            </div>
+          </div>
+
+          {/* Heroku live status */}
+          {isDeployed && (
+            <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Live Status</p>
+                <button onClick={() => loadHerokuStatus(selectedOrder)} className="text-xs text-gray-500 hover:text-white flex items-center gap-1">
+                  <RefreshCw className={`w-3 h-3 ${vpsLoading ? "animate-spin" : ""}`} /> Refresh
+                </button>
+              </div>
+              {vpsLoading ? (
+                <div className="flex items-center gap-2 text-xs text-gray-500"><Loader2 className="w-3 h-3 animate-spin" /> Loading status...</div>
+              ) : vpsStatus?.deployed ? (
+                <div className="flex flex-wrap gap-4 text-xs">
+                  {vpsStatus.pm2Name && (
+                    <div><span className="text-gray-500">PM2: </span><span className="text-indigo-300 font-mono">{vpsStatus.pm2Name}</span></div>
+                  )}
+                  <div><span className="text-gray-500">Status: </span>
+                    <span className={vpsStatus.pm2Status === "online" ? "text-green-400" : vpsStatus.pm2Status === "stopped" ? "text-orange-400" : "text-yellow-400"}>
+                      {vpsStatus.pm2Status ?? "unknown"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500">{vpsStatus?.message || "Status unavailable"}</p>
+              )}
+            </div>
+          )}
+
+          {/* Live Bot Logs */}
+          {isDeployed && (
+            <div className="rounded-xl border border-white/5 overflow-hidden" style={{ background: "#080810" }}>
+              <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <p className="text-xs font-medium text-white/70 uppercase tracking-wide">Live Bot Logs</p>
+                  {botLogsTs && (
+                    <span className="text-[10px] text-white/25">· {botLogsTs.toLocaleTimeString()}</span>
+                  )}
+                  {botLogsLoading && <span className="text-[10px] text-white/30 animate-pulse">fetching...</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setBotLogsAuto(a => !a)}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border transition-all ${botLogsAuto ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-white/5 text-white/30 border-white/10"}`}
+                  >{botLogsAuto ? "● Auto" : "○ Paused"}</button>
+                  <button onClick={() => fetchBotLogs(selectedOrder)} className="text-white/25 hover:text-white/60 transition-colors">
+                    <RefreshCw className={`w-3 h-3 ${botLogsLoading ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+              </div>
+              <div ref={botLogsRef} className="font-mono text-[11px] leading-relaxed overflow-auto p-3 text-green-300/80 whitespace-pre-wrap" style={{ maxHeight: "320px", minHeight: "120px" }}>
+                {botLogs.length === 0 ? (
+                  <span className="text-white/20">{botLogsLoading ? "Loading logs..." : "No logs yet — logs will appear here when the bot runs."}</span>
+                ) : (
+                  botLogs.map((line, i) => {
+                    const isError = /error|fail|crash|exception|logout|disconnect/i.test(line);
+                    const isWarn = /warn|timeout|retry/i.test(line);
+                    const isQr = /qr|scan|pairing|code/i.test(line);
+                    const isOk = /success|connected|ready|online|start/i.test(line);
+                    const color = isError ? "text-red-400" : isQr ? "text-yellow-300 font-bold" : isOk ? "text-emerald-400" : isWarn ? "text-amber-400" : "text-green-300/70";
+                    return <div key={i} className={color}>{line}</div>;
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* VPS action buttons */}
+          {isDeployed && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Bot Controls</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm"
+                  onClick={() => vpsAction(selectedOrder.id, "reboot")}
+                  disabled={actionLoading === "reboot"}
+                  className="bg-blue-600/20 border border-blue-500/30 text-blue-300 hover:bg-blue-600/30 h-8 px-3 text-xs">
+                  {actionLoading === "reboot" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RotateCcw className="w-3 h-3 mr-1" />}
+                  Reboot
+                </Button>
+                <Button size="sm"
+                  onClick={() => vpsAction(selectedOrder.id, "stop")}
+                  disabled={actionLoading === "stop"}
+                  className="bg-orange-600/20 border border-orange-500/30 text-orange-300 hover:bg-orange-600/30 h-8 px-3 text-xs">
+                  {actionLoading === "stop" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Power className="w-3 h-3 mr-1" />}
+                  Stop
+                </Button>
+                <Button size="sm"
+                  onClick={() => vpsAction(selectedOrder.id, "resume")}
+                  disabled={actionLoading === "resume"}
+                  className="bg-green-600/20 border border-green-500/30 text-green-300 hover:bg-green-600/30 h-8 px-3 text-xs">
+                  {actionLoading === "resume" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Zap className="w-3 h-3 mr-1" />}
+                  Resume
+                </Button>
+                <Button size="sm"
+                   onClick={() => vpsAction(selectedOrder.id, "stop")}
+                   disabled={actionLoading === "stop"}
+                  className="bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 h-8 px-3 text-xs">
+                   {actionLoading === "stop" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Shield className="w-3 h-3 mr-1" />}
+                  Suspend
+                </Button>
+                <Button size="sm"
+                  onClick={() => { setVpsDeployOpen(true); setVpsDeployLog(""); setVpsDeployStatus("idle"); }}
+                  className="bg-violet-600/20 border border-violet-500/30 text-violet-300 hover:bg-violet-600/30 h-8 px-3 text-xs">
+                  <Server className="w-3 h-3 mr-1" />Deploy via VPS
+                </Button>
+                <Button size="sm"
+                   onClick={() => vpsAction(selectedOrder.id, "resume")}
+                   disabled={actionLoading === "resume"}
+                  className="bg-purple-600/20 border border-purple-500/30 text-purple-300 hover:bg-purple-600/30 h-8 px-3 text-xs">
+                   {actionLoading === "resume" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Shield className="w-3 h-3 mr-1" />}
+                  Unsuspend
+                </Button>
+                <Button size="sm"
+                  onClick={() => updateMutation.mutate({ id: selectedOrder.id, status: newStatus, deploymentNotes: notes, redeploy: true })}
+                  disabled={updateMutation.isPending}
+                  className="bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 h-8 px-3 text-xs">
+                  {updateMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                  Redeploy
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Config Vars editor */}
+          {isDeployed && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Config Variables</p>
+                {!configEditing && (
+                  <Button size="sm" variant="outline" onClick={() => loadConfigVars(selectedOrder)}
+                    disabled={configLoading}
+                    className="border-white/10 text-gray-400 hover:text-white h-7 px-2 text-xs">
+                    {configLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Edit2 className="w-3 h-3 mr-1" />}
+                    Edit Vars
+                  </Button>
+                )}
+              </div>
+              {configEditing && (
+                <div className="space-y-2 bg-black/20 border border-white/5 rounded-xl p-3">
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {configDraft.map((entry, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <Input
+                          value={entry.key}
+                          onChange={(e) => setConfigDraft(d => d.map((x, i) => i === idx ? { ...x, key: e.target.value } : x))}
+                          placeholder="KEY"
+                          className="h-7 text-xs font-mono bg-white/[0.03] border-white/10 text-gray-200 w-40 shrink-0"
+                        />
+                        <Input
+                          value={entry.value}
+                          onChange={(e) => setConfigDraft(d => d.map((x, i) => i === idx ? { ...x, value: e.target.value } : x))}
+                          placeholder="value"
+                          className="h-7 text-xs font-mono bg-white/[0.03] border-white/10 text-gray-200 flex-1"
+                        />
+                        <button onClick={() => setConfigDraft(d => d.filter((_, i) => i !== idx))}
+                          className="text-gray-600 hover:text-red-400 shrink-0"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" variant="outline" onClick={() => setConfigDraft(d => [...d, { key: "", value: "" }])}
+                      className="border-white/10 text-gray-400 hover:text-white h-7 px-2 text-xs">
+                      <Plus className="w-3 h-3 mr-1" /> Add Var
+                    </Button>
+                    <Button size="sm" onClick={() => saveConfigVars(selectedOrder)} disabled={actionLoading === "config-save"}
+                      className="bg-green-600 hover:bg-green-500 text-white h-7 px-3 text-xs">
+                      {actionLoading === "config-save" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                      Save & Apply
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfigEditing(false)}
+                      className="border-white/10 text-gray-400 h-7 px-2 text-xs">Cancel</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Status + notes update */}
+          <div className="border-t border-white/5 pt-4 space-y-3">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Update Order Status</p>
+            <div className="flex gap-2 flex-wrap">
+              {["pending","paid","deploying","deployed","stopped","suspended","failed"].map((s) => (
+                <button key={s} onClick={() => setNewStatus(s)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-all ${newStatus === s ? "bg-green-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="Deployment notes (optional)"
+              rows={2}
+              className="w-full bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 resize-none focus:outline-none focus:border-green-500/50"
+            />
+            <Button size="sm" onClick={() => updateMutation.mutate({ id: selectedOrder.id, status: newStatus, deploymentNotes: notes })}
+              disabled={updateMutation.isPending}
+              className="bg-green-600 hover:bg-green-500 text-white h-8 px-4 text-xs">
+              {updateMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+              Save Changes
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Orders table */}
+      {isLoading ? (
+        <div className="text-center py-10"><Loader2 className="w-6 h-6 animate-spin text-green-400 mx-auto" /></div>
+      ) : (
+        <div className="bg-white/[0.03] border border-white/5 rounded-2xl overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-white/5">
+                <TableHead className="text-gray-400">Reference</TableHead>
+                <TableHead className="text-gray-400">Customer</TableHead>
+                <TableHead className="text-gray-400">Bot</TableHead>
+                <TableHead className="text-gray-400">Amount</TableHead>
+                <TableHead className="text-gray-400">Status</TableHead>
+                <TableHead className="text-gray-400">VPS</TableHead>
+                <TableHead className="text-gray-400">Date</TableHead>
+                <TableHead className="text-gray-400">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((order: any) => (
+                <TableRow key={order.id} className="border-white/5 hover:bg-white/[0.02]">
+                  <TableCell className="text-gray-400 text-xs font-mono">{order.reference}</TableCell>
+                  <TableCell>
+                    <div><p className="text-white text-sm">{order.customerName}</p>
+                      <p className="text-gray-500 text-xs">{order.customerEmail}</p></div>
+                  </TableCell>
+                  <TableCell className="text-white text-sm">{order.botName}</TableCell>
+                  <TableCell className="text-white font-semibold text-sm">KES {order.amount}</TableCell>
+                  <TableCell>
+                    {order.status === "deploying" ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          <span className="w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />
+                          deploying
+                        </span>
+                        {order.deploymentNotes && (
+                          <span className="text-[10px] text-purple-300/70 pl-1 max-w-[140px] truncate">{order.deploymentNotes}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <Badge className={`text-xs border ${STATUS_BADGES[order.status] || "bg-gray-500/10 text-gray-400"}`}>
+                        {order.status}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {order.pm2Name ? (
+                      <span className="text-xs text-emerald-400 font-mono">{order.pm2Name}</span>
+                    ) : (
+                      <span className="text-xs text-gray-600">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-gray-400 text-xs">{new Date(order.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    <Button size="sm" variant="outline"
+                      onClick={() => selectOrder(order)}
+                      className="border-white/10 text-gray-400 hover:text-white h-7 px-2 text-xs">
+                      <Settings className="w-3 h-3 mr-1" /> Manage
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!filtered.length && (
+                <TableRow><TableCell colSpan={8} className="text-center text-gray-500 py-8">No orders found.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
 }

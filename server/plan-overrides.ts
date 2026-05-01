@@ -19,6 +19,9 @@ export interface CustomPlan {
   categoryKey: string;
   categoryName: string;
   maxUsers: number;
+  clientId?: string;
+  clientSecret?: string;
+  serviceUrl?: string;
   createdAt: string;
 }
 

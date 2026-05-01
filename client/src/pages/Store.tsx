@@ -1,10 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import StoreAudioPlayer from "@/components/StoreAudioPlayer";
 import {
   Play, Music, Briefcase, Shield, Gamepad2, Search, Star,
-  CheckCircle, Zap, ShoppingCart, X, ChevronRight, Package,
-  Sparkles, Plus, Minus, Trash2, User, LogIn
+  CheckCircle, Zap, ShoppingCart, X, ChevronRight, Package, Bell,
+  Sparkles, Plus, Minus, Trash2, LogIn, Sun, Moon,
+  Wallet, Eye, EyeOff, Bot,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,20 +73,116 @@ function getCustomerData() {
   try { return JSON.parse(localStorage.getItem("customer_data") || "null"); } catch { return null; }
 }
 
+function getStoredTheme(): "dark" | "light" {
+  try { return (localStorage.getItem("ct_theme") as "dark" | "light") || "dark"; } catch { return "dark"; }
+}
+function getCustomerToken() { try { return localStorage.getItem("customer_token") || ""; } catch { return ""; } }
+function getWalletHidden() { try { return localStorage.getItem("ct_wallet_hidden") === "1"; } catch { return false; } }
+
+function getSessionId(): string {
+  let sid = sessionStorage.getItem("ct_sid");
+  if (!sid) { sid = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("ct_sid", sid); }
+  return sid;
+}
+
+function track(event_type: string, extra?: Record<string, string>) {
+  fetch("/api/track", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_type, session_id: getSessionId(), ...extra }),
+  }).catch(() => {});
+}
+
 export default function Store() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>(() => getCartFromStorage());
   const [cartOpen, setCartOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">(getStoredTheme);
+  const [walletHidden, setWalletHidden] = useState(getWalletHidden);
+
+  useEffect(() => { track("page_view"); }, []);
+
+  const customerToken = getCustomerToken();
+
+  function toggleTheme() {
+    setTheme(t => {
+      const next = t === "dark" ? "light" : "dark";
+      localStorage.setItem("ct_theme", next);
+      return next;
+    });
+  }
+
+  const isLight = theme === "light";
 
   const customer = getCustomerData();
+
+  const { data: walletData } = useQuery<{ balance: number }>({
+    queryKey: ["/api/customer/wallet-store"],
+    queryFn: async () => {
+      const r = await fetch("/api/customer/wallet", { headers: { Authorization: `Bearer ${customerToken}` } });
+      return r.json();
+    },
+    enabled: !!customerToken,
+    staleTime: 30000,
+  });
+  const storeWalletBalance = walletData?.balance ?? 0;
+
+  function toggleWalletHidden() {
+    setWalletHidden(h => {
+      const next = !h;
+      localStorage.setItem("ct_wallet_hidden", next ? "1" : "0");
+      return next;
+    });
+  }
 
   useEffect(() => { saveCartToStorage(cart); }, [cart]);
 
   const { data, isLoading } = useQuery<{ categories: Record<string, Category> }>({
     queryKey: ["/api/plans"],
   });
+
+  const { data: flashData } = useQuery<{ success: boolean; sales: any[] }>({
+    queryKey: ["/api/flash-sales"],
+    refetchInterval: 30000,
+  });
+  const flashSales: any[] = flashData?.sales ?? [];
+
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [waitlistPlan, setWaitlistPlan] = useState<Plan | null>(null);
+  const [waitlistEmail, setWaitlistEmail] = useState("");
+  const [waitlistStatus, setWaitlistStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [waitlistMsg, setWaitlistMsg] = useState("");
+
+  async function handleJoinWaitlist() {
+    if (!waitlistPlan || !waitlistEmail.trim()) return;
+    setWaitlistStatus("loading");
+    try {
+      const r = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: waitlistEmail.trim(), planId: waitlistPlan.planId, planName: waitlistPlan.name }),
+      });
+      const d = await r.json();
+      if (r.ok && d.success) { setWaitlistStatus("done"); setWaitlistMsg(d.message ?? "You're on the list!"); }
+      else { setWaitlistStatus("error"); setWaitlistMsg(d.error ?? "Something went wrong."); }
+    } catch { setWaitlistStatus("error"); setWaitlistMsg("Network error. Try again."); }
+  }
+
+  function openWaitlist(plan: Plan) {
+    setWaitlistPlan(plan);
+    setWaitlistEmail(customer?.email ?? "");
+    setWaitlistStatus("idle");
+    setWaitlistMsg("");
+    setWaitlistOpen(true);
+  }
+
+  const [flashNow, setFlashNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setFlashNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const categories = data?.categories ?? {};
   const allPlans = useMemo(() => {
@@ -117,6 +215,7 @@ export default function Store() {
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
 
   function addToCart(plan: Plan) {
+    track("plan_view", { plan_id: plan.planId, plan_name: plan.name });
     setCart((prev) => {
       const existing = prev.find((i) => i.planId === plan.planId);
       if (existing) {
@@ -140,28 +239,55 @@ export default function Store() {
   }
 
   function checkoutItem(planId: string) {
+    track("checkout_start", { plan_id: planId });
     setCartOpen(false);
     setLocation(`/checkout?planId=${planId}`);
   }
 
   return (
-    <div className="min-h-screen bg-background relative overflow-x-hidden">
-      {/* Background orbs */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="bg-orb w-[600px] h-[600px] bg-indigo-600 top-[-200px] left-[-100px]" />
-        <div className="bg-orb w-[500px] h-[500px] bg-violet-600 bottom-[-100px] right-[-100px]" style={{ animationDelay: "2s" }} />
-        <div className="bg-orb w-[400px] h-[400px] bg-blue-600 top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2" style={{ opacity: 0.15 }} />
-      </div>
+    <div className={`min-h-screen relative overflow-x-hidden${isLight ? " ct-light" : " bg-background"}`}>
+      {/* Background orbs — hidden in light mode */}
+      {!isLight && (
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+          <div className="bg-orb w-[600px] h-[600px] bg-indigo-600 top-[-200px] left-[-100px]" />
+          <div className="bg-orb w-[500px] h-[500px] bg-violet-600 bottom-[-100px] right-[-100px]" style={{ animationDelay: "2s" }} />
+          <div className="bg-orb w-[400px] h-[400px] bg-blue-600 top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2" style={{ opacity: 0.15 }} />
+        </div>
+      )}
+      {isLight && <div className="fixed inset-0 pointer-events-none z-0 bg-slate-50" />}
 
       {/* Header */}
-      <header className="sticky top-0 z-50 glass-nav">
+      <header className={`sticky top-0 z-50 ${isLight ? "bg-white/90 backdrop-blur-xl border-b border-slate-200 shadow-sm" : "glass-nav"}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <img src="/favicon.png" alt="Chege Tech" className="w-9 h-9 rounded-xl shadow-lg" style={{ boxShadow: "0 0 14px rgba(99,102,241,0.3)" }} />
-            <span className="font-bold text-lg hidden sm:block bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
+            <span className={`font-bold text-lg hidden sm:block ${isLight ? "text-slate-800" : "bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent"}`}>
               Chege Tech
             </span>
-            <span className="font-bold text-lg sm:hidden text-white">CT</span>
+            <span className={`font-bold text-lg sm:hidden ${isLight ? "text-slate-800" : "text-white"}`}>CT</span>
+            {/* Profile chip — left corner */}
+            {customer && (
+              <button
+                onClick={() => setLocation("/dashboard?tab=profile")}
+                title="My Profile"
+                className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border transition-all hover:scale-105 active:scale-95 ${
+                  isLight
+                    ? "bg-white border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300"
+                    : "glass border-white/10 hover:border-white/25"
+                }`}
+              >
+                {customer.avatarUrl ? (
+                  <img src={customer.avatarUrl} alt={customer.name ?? "Profile"} className="w-6 h-6 rounded-full object-cover ring-1 ring-indigo-400/40" />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold ring-1 ring-indigo-400/40">
+                    {(customer.name ?? customer.email ?? "?").charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className={`text-xs font-medium max-w-[72px] truncate ${isLight ? "text-slate-700" : "text-white/80"}`}>
+                  {(customer.name ?? customer.email ?? "").split(" ")[0]}
+                </span>
+              </button>
+            )}
           </div>
           <div className="flex-1 max-w-sm relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -190,10 +316,43 @@ export default function Store() {
               <span>Support</span>
             </a>
 
+            {/* Theme toggle */}
+            <button
+              onClick={toggleTheme}
+              title={isLight ? "Switch to dark mode" : "Switch to light mode"}
+              className={`flex items-center justify-center w-9 h-9 rounded-lg transition-all ${isLight ? "bg-slate-100 hover:bg-slate-200 text-slate-600" : "glass border border-white/10 text-white/60 hover:text-white"}`}
+              data-testid="button-theme-toggle"
+            >
+              {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            </button>
+
+            {/* Wallet balance chip — visible when logged in */}
+            {customer && walletData && (
+              <div className={`hidden sm:flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full border text-xs font-semibold transition-all ${
+                isLight
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  : "bg-emerald-500/12 border-emerald-500/25 text-emerald-400"
+              }`}>
+                <Wallet className="w-3 h-3 shrink-0" />
+                <span className="min-w-[52px] text-center">
+                  {walletHidden ? "••••••" : `KES ${storeWalletBalance.toLocaleString()}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={toggleWalletHidden}
+                  title={walletHidden ? "Show balance" : "Hide balance"}
+                  className="p-0.5 rounded-full opacity-60 hover:opacity-100 transition-opacity"
+                  data-testid="button-wallet-toggle"
+                >
+                  {walletHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                </button>
+              </div>
+            )}
+
             {/* Cart button */}
             <button
               onClick={() => setCartOpen(true)}
-              className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg glass border border-white/10 text-white/70 hover:text-white text-sm font-medium transition-all"
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${isLight ? "bg-indigo-600 text-white hover:bg-indigo-700" : "glass border border-white/10 text-white/70 hover:text-white"}`}
               data-testid="button-cart"
             >
               <ShoppingCart className="w-4 h-4" />
@@ -205,30 +364,30 @@ export default function Store() {
               )}
             </button>
 
+            {/* Bot Store Link */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setLocation("/bots")}
+              data-testid="link-bot-store"
+              className={`${isLight ? "border-slate-200 text-slate-700 hover:bg-slate-100" : "glass border-green-500/30 text-green-400 hover:text-green-300 hover:border-green-500/50"}`}
+            >
+              <Bot className="w-3.5 h-3.5 mr-1" />
+              <span className="hidden sm:inline">Bot Store</span>
+            </Button>
+
             {/* Auth / Dashboard */}
             {customer ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setLocation("/dashboard")}
-                  data-testid="link-my-products"
-                  className="glass border-white/10 text-white/80 hover:text-white hover:border-white/20"
-                >
-                  <Package className="w-3.5 h-3.5 mr-1" />
-                  <span className="hidden sm:inline">My Products</span>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setLocation("/dashboard?tab=profile")}
-                  data-testid="link-account"
-                  className="glass border-white/10 text-white/80 hover:text-white hover:border-white/20"
-                >
-                  <User className="w-3.5 h-3.5 mr-1" />
-                  <span className="hidden sm:inline">Account</span>
-                </Button>
-              </>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setLocation("/dashboard")}
+                data-testid="link-my-products"
+                className={`${isLight ? "border-slate-200 text-slate-700 hover:bg-slate-100" : "glass border-white/10 text-white/80 hover:text-white hover:border-white/20"}`}
+              >
+                <Package className="w-3.5 h-3.5 mr-1" />
+                <span className="hidden sm:inline">My Products</span>
+              </Button>
             ) : (
               <Button
                 size="sm"
@@ -242,15 +401,6 @@ export default function Store() {
               </Button>
             )}
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setLocation("/admin")}
-              data-testid="link-admin"
-              className="glass border-white/10 text-white/80 hover:text-white hover:border-white/20 hidden sm:flex"
-            >
-              Admin
-            </Button>
           </div>
         </div>
       </header>
@@ -427,6 +577,42 @@ export default function Store() {
         </section>
       )}
 
+
+      {/* Bot Deployment Banner */}
+      {!search && (
+        <section className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-6">
+          <div
+            className="relative overflow-hidden rounded-2xl border border-emerald-500/20 cursor-pointer group"
+            style={{ background: "linear-gradient(135deg, rgba(16,185,129,.08) 0%, rgba(5,150,105,.04) 100%)" }}
+            onClick={() => setLocation("/bots")}
+            data-testid="bot-deploy-banner"
+          >
+            {/* glow orb */}
+            <div className="absolute -right-12 -top-12 w-48 h-48 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
+            <div className="relative flex flex-col sm:flex-row items-start sm:items-center gap-4 p-5 sm:p-6">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
+                <Bot className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h3 className="font-bold text-white text-base">WhatsApp Bot Deployment</h3>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">KES 70</span>
+                </div>
+                <p className="text-sm text-gray-400">Deploy Atassa-MD, Gifted-MD & more — fully hosted, always online.</p>
+              </div>
+              <Button
+                size="sm"
+                className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold shrink-0 gap-2 group-hover:shadow-lg group-hover:shadow-emerald-500/20 transition-all"
+                onClick={(e) => { e.stopPropagation(); setLocation("/bots"); }}
+              >
+                <Bot className="w-3.5 h-3.5" />
+                Deploy Bot
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Category Filters */}
       <section className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-6">
         <div className="flex gap-2 flex-wrap">
@@ -455,10 +641,49 @@ export default function Store() {
               </Button>
             );
           })}
+          {/* WhatsApp Bots tab */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setLocation("/bots")}
+            data-testid="filter-bots"
+            className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 hover:border-emerald-400/60 bg-emerald-500/5 transition-all"
+          >
+            <Bot className="w-3.5 h-3.5 mr-1.5" />
+            WhatsApp Bots
+          </Button>
         </div>
       </section>
 
       {/* Plans by Category */}
+      {/* Flash Sale Banner */}
+      {flashSales.length > 0 && (
+        <div className="relative z-20 bg-gradient-to-r from-amber-600 via-orange-500 to-red-500 overflow-hidden">
+          <div className="absolute inset-0 opacity-20" style={{ background: "repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.1) 10px, rgba(0,0,0,0.1) 20px)" }} />
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2">
+            {flashSales.map((s: any) => {
+              const ms = new Date(s.endsAt).getTime() - flashNow;
+              if (ms <= 0) return null;
+              const h = Math.floor(ms / 3600000);
+              const m = Math.floor((ms % 3600000) / 60000);
+              const sec = Math.floor((ms % 60000) / 1000);
+              const timer = `${h > 0 ? `${String(h).padStart(2,"0")}:` : ""}${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+              return (
+                <div key={s.id} className="flex items-center gap-3 flex-1">
+                  <Zap className="w-4 h-4 text-white shrink-0 animate-pulse" />
+                  <span className="text-white font-bold text-sm">{s.label}</span>
+                  <span className="text-white/80 text-xs hidden sm:inline">on {s.planName}</span>
+                  <div className="ml-auto flex items-center gap-1.5 bg-black/20 rounded-lg px-3 py-1">
+                    <span className="text-white/70 text-xs">Ends in</span>
+                    <span className="text-white font-bold text-sm tabular-nums font-mono">{timer}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 space-y-16 pb-24">
         {isLoading ? (
           Array.from({ length: 2 }).map((_, i) => (
@@ -496,21 +721,74 @@ export default function Store() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {planList.map((plan) => (
-                    <PlanCard
-                      key={plan.planId}
-                      plan={plan}
-                      catKey={catKey}
-                      onBuyNow={() => setLocation(`/checkout?planId=${plan.planId}`)}
-                      onAddToCart={() => addToCart(plan)}
-                    />
-                  ))}
+                  {planList.map((plan) => {
+                    const flashSale = flashSales.find((s: any) => s.planId === plan.planId);
+                    return (
+                      <PlanCard
+                        key={plan.planId}
+                        plan={plan}
+                        catKey={catKey}
+                        flashSale={flashSale}
+                        onBuyNow={() => setLocation(`/checkout?planId=${plan.planId}`)}
+                        onAddToCart={() => addToCart(plan)}
+                        onWaitlist={() => openWaitlist(plan)}
+                      />
+                    );
+                  })}
                 </div>
               </section>
             );
           })
         )}
       </main>
+
+      {/* Waitlist Modal */}
+      {waitlistOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)", backdropFilter: "blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/12 p-6 space-y-4" style={{ background: "rgba(15,15,25,.97)" }}>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2"><Bell className="w-4 h-4 text-indigo-400" /> Join Waitlist</h3>
+                <p className="text-xs text-white/40 mt-0.5">{waitlistPlan?.name} — we'll email you when it's back in stock</p>
+              </div>
+              <button onClick={() => setWaitlistOpen(false)} className="text-white/30 hover:text-white/70 transition-colors mt-0.5">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {waitlistStatus === "done" ? (
+              <div className="text-center py-6">
+                <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+                <p className="text-sm font-semibold text-emerald-400">You're on the list!</p>
+                <p className="text-xs text-white/40 mt-1">{waitlistMsg}</p>
+                <Button size="sm" className="mt-4 bg-white/10 hover:bg-white/15 text-white" onClick={() => setWaitlistOpen(false)}>Close</Button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label className="text-xs text-white/50 uppercase tracking-wider">Your Email</label>
+                  <Input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={waitlistEmail}
+                    onChange={e => setWaitlistEmail(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/25"
+                    onKeyDown={e => { if (e.key === "Enter") handleJoinWaitlist(); }}
+                    disabled={waitlistStatus === "loading"}
+                  />
+                  {waitlistStatus === "error" && <p className="text-xs text-red-400">{waitlistMsg}</p>}
+                </div>
+                <Button
+                  onClick={handleJoinWaitlist}
+                  disabled={!waitlistEmail.trim() || waitlistStatus === "loading"}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold"
+                >
+                  {waitlistStatus === "loading" ? "Joining..." : "Notify Me"}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="relative z-10 glass-nav border-t border-white/8 mt-8 py-10">
@@ -529,31 +807,52 @@ export default function Store() {
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
             WhatsApp Support: +254114291301
           </a>
+          <div className="flex items-center justify-center gap-4 mb-3">
+            <a href="/track" className="text-xs text-white/35 hover:text-indigo-400 transition-colors">Track order</a>
+            <span className="text-white/15">·</span>
+            <a href="/docs" className="text-xs text-white/35 hover:text-indigo-400 transition-colors">API docs</a>
+            <span className="text-white/15">·</span>
+            <a href="/privacy" className="text-xs text-white/35 hover:text-indigo-400 transition-colors">Privacy</a>
+          </div>
           <p className="text-xs text-white/25">&copy; {new Date().getFullYear()} Chege Tech. All rights reserved.</p>
         </div>
       </footer>
+      <StoreAudioPlayer />
     </div>
   );
 }
 
-function PlanCard({ plan, catKey, onBuyNow, onAddToCart }: {
+function PlanCard({ plan, catKey, flashSale, onBuyNow, onAddToCart, onWaitlist }: {
   plan: Plan;
   catKey: string;
+  flashSale?: any;
   onBuyNow: () => void;
   onAddToCart: () => void;
+  onWaitlist: () => void;
 }) {
   const gradient = CATEGORY_GRADIENTS[catKey] ?? "from-indigo-500 to-violet-600";
   const glow = CATEGORY_GLOW[catKey] ?? "rgba(99,102,241,0.3)";
+  const flashPrice = flashSale ? Math.round((plan.price ?? 0) * (1 - flashSale.discountPct / 100)) : null;
 
   return (
     <div
       data-testid={`card-plan-${plan.planId}`}
       className={`relative rounded-2xl glass-card flex flex-col overflow-hidden transition-all duration-300 ${
         plan.inStock ? "hover:border-white/20 hover:shadow-xl hover:-translate-y-1" : "opacity-50"
-      }`}
+      } ${flashSale ? "ring-2 ring-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]" : ""}`}
     >
+      {/* Flash Sale badge */}
+      {flashSale && (
+        <div className="absolute top-3 left-3 z-10">
+          <Badge className="bg-gradient-to-r from-amber-500 to-orange-500 text-white border-0 text-xs px-2 shadow-lg backdrop-blur-sm animate-pulse">
+            <Zap className="w-2.5 h-2.5 mr-1 fill-white" />
+            {flashSale.discountPct}% OFF
+          </Badge>
+        </div>
+      )}
+
       {/* Offer / Popular badge */}
-      {(plan.offerLabel || plan.popular) && (
+      {!flashSale && (plan.offerLabel || plan.popular) && (
         <div className="absolute top-3 right-3 z-10">
           <Badge className="bg-amber-500/90 text-white border-0 text-xs px-2 shadow-lg backdrop-blur-sm">
             <Star className="w-2.5 h-2.5 mr-1 fill-white" />
@@ -562,10 +861,10 @@ function PlanCard({ plan, catKey, onBuyNow, onAddToCart }: {
         </div>
       )}
 
-      {/* Out of stock overlay */}
+      {/* Out of stock badge */}
       {!plan.inStock && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center glass">
-          <Badge variant="secondary" className="text-xs glass">Out of Stock</Badge>
+        <div className="absolute top-3 left-3 z-20">
+          <Badge variant="secondary" className="text-xs glass bg-red-500/20 text-red-300 border-red-500/30">Out of Stock</Badge>
         </div>
       )}
 
@@ -576,14 +875,23 @@ function PlanCard({ plan, catKey, onBuyNow, onAddToCart }: {
         }} />
         <div className="relative">
           <div className="flex items-start justify-between gap-1 mb-1">
-            <h3 className="font-semibold text-sm leading-tight text-white">{plan.name}</h3>
+            <h3 className={`font-semibold text-sm leading-tight text-white ${flashSale ? "mt-6" : ""}`}>{plan.name}</h3>
             {plan.isCustom && <Sparkles className="w-3 h-3 text-white/70 shrink-0 mt-0.5" />}
           </div>
           <p className="text-xs text-white/60">{plan.duration}</p>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white">KES {(plan.price ?? 0).toLocaleString()}</span>
-            {plan.originalPrice && (
-              <span className="text-sm text-white/50 line-through">KES {(plan.originalPrice ?? 0).toLocaleString()}</span>
+            {flashSale ? (
+              <>
+                <span className="text-2xl font-bold text-white">KES {(flashPrice ?? 0).toLocaleString()}</span>
+                <span className="text-sm text-white/60 line-through">KES {(plan.price ?? 0).toLocaleString()}</span>
+              </>
+            ) : (
+              <>
+                <span className="text-2xl font-bold text-white">KES {(plan.price ?? 0).toLocaleString()}</span>
+                {plan.originalPrice && (
+                  <span className="text-sm text-white/50 line-through">KES {(plan.originalPrice ?? 0).toLocaleString()}</span>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -600,27 +908,40 @@ function PlanCard({ plan, catKey, onBuyNow, onAddToCart }: {
           ))}
         </ul>
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            className={`flex-1 bg-gradient-to-r ${gradient} border-0 text-white font-semibold shadow-lg hover:opacity-90 transition-opacity`}
-            disabled={!plan.inStock}
-            onClick={plan.inStock ? onBuyNow : undefined}
-            data-testid={`button-buy-${plan.planId}`}
-          >
-            Buy Now
-            <ChevronRight className="w-3.5 h-3.5 ml-1" />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="glass border-white/10 text-white/60 hover:text-white hover:border-white/20 px-2.5"
-            disabled={!plan.inStock}
-            onClick={plan.inStock ? onAddToCart : undefined}
-            data-testid={`button-add-cart-${plan.planId}`}
-            title="Add to cart"
-          >
-            <ShoppingCart className="w-3.5 h-3.5" />
-          </Button>
+          {plan.inStock ? (
+            <>
+              <Button
+                size="sm"
+                className={`flex-1 bg-gradient-to-r ${gradient} border-0 text-white font-semibold shadow-lg hover:opacity-90 transition-opacity`}
+                onClick={onBuyNow}
+                data-testid={`button-buy-${plan.planId}`}
+              >
+                Buy Now
+                <ChevronRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="glass border-white/10 text-white/60 hover:text-white hover:border-white/20 px-2.5"
+                onClick={onAddToCart}
+                data-testid={`button-add-cart-${plan.planId}`}
+                title="Add to cart"
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:border-indigo-500/50 transition-colors"
+              onClick={onWaitlist}
+              data-testid={`button-waitlist-${plan.planId}`}
+            >
+              <Bell className="w-3.5 h-3.5 mr-1.5" />
+              Join Waitlist
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#312e81"/>
+      <stop offset="50%" style="stop-color:#4f46e5"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#c4b5fd"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="64" height="64" rx="14" ry="14" fill="url(#bg)"/>
+
+  <!-- Subtle inner highlight -->
+  <rect x="1" y="1" width="62" height="30" rx="13" ry="13" fill="white" opacity="0.05"/>
+
+  <!-- Lightning bolt shape -->
+  <polygon points="37,7 22,35 31,35 27,57 44,27 34,27 40,7" fill="url(#bolt)" filter="url(#glow)"/>
+
+  <!-- Small dot accent bottom-right -->
+  <circle cx="50" cy="50" r="4" fill="#818cf8" opacity="0.7"/>
+</svg>

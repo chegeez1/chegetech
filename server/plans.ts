@@ -68,4 +68,15 @@ export const subscriptionPlans: Record<string, PlanCategory> = {
       geforcenow: { name: "Nvidia GeForce Now", price: 350, duration: "1 Month", features: ["Cloud Gaming", "High Performance", "Cross-Device Access"], shared: true, maxUsers: 5 },
     },
   },
+
+  bundles: {
+    category: "Bundle Deals 🔥",
+    icon: "Gift",
+    color: "#10b981",
+    plans: {
+      "bundle-starter": { name: "Starter Bundle", price: 190, duration: "1 Month", features: ["Netflix Shared", "WhatsApp Bot (Atassa-MD)", "Instant Deployment", "Save KES 30"], popular: true, shared: true, maxUsers: 5 },
+      "bundle-media": { name: "Media Bundle", price: 220, duration: "1 Month", features: ["Netflix + Showmax Pro", "WhatsApp Bot (Gifted-MD)", "Instant Deployment", "Save KES 50"], popular: false, shared: true, maxUsers: 5 },
+      "bundle-premium": { name: "Premium Bundle", price: 350, duration: "1 Month", features: ["Netflix + Spotify Premium", "AI WhatsApp Bot (Leifo-MD)", "Priority Support", "Save KES 100"], popular: true, shared: true, maxUsers: 5 },
+    },
+  },
 };

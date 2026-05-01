@@ -1,8 +1,14 @@
+import dotenv from "dotenv";
+// Load .env in development — Render injects env vars natively in production
+if (process.env.NODE_ENV !== "production") dotenv.config();
 import express, { type Request, Response, NextFunction } from "express";
+import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { initializeDatabase, migrateJsonToDb, storage } from "./storage";
+import path from "path";
+import fs from "fs";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -23,6 +29,14 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+
+// Serve uploaded avatars statically
+const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const AVATARS_DIR = path.join(UPLOADS_DIR, "avatars");
+if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -127,6 +141,17 @@ app.use((req, res, next) => {
         startTelegramBot();
         log("[telegram-bot] polling started");
       }).catch(() => {});
+
+      // Start cron jobs (expiry alerts, weekly reports, campaigns)
+      import("./cron").then(({ startCronJobs }) => {
+        startCronJobs();
+      }).catch((err) => log(`[cron] Failed to start: ${err.message}`));
+
+      // Start always-on admin bot (security + payment auto-fix)
+      import("./admin-bot").then(({ startAlwaysOnBot }) => {
+        startAlwaysOnBot();
+        log("[bot] Always-on bot started");
+      }).catch((err) => log(`[bot] Failed to start: ${err.message}`));
     },
   );
 })();
