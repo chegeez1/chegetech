@@ -536,4 +536,24 @@ export function registerDownloadRoutes(app: Express) {
     console.log("[downloader] Credentials updated via admin API — poToken:", poToken ? "set" : "not set", "visitorData:", visitorData ? "set" : "not set");
     res.json({ success: true, message: "Credentials updated — YouTube requests will use them immediately", hasPoToken: !!poToken, hasVisitorData: !!visitorData });
   });
+
+    // DELETE /api/dl/admin/clear-cookies — remove stored cookies
+    app.delete("/api/dl/admin/clear-cookies", async (req: Request, res: Response) => {
+      if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
+      try { unlinkSync(COOKIES_FILE); } catch { /* already gone */ }
+      cookiesReady = false;
+      await setConfig("youtube_cookies", "");
+      console.log("[downloader] YouTube cookies cleared via admin API");
+      res.json({ success: true, message: "Cookies cleared" });
+    });
+
+    // DELETE /api/dl/admin/clear-po-token — remove stored PO token
+    app.delete("/api/dl/admin/clear-po-token", async (req: Request, res: Response) => {
+      if (!isAdminRequest(req)) return res.status(403).json({ error: "Forbidden" });
+      poToken = ""; visitorData = "";
+      await setConfig("youtube_po_token", "");
+      await setConfig("youtube_visitor_data", "");
+      console.log("[downloader] PO Token cleared via admin API");
+      res.json({ success: true, message: "PO Token cleared" });
+    });
 }
