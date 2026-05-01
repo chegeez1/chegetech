@@ -6238,4 +6238,30 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
   registerTradingBotRoutes(app);
   registerBotRoutes(app, adminAuthMiddleware);
   return httpServer;
+
+  // ── Free Temp Numbers ──────────────────────────────────────────────────────
+  app.get("/api/free-numbers", async (req, res) => {
+    try {
+      const { getFreeNumbers } = await import("./tempNumbers");
+      const numbers = await getFreeNumbers();
+      res.json({ success: true, numbers, total: numbers.length });
+    } catch (e: any) {
+      req.log?.error({ err: e }, "free-numbers fetch failed");
+      res.json({ success: false, numbers: [], total: 0 });
+    }
+  });
+
+  app.get("/api/free-numbers/:digits/sms", async (req, res) => {
+    try {
+      const { getNumberMessages } = await import("./tempNumbers");
+      const { digits } = req.params;
+      const source = (req.query.source as string) || "rscc";
+      const messages = await getNumberMessages(digits, source);
+      res.json({ success: true, messages });
+    } catch (e: any) {
+      req.log?.error({ err: e }, "number-messages fetch failed");
+      res.json({ success: false, messages: [] });
+    }
+  });
+
 }
