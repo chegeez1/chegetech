@@ -1041,6 +1041,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (transaction.status === "success") {
         return res.json({ success: true, status: "success", alreadyProcessed: true, planName: transaction.planName });
       }
+      if (transaction.status === "processing") {
+        return res.json({ success: true, status: "processing", message: "Payment is already being processed", planName: transaction.planName });
+      }
       if (transaction.status === "failed") {
         return res.json({ success: false, status: "failed", error: "This transaction has already failed" });
       }
@@ -1061,6 +1064,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!verify.success) {
         await storage.updateTransaction(reference, { status: "failed" });
         return res.json({ success: false, status: "failed", error: "Payment was not successful" });
+      }
+
+      const claimed = await storage.claimTransactionForDelivery(reference);
+      if (!claimed) {
+        const latest = await storage.getTransaction(reference);
+        if (latest?.status === "success") {
+          return res.json({ success: true, status: "success", alreadyProcessed: true, planName: latest.planName });
+        }
+        return res.json({ success: true, status: latest?.status || "processing", message: "Payment is already being processed", planName: transaction.planName });
       }
 
       const delivery = await deliverAccount(transaction);

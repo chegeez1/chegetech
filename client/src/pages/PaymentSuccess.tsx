@@ -143,7 +143,10 @@ import { useEffect, useState } from "react";
     const whatsappNumber = cfgData?.config?.whatsappNumber || "+254114291301";
 
     const verifyMutation = useMutation({
-      mutationFn: (ref: string) => apiRequest("POST", "/api/payment/verify", { reference: ref }),
+      mutationFn: async (ref: string) => {
+        const res = await apiRequest("POST", "/api/payment/verify", { reference: ref });
+        return res.json();
+      },
       onSuccess: (data: any) => {
         if (data.success) { setVerified(true); if (data.planName) setVerifiedPlan(data.planName); }
         else setVerifyError(data.error || "Payment verification failed");
@@ -332,4 +335,3 @@ import { useEffect, useState } from "react";
       </div>
     );
   }
-  

@@ -1037,6 +1037,7 @@ export interface SubAdmin {
 export interface IStorage {
   createTransaction(data: InsertTransaction): Promise<Transaction>;
   getTransaction(reference: string): Promise<Transaction | undefined>;
+  claimTransactionForDelivery(reference: string): Promise<boolean>;
   updateTransaction(reference: string, data: Partial<Transaction>): Promise<Transaction | undefined>;
   getAllTransactions(): Promise<Transaction[]>;
   getStats(): Promise<{ total: number; completed: number; pending: number; revenue: number; emailsSent: number }>;
@@ -1128,6 +1129,20 @@ export class DbStorage implements IStorage {
   async getTransaction(reference: string): Promise<Transaction | undefined> {
     const [result] = await getDb().select().from(transactions).where(eq(transactions.reference, reference));
     return result;
+  }
+
+  async claimTransactionForDelivery(reference: string): Promise<boolean> {
+    if (dbType === "pg" && pgPool) {
+      const result = await pgPool.query(
+        "UPDATE transactions SET status = 'processing', updated_at = NOW()::text WHERE reference = $1 AND status = 'pending'",
+        [reference]
+      );
+      return (result.rowCount ?? 0) > 0;
+    }
+    const result = sqliteInstance!.prepare(
+      "UPDATE transactions SET status = 'processing', updated_at = datetime('now') WHERE reference = ? AND status = 'pending'"
+    ).run(reference);
+    return result.changes > 0;
   }
 
   async updateTransaction(reference: string, data: Partial<Transaction>): Promise<Transaction | undefined> {

@@ -31,6 +31,10 @@ import TempMailPage from "./pages/TempMailPage";
 import GiftCardsPage from "./pages/GiftCardsPage";
 import TradingBotPage from "./pages/TradingBotPage";
 import SmsPage from "./pages/SmsPage";
+import Reseller from "@/pages/Reseller";
+import ResellerDashboard from "@/pages/ResellerDashboard";
+import ResellerStorefront from "@/pages/ResellerStorefront";
+import AdminResellers from "@/pages/AdminResellers";
 import TempNumbers from "@/pages/TempNumbers";
 import Downloader from "@/pages/Downloader";
 import BulkWhatsApp from "@/pages/BulkWhatsApp";
@@ -39,9 +43,9 @@ import Shell from "@/components/Shell";
 import ChatWidget from "@/components/ChatWidget";
 import CookieConsent from "@/components/CookieConsent";
 
-const NO_CHAT_PATHS = ["/admin", "/docs", "/privacy", "/track", "/bots"];
-const PUBLIC_PATHS = ["/", "/store", "/downloader", "/bulk-whatsapp", "/auth", "/faq", "/admin", "/payment/callback", "/payment/success", "/docs", "/privacy", "/track", "/bots", "/verify-email", "/reset-password", "/smm", "/numbers", "/proxy", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
-const NO_COOKIE_PATHS = ["/admin"];
+const NO_CHAT_PATHS = ["/admin", "/docs", "/privacy", "/track", "/bots", "/reseller", "/r/"];
+const PUBLIC_PATHS = ["/", "/store", "/r", "/reseller", "/downloader", "/bulk-whatsapp", "/auth", "/faq", "/admin", "/payment/callback", "/payment/success", "/docs", "/privacy", "/track", "/bots", "/verify-email", "/reset-password", "/smm", "/numbers", "/proxy", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
+const NO_COOKIE_PATHS = ["/admin", "/reseller", "/r/"];
 const SHELL_PATHS = ["/", "/store", "/downloader", "/bulk-whatsapp", "/bots", "/faq", "/vps", "/dashboard", "/numbers", "/smm", "/proxy", "/checkout", "/cart-checkout", "/payment", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
 
 function Router() {
@@ -132,8 +136,12 @@ function Router() {
                 <Route path="/tradingbot" component={TradingBotPage} />
                 <Route path="/downloader" component={Downloader} />
                 <Route path="/bulk-whatsapp" component={BulkWhatsApp} />
-                <Route path="/sms" component={SmsPage} />
+        <Route path="/sms" component={SmsPage} />
+        <Route path="/r/:slug" component={ResellerStorefront} />
+        <Route path="/reseller/dashboard" component={ResellerDashboard} />
+        <Route path="/reseller" component={Reseller} />
         <Route path="/admin/plan-previews" component={AdminPlanPreviews} />
+        <Route path="/admin/resellers" component={AdminResellers} />
         <Route path="/admin" component={Admin} />
         <Route path="/track" component={Track} />
         <Route path="/docs" component={Docs} />
