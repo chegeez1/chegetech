@@ -15,7 +15,8 @@ import {
   MessageCircle, Globe, Server, RotateCw, Play, MapPin, Ban,
   Wifi, HardDrive, Cpu, MemoryStick, Link2, ExternalLink, CheckCircle2, Camera,
   Bot, Sparkles, Minimize2, Database, UserCircle, Wallet, Pencil,
-  MinusCircle, History, ArrowUpCircle, ArrowDownCircle, Bell, ShoppingBag, MessageSquare, Gift
+  MinusCircle, History, ArrowUpCircle, ArrowDownCircle, Bell, ShoppingBag, MessageSquare, Gift,
+  Square, CheckSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2745,6 +2746,8 @@ function AccountsTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<any>({});
   const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>({});
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const { data: accData, refetch } = useQuery<any>({
     queryKey: ["/api/admin/accounts"],
@@ -2782,6 +2785,22 @@ function AccountsTab() {
     onSuccess: () => { toast({ title: "Account removed" }); refetch(); qc.invalidateQueries({ queryKey: ["/api/plans"] }); },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const r = await authFetch("/api/admin/accounts/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) });
+      return r;
+    },
+    onSuccess: (d: any) => {
+      toast({ title: `${d.removed ?? 0} accounts deleted` });
+      setSelectedAccounts(new Set());
+      refetch();
+      qc.invalidateQueries({ queryKey: ["/api/plans"] });
+    },
+    onError: () => {
+      toast({ title: "Bulk delete failed", variant: "destructive" });
+    },
+  });
+
   const accounts: Record<string, any[]> = accData?.accounts ?? {};
   const inputCls = "glass border-white/10 bg-white/5 text-white placeholder:text-white/25 h-8 text-sm";
 
@@ -2798,6 +2817,21 @@ function AccountsTab() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-white">Account Inventory</h1>
         <div className="flex items-center gap-2">
+          {selectedAccounts.size > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={bulkDeleting}
+              onClick={() => {
+                if (!window.confirm(`Delete ${selectedAccounts.size} selected account(s)? This cannot be undone.`)) return;
+                bulkDeleteMutation.mutate(Array.from(selectedAccounts));
+              }}
+              className="bg-red-500/15 border-red-500/30 text-red-300 hover:bg-red-500/25 hover:text-red-200"
+            >
+              {bulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Trash2 className="w-3.5 h-3.5 mr-1.5" />}
+              Delete {selectedAccounts.size} selected
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setShowBulkUpload(true)}
             className="glass border-white/10 text-white/60 hover:text-white"
             data-testid="button-bulk-upload">
@@ -2868,6 +2902,32 @@ function AccountsTab() {
 
                 {isExpanded && (
                   <div className="border-t border-white/8 divide-y divide-white/5">
+                    {/* Select all for this plan */}
+                    <div className="px-4 py-2 flex items-center gap-2 bg-white/[0.02]">
+                      <button
+                        onClick={() => {
+                          const planIds = new Set(accs.map((a: any) => a.id));
+                          const allSelected = accs.every((a: any) => selectedAccounts.has(a.id));
+                          setSelectedAccounts((prev) => {
+                            const next = new Set(prev);
+                            if (allSelected) {
+                              planIds.forEach((id) => next.delete(id as string));
+                            } else {
+                              planIds.forEach((id) => next.add(id as string));
+                            }
+                            return next;
+                          });
+                        }}
+                        className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors"
+                      >
+                        {accs.every((a: any) => selectedAccounts.has(a.id)) ? (
+                          <CheckSquare className="w-4 h-4 text-indigo-400" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                        <span>Select all {accs.length} in {planName}</span>
+                      </button>
+                    </div>
                     {accs.map((acc: any) => (
                       <div key={acc.id} className={`p-4 ${acc.disabled ? "opacity-50" : ""}`} data-testid={`account-row-${acc.id}`}>
                         {editingId === acc.id ? (
@@ -2892,9 +2952,28 @@ function AccountsTab() {
                           </div>
                         ) : (
                           <div className="flex items-center justify-between gap-4 flex-wrap">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm font-medium text-white">{acc.email || acc.username || "No identifier"}</span>
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              {/* Individual checkbox */}
+                              <button
+                                onClick={() => {
+                                  setSelectedAccounts((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(acc.id)) next.delete(acc.id);
+                                    else next.add(acc.id);
+                                    return next;
+                                  });
+                                }}
+                                className="shrink-0 text-white/30 hover:text-white/70 transition-colors"
+                              >
+                                {selectedAccounts.has(acc.id) ? (
+                                  <CheckSquare className="w-4 h-4 text-indigo-400" />
+                                ) : (
+                                  <Square className="w-4 h-4" />
+                                )}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-medium text-white">{acc.email || acc.username || "No identifier"}</span>
                                 {acc.disabled ? (
                                   <Badge className="glass border-white/10 text-white/40 text-xs">Disabled</Badge>
                                 ) : acc.fullyUsed ? (

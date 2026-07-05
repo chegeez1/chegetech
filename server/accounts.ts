@@ -147,6 +147,28 @@ export class AccountManager {
     return { removed: false };
   }
 
+  removeAccounts(accountIds: string[]): { removed: number; notFound: string[] } {
+    this.loadAccounts();
+    let removed = 0;
+    const notFound: string[] = [];
+    for (const accountId of accountIds) {
+      let found = false;
+      for (const [planId, accounts] of Object.entries(this.accounts)) {
+        const idx = accounts.findIndex((acc) => acc.id === accountId);
+        if (idx !== -1) {
+          accounts.splice(idx, 1);
+          if (accounts.length === 0) delete this.accounts[planId];
+          removed++;
+          found = true;
+          break;
+        }
+      }
+      if (!found) notFound.push(accountId);
+    }
+    if (removed > 0) this.saveAccounts();
+    return { removed, notFound };
+  }
+
   findAccountByCustomer(planId: string, customerEmail: string): AccountEntry | null {
     this.loadAccounts();
     const accounts = this.accounts[planId] || [];

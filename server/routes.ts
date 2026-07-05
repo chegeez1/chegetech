@@ -1793,6 +1793,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     else res.status(404).json({ success: false, error: "Account not found" });
   });
 
+  // ─── Admin: Bulk delete accounts ──────────────────────────────────────────
+  app.post("/api/admin/accounts/bulk-delete", adminAuthMiddleware, requirePermission("accounts"), (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: "ids array required" });
+    }
+    const result = accountManager.removeAccounts(ids);
+    res.json({ success: true, removed: result.removed, notFound: result.notFound });
+  });
+
   // ─── Admin: Bulk add accounts ─────────────────────────────────────────────
   app.post("/api/admin/accounts/bulk", adminAuthMiddleware, requirePermission("accounts"), (req, res) => {
     try {
