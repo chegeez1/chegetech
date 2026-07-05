@@ -5,6 +5,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import LandingPage from "@/pages/LandingPage";
 import Store from "@/pages/Store";
 import Checkout from "@/pages/Checkout";
 import CartCheckout from "@/pages/CartCheckout";
@@ -39,9 +40,9 @@ import ChatWidget from "@/components/ChatWidget";
 import CookieConsent from "@/components/CookieConsent";
 
 const NO_CHAT_PATHS = ["/admin", "/docs", "/privacy", "/track", "/bots"];
-const PUBLIC_PATHS = ["/downloader", "/bulk-whatsapp", "/auth", "/faq", "/admin", "/payment/callback", "/payment/success", "/docs", "/privacy", "/track", "/bots", "/verify-email", "/reset-password", "/smm", "/numbers", "/proxy", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
+const PUBLIC_PATHS = ["/", "/store", "/downloader", "/bulk-whatsapp", "/auth", "/faq", "/admin", "/payment/callback", "/payment/success", "/docs", "/privacy", "/track", "/bots", "/verify-email", "/reset-password", "/smm", "/numbers", "/proxy", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
 const NO_COOKIE_PATHS = ["/admin"];
-const SHELL_PATHS = ["/downloader", "/bulk-whatsapp", "/", "/bots", "/faq", "/vps", "/dashboard", "/numbers", "/smm", "/proxy", "/checkout", "/cart-checkout", "/payment", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
+const SHELL_PATHS = ["/", "/store", "/downloader", "/bulk-whatsapp", "/bots", "/faq", "/vps", "/dashboard", "/numbers", "/smm", "/proxy", "/checkout", "/cart-checkout", "/payment", "/accounts", "/tempmail", "/giftcards", "/sms", "/tradingbot"];
 
 function Router() {
   const [location] = useLocation();
@@ -111,7 +112,8 @@ function Router() {
   return (
     <Shell isAuthenticated={useShell}>
       <Switch>
-        <Route path="/" component={Store} />
+        <Route path="/" component={LandingPage} />
+        <Route path="/store" component={Store} />
         <Route path="/checkout" component={Checkout} />
         <Route path="/cart-checkout" component={CartCheckout} />
         <Route path="/payment/callback" component={PaymentSuccess} />

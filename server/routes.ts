@@ -1,4 +1,5 @@
 import { registerBotRoutes, deployPendingOrders } from "./bot-routes";
+import { serveBotPreview, recoverBots, startHealthCheck } from "./bot-deploy";
 import { registerDownloadRoutes } from "./download-routes";
 import { registerBulkWhatsAppRoutes } from "./bulk-whatsapp-routes";
 import { registerTradingBotRoutes } from "./tradingbot-routes";
@@ -6237,6 +6238,9 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
       res.status(500).json({ success: false, error: err.message });
     }
   });
+  // Bot preview middleware must come before registerBotRoutes
+  app.use(serveBotPreview);
+
   registerTradingBotRoutes(app);
   registerDownloadRoutes(app);
   registerBulkWhatsAppRoutes(app);

@@ -5,6 +5,7 @@ import axios from "axios";
 import { promoManager } from "./promo";
 import { customerAuthMiddleware } from "./auth";
 import { vpsManager } from "./vps-manager";
+import { deployBot, serveBotPreview } from "./bot-deploy";
 
 function generateReference(): string {
   return `CTB-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -67,168 +68,89 @@ async function m(template: string, params: any[] = []): Promise<void> {
   return runMutation(query, p);
 }
 
-// ── Deploy bot to VPS via SSH + PM2 ─────────────────────────────────────────
+// ── New local deploy (replaces SSH+PM2 VPS deploy) ─────────────────────────────────
 async function deployBotToVps(
-    order: Record<string, any>,
-    bot: Record<string, any>,
-    envVars: Record<string, string>
-  ): Promise<{ pm2Name: string; vpsServerId: string } | null> {
-    const servers = vpsManager.getAll();
-    if (servers.length === 0) {
-      console.log("[Bot Deploy] No VPS servers configured — skipping deploy");
-      return null;
+      order: Record<string, any>,
+      bot: Record<string, any>,
+      envVars: Record<string, string>
+    ): Promise<{ pm2Name: string; vpsServerId: string } | null> {
+      const repoUrl = (bot.repo_url || bot.repoUrl || "").replace(/\.git$/, "");
+      if (!repoUrl) throw new Error("Bot has no repoUrl configured");
+
+      const ref = order.reference;
+      const pm2Name = `bot-${ref}`;
+      console.log(`[Bot Deploy] Local deploy ${pm2Name} from ${repoUrl}`);
+
+      const result = await deployBot(ref, repoUrl, envVars);
+      if (!result.success) {
+        throw new Error(result.error || "Local deployment failed");
+      }
+      console.log(`[Bot Deploy] ok ${pm2Name} live at ${result.liveUrl}`);
+      return { pm2Name, vpsServerId: "chegetech-local" };
     }
-    // Load-balance: pick VPS with fewest deployed bots
-      const deployedCountRows = await q(
-        `SELECT vps_server_id, COUNT(*) as cnt FROM bot_orders WHERE status = 'deployed' AND vps_server_id IS NOT NULL GROUP BY vps_server_id`
-      ).catch(() => []);
-      const deployedCounts: Record<string,number> = {};
-      for (const row of deployedCountRows) deployedCounts[row.vps_server_id] = Number(row.cnt ?? 0);
-      const server = servers.reduce((best: any, s: any) =>
-        (deployedCounts[s.id] ?? 0) < (deployedCounts[best.id] ?? 0) ? s : best
-      , servers[0]);
-    const ref = order.reference;
-    const pm2Name = `bot-${ref}`;
-    const botDir = `/opt/bots/${pm2Name}`;
-    const repoUrl = (bot.repo_url || bot.repoUrl || "").replace(/\.git$/, "");
-    if (!repoUrl) throw new Error("Bot has no repoUrl configured");
-
-    // Build .env content line by line
-    const envLines = Object.entries(envVars)
-      .map(([k, v]) => `${k}=${String(v).replace(/\r?\n/g, "\\n")}`)
-      .join("\n");
-
-    // Determine OS family from stored osType
-    const osType = (server as any).osType || "ubuntu";
-    const isRhel = ["almalinux","centos","rhel","fedora","rocky","oracle"].includes(osType);
-    const isArch = osType === "arch";
-    const isWindows = osType === "windows";
-    const installGit = isRhel ? "dnf install -y git 2>/dev/null || yum install -y git 2>/dev/null"
-                      : isArch ? "pacman -S --noconfirm git 2>/dev/null"
-                      : isWindows ? "echo 'Windows — ensure git is pre-installed'"
-                      : "DEBIAN_FRONTEND=noninteractive apt-get install -y git 2>/dev/null";
-    const nvmSource = `export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"`;
-
-    console.log(`[Bot Deploy] Deploying ${pm2Name} on ${server.host} (${osType})`);
-
-    // 0. Ensure Node.js is installed (nvm works on all Linux; Windows needs pre-installed node)
-    const nodeCheck = await vpsManager.execCommand(server,
-      isWindows
-        ? `node --version 2>nul || echo NOT_FOUND`
-        : `node --version 2>/dev/null || echo "NOT_FOUND"`
-    );
-    if (nodeCheck.stdout.includes("NOT_FOUND") || !nodeCheck.stdout.trim().startsWith("v")) {
-      console.log(`[Bot Deploy] Node.js not found — installing via nvm`);
-      await vpsManager.execCommand(server,
-        `curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && ` +
-        `${nvmSource} && nvm install 20 && nvm alias default 20 && nvm use default && ` +
-        `ln -sf $(which node) /usr/local/bin/node 2>/dev/null; ln -sf $(which npm) /usr/local/bin/npm 2>/dev/null; true`
-      );
-      console.log(`[Bot Deploy] ✓ Node.js installed`);
-    }
-
-    // 0b. Ensure PM2 is installed
-    const pm2Check = await vpsManager.execCommand(server,
-      isWindows ? `pm2 --version 2>nul || echo NOT_FOUND` : `pm2 --version 2>/dev/null || echo "NOT_FOUND"`
-    );
-    if (pm2Check.stdout.includes("NOT_FOUND")) {
-      console.log(`[Bot Deploy] PM2 not found — installing`);
-      await vpsManager.execCommand(server,
-        `${nvmSource}; npm install -g pm2 && ln -sf $(which pm2) /usr/local/bin/pm2 2>/dev/null; true`
-      );
-      console.log(`[Bot Deploy] ✓ PM2 installed`);
-    }
-
-    // 1. Ensure git is available
-    await vpsManager.execCommand(server,
-      `which git 2>/dev/null || git --version 2>/dev/null || (${installGit}); echo "git ok"`
-    );
-
-    // 2. Clone or pull repo
-    await vpsManager.execCommand(server,
-      `mkdir -p /opt/bots && (git -C ${botDir} pull --ff-only 2>/dev/null || git clone ${repoUrl} ${botDir})`
-    );
-    console.log(`[Bot Deploy] ✓ Repo ready at ${botDir}`);
-
-    // 3. Write .env file
-    await vpsManager.execCommand(server,
-      `printf '%s\\n' ${JSON.stringify(envLines)} > ${botDir}/.env`
-    );
-    console.log(`[Bot Deploy] ✓ .env written`);
-
-    // 4. npm install
-    const { stdout: installOut } = await vpsManager.execCommand(server,
-      `${nvmSource}; cd ${botDir} && npm install --production 2>&1 | tail -5`
-    );
-    console.log(`[Bot Deploy] npm install: ${installOut.slice(0, 120)}`);
-
-    // 5. Start with PM2
-    await vpsManager.execCommand(server,
-      `${nvmSource}; pm2 delete ${pm2Name} 2>/dev/null || true; ` +
-      `cd ${botDir} && (pm2 start . --name ${pm2Name} 2>/dev/null || pm2 start index.js --name ${pm2Name}); pm2 save`
-    );
-    console.log(`[Bot Deploy] ✓ PM2 ${pm2Name} started`);
-
-    return { pm2Name, vpsServerId: server.id };
-  }
 
 // Global lock — prevents the scheduler from running two instances at once
 let autoDeployRunning = false;
 
 // ── Exported: deploy ONE pending order per run (sequential, never parallel) ──
 export async function deployPendingOrders(): Promise<void> {
-  if (autoDeployRunning) {
-    console.log("[Auto Deploy] Already running — skipping this tick");
-    return;
-  }
-  autoDeployRunning = true;
-  try {
-    const servers = vpsManager.getAll();
-    if (!servers.length) {
-      console.log("[Auto Deploy] No VPS servers configured — skipping");
+    if (autoDeployRunning) {
+      console.log("[Auto Deploy] Already running -- skipping this tick");
       return;
     }
-    const updNow = dbType === "pg" ? "NOW()::text" : "datetime('now')";
-
-    // Only grab ONE pending order per run — avoids flooding the VPS
-    const pending = await q(
-      "SELECT * FROM bot_orders WHERE status IN ('paid', 'deploy_failed') AND (pm2_name IS NULL OR pm2_name = '') ORDER BY created_at ASC LIMIT 1"
-    ).catch(() => []);
-    if (!pending.length) { console.log("[Auto Deploy] No pending orders"); return; }
-
-    const order = pending[0];
-    console.log(`[Auto Deploy] Processing ${order.reference}`);
-
-    const bots = await q("SELECT * FROM bots WHERE id = ?", [order.bot_id]).catch(() => []);
-    if (!bots.length) { console.log(`[Auto Deploy] Bot not found for ${order.reference}`); return; }
-
-    const autoEnv: Record<string, string> = { NODE_ENV: "production" };
-    if (order.session_id) autoEnv["SESSION_ID"] = order.session_id;
-    if (order.db_url) autoEnv["DB_URL"] = order.db_url;
-    if (order.mode) autoEnv["MODE"] = order.mode;
-    if (order.timezone) autoEnv["TIMEZONE"] = order.timezone;
-
+    autoDeployRunning = true;
     try {
-      const result = await deployBotToVps(order, bots[0], autoEnv);
-      if (result) {
-        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-        await m(
-          `UPDATE bot_orders SET status = 'deployed', pm2_name = ?, vps_server_id = ?, deployed_at = ${updNow}, expires_at = ?, updated_at = ${updNow} WHERE id = ?`,
-          [result.pm2Name, result.vpsServerId, expiresAt, order.id]
-        );
-        console.log(`[Auto Deploy] ✓ ${order.reference} → VPS ${result.vpsServerId}`);
-      }
-    } catch (e: any) {
-      console.error(`[Auto Deploy] ✗ ${order.reference}:`, e.message);
-      await m(`UPDATE bot_orders SET status = 'deploy_failed', deployment_notes = ?, updated_at = ${updNow} WHERE id = ?`,
-        ["Auto-deploy failed: " + e.message.slice(0, 200), order.id]).catch(() => {});
-    }
-  } finally {
-    autoDeployRunning = false;
-  }
-}
+      const updNow = dbType === "pg" ? "NOW()::text" : "datetime('now')";
 
-// Per-VPS deploy lock — prevents simultaneous npm install on the same server
+      const pending = await q(
+        "SELECT * FROM bot_orders WHERE status IN ('paid', 'deploy_failed') AND (pm2_name IS NULL OR pm2_name = '') ORDER BY created_at ASC LIMIT 1"
+      ).catch(() => []);
+      if (!pending.length) { console.log("[Auto Deploy] No pending orders"); return; }
+
+      const order = pending[0];
+      console.log(`[Auto Deploy] Processing ${order.reference}`);
+
+      const bots = await q("SELECT * FROM bots WHERE id = ?", [order.bot_id]).catch(() => []);
+      if (!bots.length) { console.log(`[Auto Deploy] Bot not found for ${order.reference}`); return; }
+      const bot = bots[0];
+
+      const repoUrl = (bot.repo_url || bot.repoUrl || "").replace(/\.git$/, "");
+      if (!repoUrl) {
+        console.log(`[Auto Deploy] Bot ${bot.name} has no repoUrl -- marking failed`);
+        await m(`UPDATE bot_orders SET status = 'deploy_failed', deployment_notes = ?, updated_at = ${updNow} WHERE id = ?`,
+          ["Bot has no repoUrl configured", order.id]).catch(() => {});
+        return;
+      }
+
+      const autoEnv: Record<string, string> = { NODE_ENV: "production" };
+      if (order.session_id) autoEnv["SESSION_ID"] = order.session_id;
+      if (order.db_url) autoEnv["DB_URL"] = order.db_url;
+      if (order.mode) autoEnv["MODE"] = order.mode;
+      if (order.timezone) autoEnv["TIMEZONE"] = order.timezone;
+
+      try {
+        const result = await deployBot(order.reference, repoUrl, autoEnv);
+        if (result.success) {
+          const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          await m(
+            `UPDATE bot_orders SET status = 'deployed', pm2_name = ?, vps_server_id = ?, deployed_at = ${updNow}, expires_at = ?, updated_at = ${updNow} WHERE id = ?`,
+            ["local", "chegetech-local", expiresAt, order.id]
+          );
+          console.log(`[Auto Deploy] ok ${order.reference} deployed at ${result.liveUrl}`);
+        } else {
+          throw new Error(result.error || "Deployment returned no success");
+        }
+      } catch (e: any) {
+        console.error(`[Auto Deploy] fail ${order.reference}:`, e.message);
+        await m(`UPDATE bot_orders SET status = 'deploy_failed', deployment_notes = ?, updated_at = ${updNow} WHERE id = ?`,
+          ["Auto-deploy failed: " + e.message.slice(0, 200), order.id]).catch(() => {});
+      }
+    } finally {
+      autoDeployRunning = false;
+    }
+  }
+
+// Legacy: vpsDeployLock kept for backward compat — prevents simultaneous npm install on the same server
 const vpsDeployLock = new Set<string>();
 
 export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
@@ -305,7 +227,7 @@ export function registerBotRoutes(app: Express, adminAuthMiddleware: any) {
         method: "POST",
         headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: customerEmail, amount: bot.price * 100, currency: "KES", reference,
+          email: customerEmail, amount: finalAmount * 100, currency: "KES", reference,
           metadata: { botId: bot.id, botName: bot.name, customerName, customerPhone },
         }),
       });

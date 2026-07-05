@@ -152,6 +152,11 @@ app.use((req, res, next) => {
         startAlwaysOnBot();
         log("[bot] Always-on bot started");
       }).catch((err) => log(`[bot] Failed to start: ${err.message}`));
+
+      // Recover bots from disk + start health check
+      import("./bot-deploy").then(({ recoverBots, startHealthCheck }) => {
+        recoverBots().then(() => startHealthCheck()).catch(() => {});
+      }).catch(() => {});
     },
   );
 })();

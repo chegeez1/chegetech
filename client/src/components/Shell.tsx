@@ -1,6 +1,6 @@
 import { useLocation } from "wouter";
 import {
-  ShoppingBag, Bot, Server, LayoutDashboard, LogOut, Zap, Smartphone, TrendingUp, Shield, Users, Mail, Gift, MessageSquare, HelpCircle, Download, Send
+  ShoppingBag, Bot, Server, LayoutDashboard, LogOut, Zap, Smartphone, TrendingUp, Shield, Users, Mail, Gift, MessageSquare, HelpCircle, Download, Send, Sparkles
 } from "lucide-react";
 import { useState } from "react";
 
@@ -15,7 +15,8 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: ShoppingBag, label: "Premium Accounts", shortLabel: "Accounts", path: "/",          color: "text-indigo-400", activeBg: "bg-indigo-500/20 border-indigo-500/30", activeTextBg: "bg-indigo-500/15" },
+  { icon: ShoppingBag, label: "Premium Accounts", shortLabel: "Accounts", path: "/store",      color: "text-indigo-400", activeBg: "bg-indigo-500/20 border-indigo-500/30", activeTextBg: "bg-indigo-500/15" },
+  { icon: Sparkles,    label: "Home",             shortLabel: "Home",     path: "/",           color: "text-white",      activeBg: "bg-white/10 border-white/20",              activeTextBg: "bg-white/10"     },
   { icon: Bot,         label: "WhatsApp Bots",    shortLabel: "Bots",     path: "/bots",       color: "text-green-400",  activeBg: "bg-green-500/20 border-green-500/30",  activeTextBg: "bg-green-500/15"  },
   { icon: Server,      label: "VPS Hosting",      shortLabel: "VPS",      path: "/vps",        color: "text-cyan-400",   activeBg: "bg-cyan-500/20 border-cyan-500/30",    activeTextBg: "bg-cyan-500/15"   },
   { icon: Gift,          label: "Gift Cards",   shortLabel: "Gifts",   path: "/giftcards",color: "text-yellow-400", activeBg: "bg-yellow-500/20 border-yellow-500/30",   activeTextBg: "bg-yellow-500/15"  },
