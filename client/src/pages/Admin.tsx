@@ -3004,6 +3004,7 @@ function AccountsTab() {
                                 </div>
                               )}
                             </div>
+                            </div>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <Button size="sm" variant="outline" className="glass border-white/10 text-white/60 hover:text-white h-8"
                                 onClick={() => { setEditingId(acc.id); setEditValues({ email: acc.email, password: "", username: acc.username, maxUsers: acc.maxUsers, instructions: acc.instructions }); }}>
