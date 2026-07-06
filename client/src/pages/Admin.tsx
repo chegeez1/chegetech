@@ -25,8 +25,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
+import AdminResellers from "./AdminResellers";
 
-type Tab = "dashboard" | "analytics" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "ratings" | "feature-requests" | "emailblast" | "campaigns" | "logs" | "settings" | "support" | "subadmins" | "super-admins" | "geo-restrict" | "vps" | "vps-sales" | "domains" | "funnel" | "groups" | "flash-sales" | "whatsapp" | "bot-store" | "bot-orders" | "smm-orders" | "proxy-plans" | "proxy-orders" | "digital-products" | "digital-orders" | "free-proxies" | "gift-cards" | "gc-orders" | "sms-plans" | "sms-orders" | "cc-checker" | "email-gen" | "chegebot-subs" | "downloader";
+type Tab = "dashboard" | "analytics" | "plans" | "accounts" | "promos" | "transactions" | "apikeys" | "customers" | "ratings" | "feature-requests" | "emailblast" | "campaigns" | "logs" | "settings" | "support" | "subadmins" | "super-admins" | "geo-restrict" | "vps" | "vps-sales" | "domains" | "funnel" | "groups" | "flash-sales" | "whatsapp" | "bot-store" | "bot-orders" | "smm-orders" | "proxy-plans" | "proxy-orders" | "digital-products" | "digital-orders" | "free-proxies" | "gift-cards" | "gc-orders" | "sms-plans" | "sms-orders" | "cc-checker" | "email-gen" | "chegebot-subs" | "downloader" | "resellers";
 
 class SettingsErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
   constructor(props: any) { super(props); this.state = { error: null }; }
@@ -282,6 +283,7 @@ export default function Admin() {
     { id: "email-gen", label: "Email Generator", icon: Mail, alwaysVisible: true },
     { id: "chegebot-subs", label: "ChegeBot Pro", icon: Zap, alwaysVisible: true },
     { id: "downloader", label: "Downloader", icon: Download, alwaysVisible: true },
+    { id: "resellers", label: "Resellers", icon: Users, alwaysVisible: true },
     { id: "logs", label: "Activity Logs", icon: Activity },
     { id: "subadmins", label: "Sub-Admins", icon: Users, superOnly: true },
     { id: "super-admins", label: "Super Admins", icon: Shield, superOnly: true },
@@ -438,6 +440,7 @@ export default function Admin() {
           {activeTab === "vps-sales" && <VpsSellerTab />}
           {activeTab === "domains" && adminRole === "super" && <DomainsTab />}
           {activeTab === "settings" && adminRole === "super" && <SettingsErrorBoundary><SettingsTab /></SettingsErrorBoundary>}
+          {activeTab === "resellers" && <AdminResellers />}
         </div>
       </main>
 
