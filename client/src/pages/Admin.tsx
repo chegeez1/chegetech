@@ -257,6 +257,7 @@ export default function Admin() {
 
   const allTabs: { id: Tab; label: string; icon: any; superOnly?: boolean; alwaysVisible?: boolean }[] = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "resellers", label: "Resellers", icon: Users, alwaysVisible: true },
     { id: "analytics", label: "Analytics", icon: TrendingUp },
     { id: "plans", label: "Plans & Offers", icon: Tags },
     { id: "accounts", label: "Accounts", icon: Package },
@@ -289,7 +290,6 @@ export default function Admin() {
     { id: "email-gen", label: "Email Generator", icon: Mail, alwaysVisible: true },
     { id: "chegebot-subs", label: "ChegeBot Pro", icon: Zap, alwaysVisible: true },
     { id: "downloader", label: "Downloader", icon: Download, alwaysVisible: true },
-    { id: "resellers", label: "Resellers", icon: Users, alwaysVisible: true },
     { id: "logs", label: "Activity Logs", icon: Activity },
     { id: "subadmins", label: "Sub-Admins", icon: Users, superOnly: true },
     { id: "super-admins", label: "Super Admins", icon: Shield, superOnly: true },
