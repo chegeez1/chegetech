@@ -3029,7 +3029,6 @@ function AccountsTab() {
                               </Button>
                             </div>
                           </div>
-                          </div>
                         )}
                       </div>
                     ))}
