@@ -5972,6 +5972,53 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
     }
   });
 
+  // ─── Reseller Change Password ─────────────────────────────────────────────
+  app.post("/api/reseller/change-password", resellerAuthMiddleware, async (req: any, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) return res.status(400).json({ success: false, error: "Both current and new password are required" });
+      if (newPassword.length < 6) return res.status(400).json({ success: false, error: "New password must be at least 6 characters" });
+      const reseller = await storage.getResellerById(req.reseller.id);
+      if (!reseller || !reseller.passwordHash) return res.status(401).json({ success: false, error: "Invalid credentials" });
+      const valid = await bcrypt.compare(currentPassword, reseller.passwordHash);
+      if (!valid) return res.status(401).json({ success: false, error: "Current password is incorrect" });
+      const newHash = await bcrypt.hash(newPassword, 12);
+      await storage.updateReseller(req.reseller.id, { passwordHash: newHash });
+      res.json({ success: true, message: "Password updated successfully" });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Reseller Notifications ───────────────────────────────────────────────
+  app.get("/api/reseller/notifications", resellerAuthMiddleware, async (req: any, res) => {
+    try {
+      const notifications = await storage.getResellerNotifications(req.reseller.id, 20);
+      res.json({ success: true, notifications });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/reseller/notifications/read", resellerAuthMiddleware, async (req: any, res) => {
+    try {
+      await storage.markResellerNotificationsRead(req.reseller.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Reseller Referrals ───────────────────────────────────────────────────
+  app.get("/api/reseller/referrals", resellerAuthMiddleware, async (req: any, res) => {
+    try {
+      const data = await storage.getResellerReferrals(req.reseller.id);
+      res.json({ success: true, ...data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // ─── Public: Storefront (custom domain fallback — no slug in path) ────────
   app.get("/api/storefront", async (req: any, res) => {
     try {

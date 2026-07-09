@@ -384,6 +384,8 @@ export async function initializeDatabase() {
         await pgPool.query("ALTER TABLE vps_orders ADD COLUMN IF NOT EXISTS paystack_reference TEXT");
       // Migrate: add reseller_id to transactions
       await pgPool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reseller_id INTEGER");
+      await pgPool.query(`CREATE TABLE IF NOT EXISTS reseller_notifications (id SERIAL PRIMARY KEY, reseller_id INTEGER NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, read INTEGER DEFAULT 0, created_at TEXT DEFAULT (NOW()::text))`).catch(() => {});
+      await pgPool.query(`CREATE TABLE IF NOT EXISTS reseller_referrals (id SERIAL PRIMARY KEY, referrer_id INTEGER NOT NULL, reseller_id INTEGER NOT NULL UNIQUE, created_at TEXT DEFAULT (NOW()::text))`).catch(() => {});
       
       
       
@@ -1118,6 +1120,10 @@ export interface IStorage {
   approveWithdrawal(id: number, adminNote?: string): Promise<void>;
   rejectWithdrawal(id: number, adminNote?: string): Promise<void>;
   getResellerOrders(resellerId: number): Promise<any[]>;
+  getResellerNotifications(resellerId: number, limit?: number): Promise<any[]>;
+  markResellerNotificationsRead(resellerId: number): Promise<void>;
+  createResellerNotification(resellerId: number, title: string, body: string): Promise<void>;
+  getResellerReferrals(resellerId: number): Promise<{ count: number; list: any[] }>;
 }
 
 export class DbStorage implements IStorage {
@@ -2189,6 +2195,78 @@ export class DbStorage implements IStorage {
       customerEmail: row.customer_email, customerName: row.customer_name,
       amount: row.amount, status: row.status, createdAt: row.created_at,
     }));
+  }
+
+  // ─── Reseller Notifications ──────────────────────────────────────────────────
+  async getResellerNotifications(resellerId: number, limit = 20): Promise<any[]> {
+    try {
+      if (dbType === "pg" && pgPool) {
+        const r = await pgPool.query(
+          "SELECT * FROM reseller_notifications WHERE reseller_id = $1 ORDER BY created_at DESC LIMIT $2",
+          [resellerId, limit]
+        );
+        return r.rows.map((n: any) => ({ id: n.id, title: n.title, body: n.body, read: !!n.read, createdAt: n.created_at }));
+      }
+      const rows = sqliteInstance!.prepare(
+        "SELECT * FROM reseller_notifications WHERE reseller_id = ? ORDER BY created_at DESC LIMIT ?"
+      ).all(resellerId, limit) as any[];
+      return rows.map((n) => ({ id: n.id, title: n.title, body: n.body, read: !!n.read, createdAt: n.created_at }));
+    } catch { return []; }
+  }
+
+  async markResellerNotificationsRead(resellerId: number): Promise<void> {
+    try {
+      if (dbType === "pg" && pgPool) {
+        await pgPool.query("UPDATE reseller_notifications SET read = 1 WHERE reseller_id = $1", [resellerId]);
+        return;
+      }
+      sqliteInstance!.prepare("UPDATE reseller_notifications SET read = 1 WHERE reseller_id = ?").run(resellerId);
+    } catch {}
+  }
+
+  async createResellerNotification(resellerId: number, title: string, body: string): Promise<void> {
+    try {
+      if (dbType === "pg" && pgPool) {
+        await pgPool.query(
+          "INSERT INTO reseller_notifications (reseller_id, title, body) VALUES ($1, $2, $3)",
+          [resellerId, title, body]
+        );
+        return;
+      }
+      sqliteInstance!.prepare(
+        "INSERT INTO reseller_notifications (reseller_id, title, body) VALUES (?, ?, ?)"
+      ).run(resellerId, title, body);
+    } catch {}
+  }
+
+  async getResellerReferrals(resellerId: number): Promise<{ count: number; list: any[] }> {
+    try {
+      if (dbType === "pg" && pgPool) {
+        const r = await pgPool.query(
+          `SELECT rr.id, rr.created_at, r.name, r.email, r.status
+           FROM reseller_referrals rr
+           JOIN resellers r ON r.id = rr.reseller_id
+           WHERE rr.referrer_id = $1
+           ORDER BY rr.created_at DESC`,
+          [resellerId]
+        );
+        return {
+          count: r.rows.length,
+          list: r.rows.map((row: any) => ({ id: row.id, name: row.name, email: row.email, status: row.status, createdAt: row.created_at })),
+        };
+      }
+      const rows = sqliteInstance!.prepare(
+        `SELECT rr.id, rr.created_at, r.name, r.email, r.status
+         FROM reseller_referrals rr
+         JOIN resellers r ON r.id = rr.reseller_id
+         WHERE rr.referrer_id = ?
+         ORDER BY rr.created_at DESC`
+      ).all(resellerId) as any[];
+      return {
+        count: rows.length,
+        list: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, status: row.status, createdAt: row.created_at })),
+      };
+    } catch { return { count: 0, list: [] }; }
   }
 
   // ─── Flash Sales ────────────────────────────────────────────────────────────
