@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import {
-  ArrowLeft, CheckCircle, CreditCard, Flame, Mail, Search, ShoppingBag, Star, Store, User, X, Zap
+  ArrowLeft, CheckCircle, CheckCircle2, CreditCard, Flame, Lock, LogIn, LogOut,
+  Mail, Package, Search, ShoppingBag, Star, Store, User, UserPlus, X, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,83 @@ export default function ResellerStorefront() {
   const [selected, setSelected] = useState<any | null>(null);
   const [form, setForm] = useState({ email: "", customerName: "" });
   const [loading, setLoading] = useState(false);
+
+  // ── Customer auth state ───────────────────────────────────────────────────
+  const [customer, setCustomer] = useState<{ name?: string; email: string } | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authForm, setAuthForm] = useState({ email: "", password: "", name: "", confirmPassword: "" });
+  const [authLoading, setAuthLoading] = useState(false);
+  const [verifyPending, setVerifyPending] = useState(false); // show "check your email" state
+
+  // Check if already logged in on mount + handle ?verified=1 redirect from email link
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.success && d?.customer) setCustomer(d.customer); })
+      .catch(() => {});
+    // If they just verified their email from this storefront's link
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("verified") === "1") {
+      toast({ title: "Email verified! 🎉", description: "You're all set. Sign in to your account." });
+      setAuthOpen(true);
+      setAuthMode("login");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  async function submitLogin(e: FormEvent) {
+    e.preventDefault();
+    setAuthLoading(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: authForm.email, password: authForm.password }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Login failed");
+      setCustomer(data.customer);
+      setAuthOpen(false);
+      setAuthForm({ email: "", password: "", name: "", confirmPassword: "" });
+      toast({ title: `Welcome back${data.customer?.name ? `, ${data.customer.name.split(" ")[0]}` : ""}! 👋` });
+    } catch (err: any) {
+      toast({ title: "Login failed", description: err.message, variant: "destructive" });
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function submitSignup(e: FormEvent) {
+    e.preventDefault();
+    if (authForm.password !== authForm.confirmPassword) {
+      toast({ title: "Passwords don't match", variant: "destructive" });
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: authForm.email, password: authForm.password, name: authForm.name, resellerSlug: slug }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Sign up failed");
+      setVerifyPending(true);
+    } catch (err: any) {
+      toast({ title: "Sign up failed", description: err.message, variant: "destructive" });
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
+    setCustomer(null);
+    toast({ title: "Signed out" });
+  }
 
   const { data, isLoading, isError } = useQuery<any>({
     queryKey: [`/api/storefront/${slug}`],
@@ -145,11 +223,107 @@ export default function ResellerStorefront() {
               <p className="text-xs text-white/35">Powered by Chege Tech</p>
             </div>
           </div>
-          <Button variant="outline" className="border-white/10 text-white text-sm" onClick={() => setLocation("/store")}>
-            <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Main store
-          </Button>
+          <div className="flex items-center gap-2">
+            {customer ? (
+              <>
+                <button
+                  onClick={() => setLocation(`/r/${slug}/orders`)}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10 transition"
+                >
+                  <Package className="h-3.5 w-3.5" /> My Orders
+                </button>
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/50 hover:bg-white/10 transition"
+                  title="Sign out"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{customer.name?.split(" ")[0] || customer.email.split("@")[0]}</span>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => { setAuthOpen(true); setAuthMode("login"); }}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition"
+              >
+                <LogIn className="h-3.5 w-3.5" /> Sign in
+              </button>
+            )}
+            <Button variant="outline" className="border-white/10 text-white text-xs hidden sm:flex" onClick={() => setLocation("/store")}>
+              <ArrowLeft className="mr-1.5 h-3 w-3" /> Main store
+            </Button>
+          </div>
         </div>
       </header>
+
+      {/* ── Auth modal ───────────────────────────────────────────────────────── */}
+      {authOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-gray-950 p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-lg font-black">
+                {verifyPending ? "Check your email" : authMode === "login" ? "Sign in" : "Create account"}
+              </h2>
+              <button onClick={() => { setAuthOpen(false); setVerifyPending(false); }} className="rounded-lg p-1.5 text-white/40 hover:bg-white/10 hover:text-white transition">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {verifyPending ? (
+              <div className="flex flex-col items-center text-center gap-3 py-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/15 border border-emerald-400/30">
+                  <Mail className="h-6 w-6 text-emerald-300" />
+                </div>
+                <p className="text-sm text-white/60">
+                  We sent a verification link to <span className="font-semibold text-white">{authForm.email}</span>.
+                  Click it to confirm your account, then sign in.
+                </p>
+                <button
+                  onClick={() => { setVerifyPending(false); setAuthMode("login"); }}
+                  className="mt-2 text-xs text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+                >
+                  Back to sign in
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Tab toggle */}
+                <div className="mb-5 grid grid-cols-2 rounded-xl bg-black/30 p-1">
+                  {(["login", "signup"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setAuthMode(m)}
+                      className={`rounded-lg px-4 py-2 text-sm font-bold transition ${authMode === m ? "bg-white text-gray-950" : "text-white/50 hover:text-white"}`}
+                    >
+                      {m === "login" ? "Sign in" : "Sign up"}
+                    </button>
+                  ))}
+                </div>
+
+                {authMode === "login" ? (
+                  <form onSubmit={submitLogin} className="space-y-3">
+                    <Input required type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} />
+                    <Input required type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
+                    <Button disabled={authLoading} className="w-full bg-emerald-500 text-gray-950 hover:bg-emerald-400 font-bold">
+                      <LogIn className="mr-2 h-4 w-4" /> {authLoading ? "Signing in..." : "Sign in"}
+                    </Button>
+                  </form>
+                ) : (
+                  <form onSubmit={submitSignup} className="space-y-3">
+                    <Input required placeholder="Full name" value={authForm.name} onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })} />
+                    <Input required type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} />
+                    <Input required type="password" placeholder="Password (min 6 chars)" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
+                    <Input required type="password" placeholder="Confirm password" value={authForm.confirmPassword} onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })} />
+                    <Button disabled={authLoading} className="w-full bg-emerald-500 text-gray-950 hover:bg-emerald-400 font-bold">
+                      <UserPlus className="mr-2 h-4 w-4" /> {authLoading ? "Creating account..." : "Create account"}
+                    </Button>
+                  </form>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto max-w-7xl px-4 py-8">
         {/* Hero banner */}

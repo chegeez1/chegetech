@@ -34,6 +34,7 @@ import SmsPage from "./pages/SmsPage";
 import Reseller from "@/pages/Reseller";
 import ResellerDashboard from "@/pages/ResellerDashboard";
 import ResellerStorefront from "@/pages/ResellerStorefront";
+import ResellerCustomerOrders from "@/pages/ResellerCustomerOrders";
 import AdminResellers from "@/pages/AdminResellers";
 import TempNumbers from "@/pages/TempNumbers";
 import Downloader from "@/pages/Downloader";
@@ -137,6 +138,7 @@ function Router() {
                 <Route path="/downloader" component={Downloader} />
                 <Route path="/bulk-whatsapp" component={BulkWhatsApp} />
         <Route path="/sms" component={SmsPage} />
+        <Route path="/r/:slug/orders" component={ResellerCustomerOrders} />
         <Route path="/r/:slug" component={ResellerStorefront} />
         <Route path="/reseller/dashboard" component={ResellerDashboard} />
         <Route path="/reseller" component={Reseller} />

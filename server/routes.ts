@@ -98,14 +98,15 @@ function getReqIp(req: any): string {
   return (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
 }
 
-function buildVerificationLink(email: string, token: string): string {
+function buildVerificationLink(email: string, token: string, resellerSlug?: string): string {
   const base = (getAppConfig().customDomain && `https://${getAppConfig().customDomain}`)
     || (getAppConfig().appDomain && `https://${getAppConfig().appDomain}`)
     || "https://streamvault-premium.site";
-  return `${base}/api/auth/verify-link?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+  const slug = resellerSlug ? `&resellerSlug=${encodeURIComponent(resellerSlug)}` : "";
+  return `${base}/api/auth/verify-link?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}${slug}`;
 }
 
-async function sendVerificationEmail(email: string, token: string, name?: string): Promise<void> {
+async function sendVerificationEmail(email: string, token: string, name?: string, resellerSlug?: string): Promise<void> {
   const { Resend } = await import("resend");
   const key = getResendApiKey();
   if (!key || key.startsWith("re_xxx") || key === "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") {
@@ -115,7 +116,7 @@ async function sendVerificationEmail(email: string, token: string, name?: string
   const resend = new Resend(key);
   const fromAddr = getResendOtpFrom() || getResendFrom() || "onboarding@resend.dev";
   const from = `StreamVault Premium <${fromAddr}>`;
-  const link = buildVerificationLink(email, token);
+  const link = buildVerificationLink(email, token, resellerSlug);
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -2115,7 +2116,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ─── Customer: Register ───────────────────────────────────────────────────
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { email, name, password, referralCode } = req.body;
+      const { email, name, password, referralCode, resellerSlug } = req.body;
       if (!email || !password) return res.status(400).json({ success: false, error: "Email and password are required" });
       if (password.length < 6) return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
 
@@ -2143,9 +2144,28 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       res.json({ success: true, message: "Verification link sent to your email", verificationMode: "link" });
-      sendVerificationEmail(email, verificationCode, name).catch((err) => {
-        console.error("[email] Failed to send verification code to", email, err?.message);
-      });
+
+      // If signing up from a reseller storefront, try to use their Resend key for branding
+      (async () => {
+        try {
+          if (resellerSlug) {
+            const resellerObj = await storage.getResellerBySlug(resellerSlug);
+            if (resellerObj?.resendApiKey && resellerObj?.resendFromEmail) {
+              const { Resend } = await import("resend");
+              const rsd = new Resend(resellerObj.resendApiKey);
+              const storeName = resellerObj.storeName || resellerObj.businessName || resellerObj.name;
+              const link = buildVerificationLink(email, verificationCode, resellerSlug);
+              const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;"><div style="max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10);"><div style="background:linear-gradient(135deg,#10b981 0%,#0891b2 100%);padding:32px;text-align:center;"><h1 style="color:#fff;margin:0 0 6px;font-size:24px;font-weight:700;">Verify Your Email</h1><p style="color:rgba(255,255,255,.85);margin:0;font-size:14px;">${storeName}</p></div><div style="padding:32px 32px 24px;text-align:center;"><p style="font-size:15px;color:#333;margin:0 0 8px;">Hi <strong>${name || "there"}</strong>, welcome to ${storeName}!</p><p style="font-size:14px;color:#555;margin:0 0 28px;">Click the button below to verify your email. This link expires in <strong>30 minutes</strong>.</p><a href="${link}" target="_blank" rel="noopener" style="display:inline-block;background:linear-gradient(135deg,#10b981 0%,#0891b2 100%);color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:15px 42px;border-radius:10px;">Verify My Email</a><p style="font-size:12px;color:#aaa;margin:24px 0 0;">If you didn't sign up, you can ignore this email.</p></div><div style="background:#f8faff;padding:16px;text-align:center;border-top:1px solid #eee;"><p style="font-size:12px;color:#aaa;margin:0;">&copy; ${new Date().getFullYear()} ${storeName}. All rights reserved.</p></div></div></body></html>`;
+              const { error } = await rsd.emails.send({ from: `${storeName} <${resellerObj.resendFromEmail}>`, to: email, subject: `Verify your ${storeName} account`, html });
+              if (!error) return; // sent successfully, skip platform fallback
+              console.warn("[auth][register] Reseller Resend key failed, falling back to platform:", error.message);
+            }
+          }
+          await sendVerificationEmail(email, verificationCode, name, resellerSlug);
+        } catch (err: any) {
+          console.error("[email] Failed to send verification code to", email, err?.message);
+        }
+      })();
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -2227,6 +2247,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       notifyNewCustomer({ name: customer.name || "", email: customer.email }).catch(() => {});
 
+      // If verified from a reseller storefront, send them back there
+      const resellerSlugParam = String((req.query.resellerSlug ?? "")).trim();
+      if (resellerSlugParam) {
+        return res.redirect(`${sitePrefix}/r/${encodeURIComponent(resellerSlugParam)}?verified=1`);
+      }
       // Redirect to a frontend success page (it will pick up the cookie via /api/auth/me)
       return res.redirect(`${sitePrefix}/verify-email?status=success`);
     } catch (err: any) {
@@ -6173,6 +6198,21 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
   });
 
   // ─── Public: Storefront ───────────────────────────────────────────────────
+  // ─── Storefront: authenticated customer's orders from this reseller ──────────
+  app.get("/api/storefront/:slug/my-orders", customerAuthMiddleware, async (req: any, res) => {
+    try {
+      const slug = req.resellerSlug || req.params.slug;
+      const reseller = await storage.getResellerBySlug(slug);
+      if (!reseller) return res.status(404).json({ success: false, error: "Storefront not found" });
+      // Get all transactions for this customer email, filter by resellerId
+      const allOrders = await storage.getTransactionsByEmail(req.customer.email);
+      const orders = allOrders.filter((o: any) => o.resellerId === reseller.id || o.reseller_id === reseller.id);
+      res.json({ success: true, orders, storeName: reseller.storeName || reseller.name });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   app.get("/api/storefront/:slug", async (req: any, res) => {
     try {
       // Prefer domain-matched slug from middleware; fall back to URL slug
