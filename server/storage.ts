@@ -344,6 +344,7 @@ export async function initializeDatabase() {
         await pgPool.query("ALTER TABLE bot_orders ADD COLUMN IF NOT EXISTS expires_at TEXT");
         await pgPool.query("ALTER TABLE bot_orders ADD COLUMN IF NOT EXISTS renewal_reminded TEXT");
         await pgPool.query("ALTER TABLE bot_orders ADD COLUMN IF NOT EXISTS deployment_log TEXT");
+        await pgPool.query("ALTER TABLE bot_orders ADD COLUMN IF NOT EXISTS reseller_id INTEGER");
         await pgPool.query("CREATE TABLE IF NOT EXISTS bot_pings (id SERIAL PRIMARY KEY, bot_order_id INTEGER NOT NULL, pm2_status TEXT NOT NULL, checked_at TEXT DEFAULT (NOW()::text))");
         await pgPool.query(`CREATE TABLE IF NOT EXISTS vps_plans (
           id SERIAL PRIMARY KEY,
@@ -879,6 +880,7 @@ function initSqlite() {
     try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN expires_at TEXT").run(); } catch {}
     try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN renewal_reminded TEXT").run(); } catch {}
     try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN deployment_log TEXT").run(); } catch {}
+    try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN reseller_id INTEGER").run(); } catch {}
   // Migrate: reseller email verification + custom Resend integration
   try { sqliteInstance!.prepare("ALTER TABLE resellers ADD COLUMN email_verified INTEGER DEFAULT 0").run(); } catch {}
   try { sqliteInstance!.prepare("ALTER TABLE resellers ADD COLUMN verification_code TEXT").run(); } catch {}

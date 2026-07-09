@@ -7,7 +7,7 @@ import {
   BarChart, Bar
 } from "recharts";
 import {
-  ArrowDownRight, ArrowUpRight, Bell, Check, Copy, ExternalLink,
+  ArrowDownRight, ArrowUpRight, Bell, Bot, Check, Copy, ExternalLink,
   LineChart, LogOut, Package, Percent, Save,
   Search, Settings, ShoppingBag, TrendingUp, Users, Wallet
 } from "lucide-react";
@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 
-type Tab = "overview" | "pricing" | "orders" | "wallet" | "referrals" | "profile";
+type Tab = "overview" | "pricing" | "orders" | "bots" | "customers" | "wallet" | "referrals" | "profile";
 
 async function resellerFetch(path: string, opts: RequestInit = {}) {
   const res = await fetch(path, {
@@ -118,6 +118,8 @@ export default function ResellerDashboard() {
   const plans = useQuery<any>({ queryKey: ["/api/plans"], enabled: !!me.data });
   const prices = useQuery<any>({ queryKey: ["/api/reseller/prices"], queryFn: () => resellerFetch("/api/reseller/prices"), enabled: !!me.data });
   const orders = useQuery<any>({ queryKey: ["/api/reseller/orders"], queryFn: () => resellerFetch("/api/reseller/orders"), enabled: !!me.data });
+  const botOrders = useQuery<any>({ queryKey: ["/api/reseller/bot-orders"], queryFn: () => resellerFetch("/api/reseller/bot-orders"), enabled: !!me.data && tab === "bots" });
+  const customers = useQuery<any>({ queryKey: ["/api/reseller/customers"], queryFn: () => resellerFetch("/api/reseller/customers"), enabled: !!me.data && tab === "customers" });
   const wallet = useQuery<any>({ queryKey: ["/api/reseller/wallet"], queryFn: () => resellerFetch("/api/reseller/wallet"), enabled: !!me.data });
   const withdrawals = useQuery<any>({ queryKey: ["/api/reseller/withdrawals"], queryFn: () => resellerFetch("/api/reseller/withdrawals"), enabled: !!me.data });
   const referrals = useQuery<any>({ queryKey: ["/api/reseller/referrals"], queryFn: () => resellerFetch("/api/reseller/referrals"), enabled: !!me.data });
@@ -175,8 +177,10 @@ export default function ResellerDashboard() {
     { id: "overview", icon: LineChart, label: "Overview" },
     { id: "pricing", icon: Package, label: "Pricing" },
     { id: "orders", icon: ShoppingBag, label: "Orders" },
+    { id: "bots", icon: Bot, label: "Bot Orders" },
+    { id: "customers", icon: Users, label: "Customers" },
     { id: "wallet", icon: Wallet, label: "Wallet" },
-    { id: "referrals", icon: Users, label: "Referrals" },
+    { id: "referrals", icon: TrendingUp, label: "Referrals" },
     { id: "profile", icon: Settings, label: "Profile" },
   ];
 
@@ -298,6 +302,8 @@ export default function ResellerDashboard() {
             />
           )}
           {tab === "orders" && <Orders orders={orders.data?.orders || []} />}
+          {tab === "bots" && <BotOrdersTab orders={botOrders.data?.orders || []} loading={botOrders.isLoading} />}
+          {tab === "customers" && <CustomersTab customers={customers.data?.customers || []} loading={customers.isLoading} />}
           {tab === "wallet" && (
             <WalletTab
               wallet={wallet.data}
@@ -653,6 +659,195 @@ function Orders({ orders }: { orders: any[] }) {
           </Table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Bot Orders ───────────────────────────────────────────────────────────────
+
+function BotOrdersTab({ orders, loading }: { orders: any[]; loading: boolean }) {
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+      </div>
+    );
+  }
+
+  function botStatusMeta(status: string) {
+    const map: Record<string, { label: string; color: string }> = {
+      pending: { label: "Pending", color: "bg-amber-400/15 text-amber-300" },
+      paid: { label: "Paid", color: "bg-blue-400/15 text-blue-300" },
+      deployed: { label: "Deployed ✓", color: "bg-emerald-400/15 text-emerald-300" },
+      deploy_failed: { label: "Deploy Failed", color: "bg-red-400/15 text-red-300" },
+    };
+    return map[status] || { label: status, color: "bg-white/10 text-white/60" };
+  }
+
+  const statuses = ["all", "pending", "paid", "deployed", "deploy_failed"];
+  const filtered = orders.filter((o) => {
+    const matchSearch = `${o.reference} ${o.bot_name} ${o.customer_email}`.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === "all" || o.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Bot className="h-5 w-5 text-cyan-300" />
+            <h2 className="text-lg font-black">Bot Orders ({orders.length})</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {statuses.map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold capitalize transition ${statusFilter === s ? "bg-white text-gray-950" : "border border-white/10 text-white/50 hover:text-white"}`}
+              >
+                {s.replace("_", " ")}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-white/35" />
+          <Input className="pl-8 h-9 text-sm" placeholder="Search by reference, bot, or email..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="rounded-xl border border-white/8 py-14 text-center">
+            <Bot className="mx-auto mb-3 h-10 w-10 text-white/15" />
+            <p className="text-white/35">{orders.length === 0 ? "No bot orders yet — bots are listed on your storefront automatically" : "No results"}</p>
+          </div>
+        ) : (
+          <div className="overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Reference</TableHead>
+                  <TableHead>Bot</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>VPS / PM2</TableHead>
+                  <TableHead>Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((order: any) => {
+                  const { label, color } = botStatusMeta(order.status);
+                  return (
+                    <TableRow key={order.reference || order.id}>
+                      <TableCell className="font-mono text-xs text-white/60">{order.reference}</TableCell>
+                      <TableCell className="font-semibold">{order.bot_name || order.botName}</TableCell>
+                      <TableCell className="text-sm text-white/60">
+                        <p>{order.customer_name || order.customerName}</p>
+                        <p className="text-xs text-white/35">{order.customer_email || order.customerEmail}</p>
+                      </TableCell>
+                      <TableCell className="font-mono font-bold">{money(order.amount)}</TableCell>
+                      <TableCell><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${color}`}>{label}</span></TableCell>
+                      <TableCell className="text-xs text-white/50">{order.pm2_name || "—"}</TableCell>
+                      <TableCell className="text-xs text-white/40">{order.created_at ? new Date(order.created_at).toLocaleDateString() : "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Customers ────────────────────────────────────────────────────────────────
+
+function CustomersTab({ customers, loading }: { customers: any[]; loading: boolean }) {
+  const [search, setSearch] = useState("");
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+      </div>
+    );
+  }
+
+  const filtered = customers.filter((c) =>
+    `${c.email} ${c.name}`.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Summary cards */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          { label: "Total customers", value: customers.length, icon: Users },
+          { label: "Plan buyers", value: customers.filter((c) => c.planOrders > 0).length, icon: ShoppingBag },
+          { label: "Bot buyers", value: customers.filter((c) => c.botOrders > 0).length, icon: Bot },
+        ].map(({ label, value, icon: Icon }) => (
+          <div key={label} className="rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-400/10">
+              <Icon className="h-4.5 w-4.5 text-emerald-300" />
+            </div>
+            <div>
+              <p className="text-2xl font-black">{value}</p>
+              <p className="text-xs text-white/45">{label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-black">All customers ({customers.length})</h2>
+        </div>
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-white/35" />
+          <Input className="pl-8 h-9 text-sm" placeholder="Search by email or name..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="rounded-xl border border-white/8 py-14 text-center">
+            <Users className="mx-auto mb-3 h-10 w-10 text-white/15" />
+            <p className="text-white/35">{customers.length === 0 ? "No customers yet — share your store link to get orders" : "No results"}</p>
+          </div>
+        ) : (
+          <div className="overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Plan orders</TableHead>
+                  <TableHead>Bot orders</TableHead>
+                  <TableHead>Total spent</TableHead>
+                  <TableHead>First order</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((c: any) => (
+                  <TableRow key={c.email}>
+                    <TableCell>
+                      <p className="font-semibold">{c.name || "—"}</p>
+                      <p className="text-xs text-white/45 font-mono">{c.email}</p>
+                    </TableCell>
+                    <TableCell className="font-mono font-bold">{c.planOrders}</TableCell>
+                    <TableCell className="font-mono font-bold">{c.botOrders}</TableCell>
+                    <TableCell className="font-mono font-bold">{money(c.totalSpent)}</TableCell>
+                    <TableCell className="text-xs text-white/40">{c.firstOrder ? new Date(c.firstOrder).toLocaleDateString() : "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

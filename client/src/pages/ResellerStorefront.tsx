@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import {
-  ArrowLeft, CheckCircle, CreditCard, Flame, Lock, LogIn, LogOut,
+  ArrowLeft, Bot, CheckCircle, CreditCard, Flame, Lock, LogIn, LogOut,
   Mail, Package, Search, ShoppingBag, Star, Store, User, UserPlus, X, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,12 @@ export default function ResellerStorefront() {
   const [selected, setSelected] = useState<any | null>(null);
   const [form, setForm] = useState({ email: "", customerName: "" });
   const [loading, setLoading] = useState(false);
+
+  // ── Bot ordering state ────────────────────────────────────────────────────
+  const [selectedBot, setSelectedBot] = useState<any | null>(null);
+  const [botForm, setBotForm] = useState({ customerName: "", email: "", phone: "" });
+  const [botLoading, setBotLoading] = useState(false);
+  const [storeSection, setStoreSection] = useState<"plans" | "bots">("plans");
 
   // ── Customer auth state ───────────────────────────────────────────────────
   const [customer, setCustomer] = useState<{ name?: string; email: string } | null>(null);
@@ -152,6 +158,30 @@ export default function ResellerStorefront() {
   }, [allPlans, search, activeCategory]);
 
   const popularPlans = allPlans.filter((p) => p.popular);
+
+  async function payBot(e: FormEvent) {
+    e.preventDefault();
+    if (!selectedBot) return;
+    setBotLoading(true);
+    try {
+      const res = await fetch(`/api/storefront/${slug}/bots/order/initialize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botId: selectedBot.id, customerName: botForm.customerName, customerEmail: botForm.email, customerPhone: botForm.phone }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.success) throw new Error(payload.error || "Could not initialize payment");
+      if (!payload.paystackConfigured) {
+        toast({ title: "Payments unavailable", description: "Please contact the store owner to complete your order.", variant: "destructive" });
+        return;
+      }
+      window.location.href = payload.authorizationUrl;
+    } catch (err: any) {
+      toast({ title: "Checkout failed", description: err.message, variant: "destructive" });
+    } finally {
+      setBotLoading(false);
+    }
+  }
 
   async function pay(e: FormEvent) {
     e.preventDefault();
@@ -334,9 +364,80 @@ export default function ResellerStorefront() {
           </div>
           <h2 className="text-2xl font-black sm:text-3xl">Shop {reseller.storeName}</h2>
           <p className="mt-2 text-white/50">
-            {plans.length} plan{plans.length !== 1 ? "s" : ""} available — secure checkout powered by Paystack
+            {plans.length} plan{plans.length !== 1 ? "s" : ""} available{(data?.bots?.length || 0) > 0 ? ` · ${data.bots.length} bot${data.bots.length !== 1 ? "s" : ""}` : ""} — secure checkout powered by Paystack
           </p>
         </div>
+
+        {/* Section tabs — only show if bots exist */}
+        {(data?.bots?.length || 0) > 0 && (
+          <div className="mb-7 flex gap-2">
+            {[{ id: "plans", label: "Subscriptions", icon: Package }, { id: "bots", label: `Bots (${data.bots.length})`, icon: Bot }].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setStoreSection(id as "plans" | "bots")}
+                className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                  storeSection === id
+                    ? "border-cyan-400/40 bg-cyan-400/15 text-cyan-300"
+                    : "border-white/10 text-white/50 hover:border-white/20 hover:text-white"
+                }`}
+              >
+                <Icon className="h-4 w-4" /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── BOTS section ────────────────────────────────────────────────── */}
+        {storeSection === "bots" && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-black flex items-center gap-2">
+              <Bot className="h-5 w-5 text-cyan-300" /> Automated bots for sale
+            </h3>
+            {(data?.bots || []).length === 0 ? (
+              <div className="rounded-2xl border border-white/8 py-20 text-center">
+                <Bot className="mx-auto mb-4 h-12 w-12 text-white/15" />
+                <p className="text-white/40">No bots available right now.</p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {(data?.bots || []).map((bot: any) => (
+                  <button
+                    key={bot.id}
+                    onClick={() => { setSelectedBot(bot); setBotForm({ customerName: customer?.name || "", email: customer?.email || "", phone: "" }); }}
+                    className="group rounded-2xl border border-white/8 bg-white/[0.03] p-5 text-left transition hover:border-cyan-400/30 hover:bg-white/[0.07]"
+                  >
+                    {bot.imageUrl && (
+                      <img src={bot.imageUrl} alt={bot.name} className="mb-4 h-32 w-full rounded-xl object-cover opacity-80" />
+                    )}
+                    <div className="mb-1 flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-400/15">
+                        <Bot className="h-4 w-4 text-cyan-300" />
+                      </div>
+                      <h2 className="font-black">{bot.name}</h2>
+                    </div>
+                    {bot.description && <p className="mb-4 text-sm text-white/50 leading-relaxed">{bot.description}</p>}
+                    <p className="mb-4 text-3xl font-black">{money(bot.price)}<span className="text-sm font-normal text-white/40">/mo</span></p>
+                    {bot.features?.length > 0 && (
+                      <div className="mb-4 space-y-1.5">
+                        {bot.features.slice(0, 4).map((f: string) => (
+                          <p key={f} className="flex items-center gap-2 text-sm text-white/55">
+                            <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-cyan-300" /> {f}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 font-bold text-cyan-300 group-hover:text-cyan-200 transition">
+                      <ShoppingBag className="h-4 w-4" /> Deploy bot
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── PLANS section (show only when on plans tab) ──────────────────── */}
+        {storeSection === "plans" && (<>
 
         {/* Popular picks */}
         {popularPlans.length > 0 && activeCategory === "All" && !search && (
@@ -439,6 +540,7 @@ export default function ResellerStorefront() {
             })}
           </div>
         )}
+        </>)}
       </main>
 
       {/* Footer */}
@@ -449,7 +551,87 @@ export default function ResellerStorefront() {
         </button>
       </footer>
 
-      {/* Checkout modal */}
+      {/* Bot checkout modal */}
+      {selectedBot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={payBot}
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-gray-950 p-6 shadow-2xl"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/15">
+                  <Bot className="h-5 w-5 text-cyan-300" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black">{selectedBot.name}</h2>
+                  <p className="text-cyan-300 font-bold">{money(selectedBot.price)}<span className="text-xs font-normal text-white/40">/mo</span></p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setSelectedBot(null)} className="rounded-lg p-1.5 text-white/45 hover:bg-white/10 hover:text-white transition">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {selectedBot.features?.length > 0 && (
+              <div className="mb-5 rounded-xl bg-cyan-400/5 border border-cyan-400/10 p-3 space-y-1">
+                {selectedBot.features.slice(0, 3).map((f: string) => (
+                  <p key={f} className="flex items-center gap-2 text-xs text-white/55">
+                    <CheckCircle className="h-3 w-3 text-cyan-300 flex-shrink-0" /> {f}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            <div className="mb-3">
+              <label className="mb-1.5 block text-xs font-bold uppercase text-white/45">
+                <Mail className="mr-1 inline h-3 w-3" /> Email
+              </label>
+              <input
+                required
+                type="email"
+                className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-cyan-400/40 focus:outline-none"
+                value={botForm.email}
+                onChange={(e) => setBotForm({ ...botForm, email: e.target.value })}
+                placeholder="your@email.com"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="mb-1.5 block text-xs font-bold uppercase text-white/45">
+                <User className="mr-1 inline h-3 w-3" /> Full name
+              </label>
+              <input
+                required
+                className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-cyan-400/40 focus:outline-none"
+                value={botForm.customerName}
+                onChange={(e) => setBotForm({ ...botForm, customerName: e.target.value })}
+                placeholder="John Doe"
+              />
+            </div>
+            <div className="mb-5">
+              <label className="mb-1.5 block text-xs font-bold uppercase text-white/45">Phone</label>
+              <input
+                required
+                type="tel"
+                className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-cyan-400/40 focus:outline-none"
+                value={botForm.phone}
+                onChange={(e) => setBotForm({ ...botForm, phone: e.target.value })}
+                placeholder="0712345678"
+              />
+            </div>
+
+            <Button disabled={botLoading} className="w-full bg-cyan-500 text-gray-950 hover:bg-cyan-400 font-bold">
+              <CreditCard className="mr-2 h-4 w-4" />
+              {botLoading ? "Redirecting..." : `Pay ${money(selectedBot.price)} via Paystack`}
+            </Button>
+            <p className="mt-3 text-center text-xs text-white/30">
+              Bot will be deployed to VPS automatically after payment.
+            </p>
+          </form>
+        </div>
+      )}
+
+      {/* Plan checkout modal */}
       {selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
           <form

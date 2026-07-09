@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, CheckCircle2, Clock, Copy, Eye, KeyRound, Package, ShoppingBag, Store, X, XCircle } from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, Clock, Copy, Eye, KeyRound, Package, ShoppingBag, Store, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,6 +21,7 @@ export default function ResellerCustomerOrders() {
   const { toast } = useToast();
 
   const [orders, setOrders] = useState<any[]>([]);
+  const [botOrders, setBotOrders] = useState<any[]>([]);
   const [storeName, setStoreName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -51,12 +52,20 @@ export default function ResellerCustomerOrders() {
 
   useEffect(() => {
     if (!slug) return;
-    fetch(`/api/storefront/${slug}/my-orders`, { credentials: "include" })
-      .then(async (r) => {
-        if (r.status === 401) { setLocation(`/r/${slug}`); return; }
-        const d = await r.json();
-        if (d.success) { setOrders(d.orders); setStoreName(d.storeName); }
-        else setError(d.error || "Could not load orders");
+    // Load plan orders + bot orders in parallel
+    Promise.all([
+      fetch(`/api/storefront/${slug}/my-orders`, { credentials: "include" }),
+      fetch(`/api/storefront/${slug}/my-bot-orders`, { credentials: "include" }),
+    ])
+      .then(async ([planRes, botRes]) => {
+        if (planRes.status === 401) { setLocation(`/r/${slug}`); return; }
+        const planData = await planRes.json();
+        if (planData.success) { setOrders(planData.orders); setStoreName(planData.storeName); }
+        else setError(planData.error || "Could not load orders");
+        if (botRes.ok) {
+          const botData = await botRes.json();
+          if (botData.success) setBotOrders(botData.orders || []);
+        }
       })
       .catch(() => setError("Connection error"))
       .finally(() => setLoading(false));
@@ -101,7 +110,7 @@ export default function ResellerCustomerOrders() {
           </div>
         )}
 
-        {!loading && !error && orders.length === 0 && (
+        {!loading && !error && orders.length === 0 && botOrders.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5 border border-white/10">
               <ShoppingBag className="h-8 w-8 text-white/25" />

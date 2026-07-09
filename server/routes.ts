@@ -6166,6 +6166,55 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
     }
   });
 
+  // ─── Reseller: Bot orders from their storefront ───────────────────────────
+  app.get("/api/reseller/bot-orders", resellerAuthMiddleware, async (req: any, res) => {
+    try {
+      const ph = dbType === "pg" ? "$1" : "?";
+      const rows = await runQuery(
+        `SELECT * FROM bot_orders WHERE reseller_id = ${ph} ORDER BY created_at DESC LIMIT 200`,
+        [req.reseller.id]
+      );
+      res.json({ success: true, orders: rows });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Reseller: Unique customers from plan + bot orders ───────────────────
+  app.get("/api/reseller/customers", resellerAuthMiddleware, async (req: any, res) => {
+    try {
+      const planOrders = await storage.getResellerOrders(req.reseller.id);
+      const ph = dbType === "pg" ? "$1" : "?";
+      const botOrders = await runQuery(
+        `SELECT * FROM bot_orders WHERE reseller_id = ${ph} ORDER BY created_at DESC`,
+        [req.reseller.id]
+      );
+      const map = new Map<string, any>();
+      for (const o of planOrders) {
+        const email = o.customerEmail || o.customer_email || "";
+        if (!email) continue;
+        if (!map.has(email)) map.set(email, { email, name: o.customerName || o.customer_name || "", planOrders: 0, botOrders: 0, totalSpent: 0, firstOrder: o.createdAt || o.created_at });
+        const c = map.get(email)!;
+        c.planOrders++;
+        c.totalSpent += Number(o.amount || 0);
+      }
+      for (const o of botOrders) {
+        const email = o.customer_email || "";
+        if (!email) continue;
+        if (!map.has(email)) map.set(email, { email, name: o.customer_name || "", planOrders: 0, botOrders: 0, totalSpent: 0, firstOrder: o.created_at });
+        const c = map.get(email)!;
+        c.botOrders++;
+        c.totalSpent += Number(o.amount || 0);
+      }
+      const customers = Array.from(map.values()).sort((a, b) =>
+        new Date(b.firstOrder || 0).getTime() - new Date(a.firstOrder || 0).getTime()
+      );
+      res.json({ success: true, customers });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // ─── Public: Storefront (custom domain fallback — no slug in path) ────────
   app.get("/api/storefront", async (req: any, res) => {
     try {
@@ -6215,7 +6264,6 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
 
   app.get("/api/storefront/:slug", async (req: any, res) => {
     try {
-      // Prefer domain-matched slug from middleware; fall back to URL slug
       const slug = req.resellerSlug || req.params.slug;
       const reseller = await storage.getResellerBySlug(slug);
       if (!reseller || reseller.status !== "approved" || reseller.suspended) {
@@ -6229,25 +6277,105 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
       for (const [catKey, cat] of Object.entries(cats) as any[]) {
         const plans: any = {};
         for (const [planId, plan] of Object.entries(cat.plans || {}) as any[]) {
-          plans[planId] = {
-            ...plan,
-            price: priceMap[planId] ?? plan.price,
-            basePrice: plan.price,
-          };
+          plans[planId] = { ...plan, price: priceMap[planId] ?? plan.price, basePrice: plan.price };
         }
         storefrontCats[catKey] = { ...cat, plans };
       }
+      // Include active bots so storefronts can sell them too
+      const bots = await runQuery("SELECT id, name, description, price, image_url, features, active FROM bots WHERE active = 1 OR active = true ORDER BY name ASC", []);
+      const botsFormatted = bots.map((b: any) => ({
+        id: b.id, name: b.name, description: b.description, price: b.price,
+        imageUrl: b.image_url, features: (() => { try { return JSON.parse(b.features || "[]"); } catch { return []; } })(),
+      }));
       res.json({
         success: true,
-        reseller: {
-          id: reseller.id,
-          storeName: reseller.storeName || reseller.name,
-          slug: reseller.slug,
-          logoUrl: reseller.logoUrl,
-          customDomain: reseller.customDomain,
-        },
+        reseller: { id: reseller.id, storeName: reseller.storeName || reseller.name, slug: reseller.slug, logoUrl: reseller.logoUrl, customDomain: reseller.customDomain },
         categories: storefrontCats,
+        bots: botsFormatted,
       });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Storefront: customer's bot orders from this reseller ────────────────
+  app.get("/api/storefront/:slug/my-bot-orders", customerAuthMiddleware, async (req: any, res) => {
+    try {
+      const slug = req.resellerSlug || req.params.slug;
+      const reseller = await storage.getResellerBySlug(slug);
+      if (!reseller) return res.status(404).json({ success: false, error: "Storefront not found" });
+      const ph1 = dbType === "pg" ? "$1" : "?";
+      const ph2 = dbType === "pg" ? "$2" : "?";
+      const orders = await runQuery(
+        `SELECT * FROM bot_orders WHERE reseller_id = ${ph1} AND customer_email = ${ph2} ORDER BY created_at DESC`,
+        [reseller.id, req.customer.email]
+      );
+      res.json({ success: true, orders });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Storefront: initialize bot order ────────────────────────────────────
+  app.post("/api/storefront/:slug/bots/order/initialize", async (req: any, res) => {
+    try {
+      const slug = req.resellerSlug || req.params.slug;
+      const reseller = await storage.getResellerBySlug(slug);
+      if (!reseller || reseller.status !== "approved" || reseller.suspended) {
+        return res.status(404).json({ success: false, error: "Storefront not found" });
+      }
+      const { botId, customerName, customerEmail, customerPhone, sessionId, dbUrl, mode, timezone } = req.body;
+      if (!botId || !customerName || !customerEmail || !customerPhone) {
+        return res.status(400).json({ success: false, error: "Missing required fields" });
+      }
+      const bots = await runQuery(
+        dbType === "pg" ? "SELECT * FROM bots WHERE id = $1 AND (active = true OR active = 1)" : "SELECT * FROM bots WHERE id = ? AND active = 1",
+        [parseInt(botId)]
+      );
+      if (!bots.length) return res.status(404).json({ success: false, error: "Bot not found" });
+      const bot = bots[0];
+      // Generate reference
+      const reference = `CTB-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const ph = (n: number) => dbType === "pg" ? `${n}` : "?";
+      await runMutation(
+        `INSERT INTO bot_orders (reference, bot_id, bot_name, customer_name, customer_email, customer_phone, session_id, db_url, mode, timezone, amount, status, reseller_id) VALUES (${ph(1)},${ph(2)},${ph(3)},${ph(4)},${ph(5)},${ph(6)},${ph(7)},${ph(8)},${ph(9)},${ph(10)},${ph(11)},'pending',${ph(12)})`,
+        [reference, bot.id, bot.name, customerName, customerEmail, customerPhone, sessionId || null, dbUrl || null, mode || "public", timezone || "Africa/Nairobi", bot.price, reseller.id]
+      );
+      const secretKey = getPaystackSecretKey();
+      if (!secretKey) return res.json({ success: true, reference, amount: bot.price, paystackConfigured: false });
+      const paystackRes = await fetch("https://api.paystack.co/transaction/initialize", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: customerEmail, amount: bot.price * 100, currency: "KES", reference,
+          metadata: { botId: bot.id, botName: bot.name, customerName, customerPhone, resellerSlug: slug } }),
+      });
+      const pd = await paystackRes.json() as any;
+      res.json({ success: true, reference, amount: bot.price, authorizationUrl: pd.data?.authorization_url, paystackConfigured: true, paystackPublicKey: getPaystackPublicKey() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Storefront: verify bot order payment ────────────────────────────────
+  app.post("/api/storefront/:slug/bots/order/verify", async (req: any, res) => {
+    try {
+      const { reference } = req.body;
+      if (!reference) return res.status(400).json({ success: false, error: "Reference required" });
+      const orders = await runQuery(dbType === "pg" ? "SELECT * FROM bot_orders WHERE reference = $1" : "SELECT * FROM bot_orders WHERE reference = ?", [reference]);
+      if (!orders.length) return res.status(404).json({ success: false, error: "Order not found" });
+      const order = orders[0];
+      if (order.status !== "pending") return res.json({ success: true, order });
+      const secretKey = getPaystackSecretKey();
+      if (secretKey) {
+        const vr = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, { headers: { Authorization: `Bearer ${secretKey}` } });
+        const vd = await vr.json() as any;
+        if (vd.data?.status !== "success") return res.status(400).json({ success: false, error: "Payment not confirmed" });
+      }
+      const updNow = dbType === "pg" ? "NOW()::text" : "datetime('now')";
+      const ph = (n: number) => dbType === "pg" ? `${n}` : "?";
+      await runMutation(`UPDATE bot_orders SET status = 'paid', updated_at = ${updNow} WHERE reference = ${ph(1)}`, [reference]);
+      const updated = await runQuery(dbType === "pg" ? "SELECT * FROM bot_orders WHERE reference = $1" : "SELECT * FROM bot_orders WHERE reference = ?", [reference]);
+      res.json({ success: true, order: updated[0] });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
