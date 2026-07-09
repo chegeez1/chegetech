@@ -5,7 +5,7 @@ import axios from "axios";
 import { promoManager } from "./promo";
 import { customerAuthMiddleware } from "./auth";
 import { vpsManager } from "./vps-manager";
-import { deployBot, serveBotPreview } from "./bot-deploy";
+import { serveBotPreview } from "./bot-deploy";
 
 function generateReference(): string {
   return `CTB-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -77,16 +77,81 @@ async function deployBotToVps(
       const repoUrl = (bot.repo_url || bot.repoUrl || "").replace(/\.git$/, "");
       if (!repoUrl) throw new Error("Bot has no repoUrl configured");
 
+      // Pick VPS server — prefer one linked to the order, fall back to first available
+      const servers = vpsManager.getAll();
+      if (!servers.length) throw new Error("No VPS server configured. Add one in Admin → VPS.");
+      const server = servers.find((s: any) => s.id === order.vps_server_id) ?? servers[0];
+
       const ref = order.reference;
       const pm2Name = `bot-${ref}`;
-      console.log(`[Bot Deploy] Local deploy ${pm2Name} from ${repoUrl}`);
+      const botDir = `/opt/bots/${pm2Name}`;
+      const nvmSource = `export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"`;
 
-      const result = await deployBot(ref, repoUrl, envVars);
-      if (!result.success) {
-        throw new Error(result.error || "Local deployment failed");
+      console.log(`[Bot Deploy] Deploying ${pm2Name} on ${server.host} from ${repoUrl}`);
+
+      // 1. Ensure Node.js is installed
+      const nodeCheck = await vpsManager.execCommand(server,
+        `node --version 2>/dev/null || echo "NOT_FOUND"`
+      );
+      if (nodeCheck.stdout.includes("NOT_FOUND") || !nodeCheck.stdout.trim().startsWith("v")) {
+        console.log(`[Bot Deploy] Node.js not found — installing via nvm on ${server.host}`);
+        await vpsManager.execCommand(server,
+          `curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && ` +
+          `${nvmSource} && nvm install 20 && nvm alias default 20 && nvm use default && ` +
+          `ln -sf $(which node) /usr/local/bin/node 2>/dev/null; ln -sf $(which npm) /usr/local/bin/npm 2>/dev/null; true`,
+          600000
+        );
+        console.log(`[Bot Deploy] ✓ Node.js installed`);
       }
-      console.log(`[Bot Deploy] ok ${pm2Name} live at ${result.liveUrl}`);
-      return { pm2Name, vpsServerId: "chegetech-local" };
+
+      // 2. Ensure PM2 is installed
+      const pm2Check = await vpsManager.execCommand(server,
+        `pm2 --version 2>/dev/null || echo "NOT_FOUND"`
+      );
+      if (pm2Check.stdout.includes("NOT_FOUND")) {
+        console.log(`[Bot Deploy] PM2 not found — installing on ${server.host}`);
+        await vpsManager.execCommand(server,
+          `${nvmSource}; npm install -g pm2 && ln -sf $(which pm2) /usr/local/bin/pm2 2>/dev/null; true`
+        );
+        console.log(`[Bot Deploy] ✓ PM2 installed`);
+      }
+
+      // 3. Clone or pull repo
+      await vpsManager.execCommand(server,
+        `mkdir -p /opt/bots && (git -C ${botDir} pull --ff-only 2>/dev/null || git clone ${repoUrl}.git ${botDir})`
+      );
+      console.log(`[Bot Deploy] ✓ Repo ready at ${botDir}`);
+
+      // 4. Write .env — base64-encode to avoid ALL shell quoting/newline issues
+      //    FIX: old code used printf '%s\n' which wrote everything on one line
+      const envContent = Object.entries(envVars)
+        .map(([k, v]) => `${k}=${String(v).replace(/[\r\n]/g, "\\n")}`)
+        .join("\n");
+      const b64 = Buffer.from(envContent).toString("base64");
+      await vpsManager.execCommand(server,
+        `echo ${JSON.stringify(b64)} | base64 -d > ${botDir}/.env`
+      );
+      console.log(`[Bot Deploy] ✓ .env written (${Object.keys(envVars).length} vars)`);
+
+      // 5. npm install — no pipe so real exit code is captured
+      //    FIX: old code used `| tail -5` which hid npm install failures
+      const { code: installCode, stdout: installOut, stderr: installErr } = await vpsManager.execCommand(server,
+        `${nvmSource}; cd ${botDir} && npm install --production 2>&1`,
+        600000
+      );
+      if (installCode !== 0) {
+        throw new Error(`npm install failed (exit ${installCode}): ${(installOut + installErr).slice(-400)}`);
+      }
+      console.log(`[Bot Deploy] ✓ npm install done`);
+
+      // 6. Start with PM2 (delete old instance first if exists)
+      await vpsManager.execCommand(server,
+        `${nvmSource}; pm2 delete ${pm2Name} 2>/dev/null || true; ` +
+        `cd ${botDir} && (pm2 start . --name ${pm2Name} 2>/dev/null || pm2 start index.js --name ${pm2Name}); pm2 save`
+      );
+      console.log(`[Bot Deploy] ✓ PM2 ${pm2Name} started on ${server.host}`);
+
+      return { pm2Name, vpsServerId: server.id };
     }
 
 // Global lock — prevents the scheduler from running two instances at once
@@ -129,16 +194,14 @@ export async function deployPendingOrders(): Promise<void> {
       if (order.timezone) autoEnv["TIMEZONE"] = order.timezone;
 
       try {
-        const result = await deployBot(order.reference, repoUrl, autoEnv);
-        if (result.success) {
+        const result = await deployBotToVps(order, bots[0], autoEnv);
+        if (result) {
           const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
           await m(
             `UPDATE bot_orders SET status = 'deployed', pm2_name = ?, vps_server_id = ?, deployed_at = ${updNow}, expires_at = ?, updated_at = ${updNow} WHERE id = ?`,
-            ["local", "chegetech-local", expiresAt, order.id]
+            [result.pm2Name, result.vpsServerId, expiresAt, order.id]
           );
-          console.log(`[Auto Deploy] ok ${order.reference} deployed at ${result.liveUrl}`);
-        } else {
-          throw new Error(result.error || "Deployment returned no success");
+          console.log(`[Auto Deploy] ✓ ${order.reference} deployed — ${result.pm2Name}`);
         }
       } catch (e: any) {
         console.error(`[Auto Deploy] fail ${order.reference}:`, e.message);
