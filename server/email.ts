@@ -345,3 +345,120 @@ export async function sendAdminEmail(subject: string, html: string): Promise<voi
     console.error("[email] sendAdminEmail:", err.message);
   }
 }
+
+// ─── Reseller: Email verification OTP ────────────────────────────────────────
+export async function sendResellerVerificationEmail(
+  resellerEmail: string,
+  resellerName: string,
+  code: string
+): Promise<{ success: boolean; error?: string }> {
+  const resend = getResend();
+  if (!resend) {
+    console.log("[email] Resend not configured — skipping reseller verification email");
+    return { success: false, error: "Email service not configured" };
+  }
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#0d1117;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="max-width:520px;margin:40px auto;background:#161b22;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4);">
+    <div style="background:linear-gradient(135deg,#10b981 0%,#0891b2 100%);padding:36px 32px;text-align:center;">
+      <h1 style="color:#fff;margin:0 0 6px;font-size:24px;font-weight:800;">Verify Your Email</h1>
+      <p style="color:rgba(255,255,255,.8);margin:0;font-size:14px;">Reseller Program Application</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="font-size:16px;color:#e6edf3;margin:0 0 12px;">Hi <strong>${resellerName}</strong>,</p>
+      <p style="color:#8b949e;font-size:14px;margin:0 0 28px;">
+        Thanks for applying to the reseller program! Please verify your email address to confirm your application.
+        Enter the code below — it expires in <strong style="color:#e6edf3;">15 minutes</strong>.
+      </p>
+      <div style="text-align:center;margin:28px 0;">
+        <div style="display:inline-block;background:#0d1117;border:2px solid #10b981;border-radius:12px;padding:20px 48px;">
+          <p style="margin:0;font-size:42px;font-weight:900;letter-spacing:10px;color:#10b981;font-family:monospace;">${code}</p>
+        </div>
+      </div>
+      <p style="color:#8b949e;font-size:13px;margin:24px 0 0;text-align:center;">
+        If you did not apply to become a reseller, you can safely ignore this email.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const fromAddr = getResendFrom() || "onboarding@resend.dev";
+    const label = "Chege Tech";
+    const result = await resend.emails.send({
+      from: `${label} <${fromAddr}>`,
+      to: resellerEmail,
+      subject: `${code} — Verify your reseller application`,
+      html,
+    });
+    if (result.error) return { success: false, error: result.error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to send verification email" };
+  }
+}
+
+// ─── Reseller: Send account email using reseller's own Resend API key ─────────
+export async function sendAccountEmailForReseller(
+  resellerResendKey: string,
+  resellerFromEmail: string,
+  resellerStoreName: string,
+  customerEmail: string,
+  planName: string,
+  account: AccountEntry,
+  customerName: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!resellerResendKey) return { success: false, error: "No reseller Resend key" };
+
+  const { Resend: ResendClass } = await import("resend");
+  const resend = new ResendClass(resellerResendKey);
+
+  const accountRows = [
+    account.email    ? `<tr><td style="padding:8px 12px;font-weight:600;color:#555;">Email</td><td style="padding:8px 12px;">${account.email}</td></tr>` : "",
+    account.username ? `<tr><td style="padding:8px 12px;font-weight:600;color:#555;">Username</td><td style="padding:8px 12px;">${account.username}</td></tr>` : "",
+    account.password ? `<tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:600;color:#555;">Password</td><td style="padding:8px 12px;font-family:monospace;font-size:15px;letter-spacing:1px;">${account.password}</td></tr>` : "",
+    account.activationCode ? `<tr><td style="padding:8px 12px;font-weight:600;color:#555;">Activation Code</td><td style="padding:8px 12px;font-family:monospace;">${account.activationCode}</td></tr>` : "",
+    account.redeemLink ? `<tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:600;color:#555;">Redeem Link</td><td style="padding:8px 12px;"><a href="${account.redeemLink}" style="color:#10b981;">Click to activate</a></td></tr>` : "",
+    account.instructions ? `<tr><td style="padding:8px 12px;font-weight:600;color:#555;">Instructions</td><td style="padding:8px 12px;">${account.instructions}</td></tr>` : "",
+  ].filter(Boolean).join("");
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="max-width:600px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10);">
+    <div style="background:linear-gradient(135deg,#10b981 0%,#0891b2 100%);padding:36px 32px;text-align:center;">
+      <h1 style="color:#fff;margin:0 0 6px;font-size:26px;font-weight:700;">${resellerStoreName}</h1>
+      <p style="color:rgba(255,255,255,.85);margin:0;font-size:15px;">Your subscription is ready</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="font-size:16px;color:#333;margin:0 0 8px;">Hello <strong>${customerName || "Valued Customer"}</strong>,</p>
+      <p style="color:#555;font-size:14px;margin:0 0 24px;">Your <strong>${planName}</strong> account details are below. Keep this email safe.</p>
+      <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
+        <thead><tr style="background:#10b981;color:#fff;"><th style="padding:12px;text-align:left;">Field</th><th style="padding:12px;text-align:left;">Value</th></tr></thead>
+        <tbody>${accountRows}</tbody>
+      </table>
+      <p style="color:#9ca3af;font-size:12px;margin:24px 0 0;text-align:center;">This is an automated delivery from ${resellerStoreName}.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const fromAddr = resellerFromEmail || "onboarding@resend.dev";
+    const result = await resend.emails.send({
+      from: `${resellerStoreName} <${fromAddr}>`,
+      to: customerEmail,
+      subject: `Your ${planName} account — ${resellerStoreName}`,
+      html,
+    });
+    if (result.error) return { success: false, error: result.error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to send email via reseller key" };
+  }
+}

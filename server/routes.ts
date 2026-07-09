@@ -14,7 +14,7 @@ import path from "path";
 import fs from "fs";
 import { storage, dbSettingsGet, dbSettingsSet, getDb, dbType, runQuery, runMutation } from "./storage";
 import { accountManager } from "./accounts";
-import { sendAccountEmail, sendPasswordResetEmail, sendPasswordResetLinkEmail, sendSuspensionEmail, sendUnsuspensionEmail, sendBulkEmail } from "./email";
+import { sendAccountEmail, sendPasswordResetEmail, sendPasswordResetLinkEmail, sendSuspensionEmail, sendUnsuspensionEmail, sendBulkEmail, sendResellerVerificationEmail, sendAccountEmailForReseller } from "./email";
 import { sendTelegramMessage, notifyNewOrder, notifyNewCustomer, notifyPaymentFailed, isTelegramConfigured, notifySupportEscalation } from "./telegram";
 import { getWhatsAppStatus, connectWhatsApp, disconnectWhatsApp, isWhatsAppWebConnected, broadcastNewOrder, sendWhatsAppNotification } from "./whatsapp-web";
 import { subscriptionPlans } from "./plans";
@@ -464,12 +464,35 @@ async function deliverAccount(transaction: any): Promise<{ success: boolean; err
     }
   } catch (_) {}
 
-  const emailResult = await sendAccountEmail(
-    deliveryEmail,
-    transaction.planName,
-    account,
-    deliveryName
-  );
+  // ─── Use reseller's own Resend key if set, otherwise fall back to platform key ─
+  let emailResult: { success: boolean; error?: string };
+  if (transaction.resellerId) {
+    try {
+      const resellerObj = await storage.getResellerById(transaction.resellerId);
+      if (resellerObj?.resendApiKey && resellerObj?.resendFromEmail) {
+        emailResult = await sendAccountEmailForReseller(
+          resellerObj.resendApiKey,
+          resellerObj.resendFromEmail,
+          resellerObj.storeName || resellerObj.businessName || resellerObj.name,
+          deliveryEmail,
+          transaction.planName,
+          account,
+          deliveryName
+        );
+        // Fallback to platform email if reseller's own key fails (invalid key/domain/etc.)
+        if (!emailResult.success) {
+          console.warn(`[reseller-email] Reseller ${transaction.resellerId} key failed (${emailResult.error}), falling back to platform email`);
+          emailResult = await sendAccountEmail(deliveryEmail, transaction.planName, account, deliveryName);
+        }
+      } else {
+        emailResult = await sendAccountEmail(deliveryEmail, transaction.planName, account, deliveryName);
+      }
+    } catch (_) {
+      emailResult = await sendAccountEmail(deliveryEmail, transaction.planName, account, deliveryName);
+    }
+  } else {
+    emailResult = await sendAccountEmail(deliveryEmail, transaction.planName, account, deliveryName);
+  }
 
   // If it was a gift, also notify the buyer
   if (giftData?.giftEmail) {
@@ -5763,16 +5786,104 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
       const { name, email, businessName, phone, why } = req.body;
       if (!name || !email) return res.status(400).json({ success: false, error: "Name and email are required" });
       const existing = await storage.getResellerByEmail(email);
-      if (existing) return res.status(409).json({ success: false, error: "An application with this email already exists" });
+      if (existing) {
+        // If they applied but never verified, let them request a new code
+        if (!existing.emailVerified) {
+          const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+          const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+          await storage.updateReseller(existing.id, { verificationCode: newCode, verificationExpires: expires });
+          await sendResellerVerificationEmail(existing.email, existing.name, newCode).catch(() => {});
+          return res.json({ success: true, id: existing.id, requiresVerification: true, message: "A new verification code has been sent to your email." });
+        }
+        return res.status(409).json({ success: false, error: "An application with this email already exists" });
+      }
+      // Generate 6-digit OTP
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const verificationExpires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       const reseller = await storage.createReseller({ name, email, businessName, phone, why });
-      // Telegram notification
+      await storage.updateReseller(reseller.id, { verificationCode, verificationExpires });
+      // Send verification email
+      sendResellerVerificationEmail(email, name, verificationCode).catch(() => {});
+      // Telegram notification (only after email is verified — handled in verify endpoint)
+      res.json({ success: true, id: reseller.id, requiresVerification: true, message: "Check your email for a 6-digit verification code." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Simple in-memory rate limiter for reseller OTP endpoints
+  const _resellerOtpAttempts = new Map<string, { count: number; resetAt: number }>();
+  const _resellerResendAt = new Map<string, number>();
+  function checkOtpRateLimit(key: string, maxAttempts = 5, windowMs = 15 * 60 * 1000): boolean {
+    const now = Date.now();
+    const entry = _resellerOtpAttempts.get(key);
+    if (!entry || now > entry.resetAt) {
+      _resellerOtpAttempts.set(key, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+    if (entry.count >= maxAttempts) return false;
+    entry.count++;
+    return true;
+  }
+
+  // ─── Public: Verify reseller application email ────────────────────────────
+  app.post("/api/reseller/verify-application", async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) return res.status(400).json({ success: false, error: "Email and code are required" });
+      const ip = (req.headers["x-forwarded-for"] as string || req.ip || "").split(",")[0].trim();
+      const limitKey = `verify:${ip}:${email}`;
+      if (!checkOtpRateLimit(limitKey, 8, 15 * 60 * 1000)) {
+        return res.status(429).json({ success: false, error: "Too many attempts. Please try again later." });
+      }
+      const reseller = await storage.getResellerByEmail(email);
+      if (!reseller || !reseller.verificationCode) {
+        // Non-enumerating: same error whether email exists or not
+        return res.status(400).json({ success: false, error: "Invalid or expired verification code" });
+      }
+      if (reseller.emailVerified) return res.json({ success: true, message: "Email already verified. Awaiting admin approval." });
+      if (reseller.verificationCode !== code) {
+        return res.status(400).json({ success: false, error: "Invalid or expired verification code" });
+      }
+      if (reseller.verificationExpires && new Date(reseller.verificationExpires) < new Date()) {
+        return res.status(400).json({ success: false, error: "Invalid or expired verification code" });
+      }
+      await storage.updateReseller(reseller.id, { emailVerified: 1, verificationCode: null, verificationExpires: null });
+      _resellerOtpAttempts.delete(limitKey);
+      // Now notify admin via Telegram
       try {
-        const { siteName } = getAppConfig();
         sendTelegramMessage(
-          `📋 <b>New Reseller Application</b>\n\nName: <b>${name}</b>\nEmail: <b>${email}</b>\nBusiness: ${businessName || "N/A"}\nPhone: ${phone || "N/A"}\n\nWhy: ${why || "N/A"}\n\n<a href="admin panel">Review in Admin Panel</a>`
+          `📋 <b>New Reseller Application (Email Verified)</b>\n\nName: <b>${reseller.name}</b>\nEmail: <b>${reseller.email}</b>\nBusiness: ${reseller.businessName || "N/A"}\nPhone: ${reseller.phone || "N/A"}\n\nWhy: ${reseller.why || "N/A"}\n\nReview in Admin Panel → Resellers`
         ).catch(() => {});
       } catch (_) {}
-      res.json({ success: true, id: reseller.id, message: "Application submitted. We'll review and get back to you." });
+      res.json({ success: true, message: "Email verified! Your application is now under review. We'll send your credentials within 24 hours." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Public: Resend reseller verification code ───────────────────────────
+  app.post("/api/reseller/resend-verification", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ success: false, error: "Email is required" });
+      // Rate-limit: max 1 resend per 60 seconds per email
+      const resendKey = `resend:${email}`;
+      const lastResend = _resellerResendAt.get(resendKey) || 0;
+      if (Date.now() - lastResend < 60_000) {
+        return res.status(429).json({ success: false, error: "Please wait a moment before requesting another code." });
+      }
+      const reseller = await storage.getResellerByEmail(email);
+      // Non-enumerating: always succeed to avoid email enumeration
+      if (!reseller || reseller.emailVerified) {
+        return res.json({ success: true, message: "If that email has a pending application, a new code has been sent." });
+      }
+      _resellerResendAt.set(resendKey, Date.now());
+      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      await storage.updateReseller(reseller.id, { verificationCode: newCode, verificationExpires: expires });
+      await sendResellerVerificationEmail(reseller.email, reseller.name, newCode).catch(() => {});
+      res.json({ success: true, message: "If that email has a pending application, a new code has been sent." });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -5802,7 +5913,8 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
 
   // ─── Reseller Me ─────────────────────────────────────────────────────────
   app.get("/api/reseller/me", resellerAuthMiddleware, async (req: any, res) => {
-    const { passwordHash: _ph, ...safe } = req.reseller;
+    const { passwordHash: _ph, resendApiKey: _rk, ...safe } = req.reseller;
+    (safe as any).resendApiKeySet = !!req.reseller.resendApiKey;
     res.json({ success: true, reseller: safe });
   });
 
@@ -5941,13 +6053,14 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
 
   // ─── Reseller Profile ─────────────────────────────────────────────────────
   app.get("/api/reseller/profile", resellerAuthMiddleware, async (req: any, res) => {
-    const { passwordHash: _ph, ...safe } = req.reseller;
+    const { passwordHash: _ph, resendApiKey: _rk, ...safe } = req.reseller;
+    (safe as any).resendApiKeySet = !!req.reseller.resendApiKey;
     res.json({ success: true, reseller: safe });
   });
 
   app.put("/api/reseller/profile", resellerAuthMiddleware, async (req: any, res) => {
     try {
-      const { storeName, slug, customDomain, logoUrl } = req.body;
+      const { storeName, slug, customDomain, logoUrl, resendApiKey, resendFromEmail } = req.body;
       const updates: Record<string, any> = {};
       if (storeName !== undefined) updates.storeName = storeName;
       if (logoUrl !== undefined) updates.logoUrl = logoUrl;
@@ -5964,8 +6077,17 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
         }
         updates.customDomain = customDomain || null;
       }
+      // Per-reseller Resend integration
+      if (resendApiKey !== undefined && resendApiKey !== "••••••••••••••••") {
+        updates.resendApiKey = resendApiKey || null;
+      }
+      if (resendFromEmail !== undefined) {
+        updates.resendFromEmail = resendFromEmail || null;
+      }
       const updated = await storage.updateReseller(req.reseller.id, updates);
-      const { passwordHash: _ph, ...safe } = updated;
+      const { passwordHash: _ph, resendApiKey: _rk, ...safe } = updated;
+      // Indicate whether a Resend API key is set without exposing the raw value
+      (safe as any).resendApiKeySet = !!updated.resendApiKey;
       res.json({ success: true, reseller: safe });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

@@ -869,6 +869,8 @@ function Profile({ reseller, onSaved }: { reseller: any; onSaved: () => void }) 
     slug: reseller?.slug || "",
     customDomain: reseller?.customDomain || "",
     logoUrl: reseller?.logoUrl || "",
+    resendApiKey: "",
+    resendFromEmail: reseller?.resendFromEmail || "",
   });
   const [pwForm, setPwForm] = useState({ currentPassword: "", newPassword: "", confirm: "" });
   const [pwLoading, setPwLoading] = useState(false);
@@ -944,6 +946,45 @@ function Profile({ reseller, onSaved }: { reseller: any; onSaved: () => void }) 
         </div>
         <Button className="w-full bg-emerald-500 text-gray-950 hover:bg-emerald-400">
           <Save className="mr-2 h-4 w-4" /> Save profile
+        </Button>
+      </form>
+
+      {/* Resend email integration */}
+      <form onSubmit={save} className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-4 lg:col-span-2">
+        <div>
+          <h2 className="text-lg font-black">Email Integration (Resend)</h2>
+          <p className="text-sm text-white/45">
+            Add your own <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline underline-offset-2">Resend</a> API key so delivery emails to your customers are sent from your own domain, not the platform default.
+          </p>
+        </div>
+        {reseller?.resendApiKeySet && (
+          <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-400/20 px-3 py-2 text-sm text-emerald-300">
+            <span className="font-bold">✓</span> Resend API key is configured
+          </div>
+        )}
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-white/45">Resend API Key</label>
+          <Input
+            type="password"
+            placeholder={reseller?.resendApiKeySet ? "Leave blank to keep existing key" : "re_xxxxxxxxxxxxxxxxxxxx"}
+            value={form.resendApiKey}
+            onChange={(e) => setForm({ ...form, resendApiKey: e.target.value })}
+            autoComplete="new-password"
+          />
+          <p className="mt-1 text-xs text-white/30">Get your key at resend.com → API Keys. Must have send access.</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-white/45">Sender email address</label>
+          <Input
+            type="email"
+            placeholder="noreply@yourdomain.com"
+            value={form.resendFromEmail}
+            onChange={(e) => setForm({ ...form, resendFromEmail: e.target.value })}
+          />
+          <p className="mt-1 text-xs text-white/30">Must be a verified domain in your Resend account. Customers will see this as the sender.</p>
+        </div>
+        <Button type="submit" className="bg-cyan-500 text-gray-950 hover:bg-cyan-400">
+          <Save className="mr-2 h-4 w-4" /> Save email settings
         </Button>
       </form>
 

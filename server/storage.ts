@@ -235,6 +235,11 @@ export async function initializeDatabase() {
           logo_url TEXT,
           wallet_balance INTEGER NOT NULL DEFAULT 0,
           suspended INTEGER DEFAULT 0,
+          email_verified BOOLEAN DEFAULT false,
+          verification_code TEXT,
+          verification_expires TEXT,
+          resend_api_key TEXT,
+          resend_from_email TEXT,
           created_at TEXT DEFAULT (NOW()::text)
         );
 
@@ -386,6 +391,12 @@ export async function initializeDatabase() {
       await pgPool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reseller_id INTEGER");
       await pgPool.query(`CREATE TABLE IF NOT EXISTS reseller_notifications (id SERIAL PRIMARY KEY, reseller_id INTEGER NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, read INTEGER DEFAULT 0, created_at TEXT DEFAULT (NOW()::text))`).catch(() => {});
       await pgPool.query(`CREATE TABLE IF NOT EXISTS reseller_referrals (id SERIAL PRIMARY KEY, referrer_id INTEGER NOT NULL, reseller_id INTEGER NOT NULL UNIQUE, created_at TEXT DEFAULT (NOW()::text))`).catch(() => {});
+      // Migrate: reseller email verification + custom Resend integration
+      await pgPool.query("ALTER TABLE resellers ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false").catch(() => {});
+      await pgPool.query("ALTER TABLE resellers ADD COLUMN IF NOT EXISTS verification_code TEXT").catch(() => {});
+      await pgPool.query("ALTER TABLE resellers ADD COLUMN IF NOT EXISTS verification_expires TEXT").catch(() => {});
+      await pgPool.query("ALTER TABLE resellers ADD COLUMN IF NOT EXISTS resend_api_key TEXT").catch(() => {});
+      await pgPool.query("ALTER TABLE resellers ADD COLUMN IF NOT EXISTS resend_from_email TEXT").catch(() => {});
       
       
       
@@ -868,6 +879,12 @@ function initSqlite() {
     try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN expires_at TEXT").run(); } catch {}
     try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN renewal_reminded TEXT").run(); } catch {}
     try { sqliteInstance!.prepare("ALTER TABLE bot_orders ADD COLUMN deployment_log TEXT").run(); } catch {}
+  // Migrate: reseller email verification + custom Resend integration
+  try { sqliteInstance!.prepare("ALTER TABLE resellers ADD COLUMN email_verified INTEGER DEFAULT 0").run(); } catch {}
+  try { sqliteInstance!.prepare("ALTER TABLE resellers ADD COLUMN verification_code TEXT").run(); } catch {}
+  try { sqliteInstance!.prepare("ALTER TABLE resellers ADD COLUMN verification_expires TEXT").run(); } catch {}
+  try { sqliteInstance!.prepare("ALTER TABLE resellers ADD COLUMN resend_api_key TEXT").run(); } catch {}
+  try { sqliteInstance!.prepare("ALTER TABLE resellers ADD COLUMN resend_from_email TEXT").run(); } catch {}
     try { sqliteInstance!.prepare("CREATE TABLE IF NOT EXISTS bot_pings (id INTEGER PRIMARY KEY AUTOINCREMENT, bot_order_id INTEGER NOT NULL, pm2_status TEXT NOT NULL, checked_at TEXT DEFAULT (datetime('now')))").run(); } catch {}
     try { sqliteInstance!.prepare("CREATE TABLE IF NOT EXISTS flash_sales (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, plan_id TEXT, discount_percent INTEGER NOT NULL DEFAULT 10, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))").run(); } catch {}
   console.log("[db] Connected to SQLite");
@@ -1826,6 +1843,11 @@ export class DbStorage implements IStorage {
       walletBalance: row.wallet_balance ?? 0,
       suspended: row.suspended === 1 || row.suspended === true,
       createdAt: row.created_at,
+      emailVerified: row.email_verified === 1 || row.email_verified === true,
+      verificationCode: row.verification_code,
+      verificationExpires: row.verification_expires,
+      resendApiKey: row.resend_api_key,
+      resendFromEmail: row.resend_from_email,
     };
   }
 
@@ -1924,6 +1946,11 @@ export class DbStorage implements IStorage {
       logoUrl: "logo_url",
       walletBalance: "wallet_balance",
       suspended: "suspended",
+      emailVerified: "email_verified",
+      verificationCode: "verification_code",
+      verificationExpires: "verification_expires",
+      resendApiKey: "resend_api_key",
+      resendFromEmail: "resend_from_email",
     };
     const sets: string[] = [];
     const values: any[] = [];

@@ -2,8 +2,8 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useLocation } from "wouter";
 import {
-  ArrowRight, BadgeCheck, Banknote, ChevronRight, LineChart,
-  Link as LinkIcon, LogIn, Shield, Star, Store, TrendingUp, Users, Zap
+  ArrowRight, BadgeCheck, Banknote, CheckCircle, ChevronRight, LineChart,
+  Link as LinkIcon, LogIn, Mail, RefreshCw, Shield, Star, Store, TrendingUp, Users, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +62,11 @@ export default function Reseller() {
   const [loading, setLoading] = useState(false);
   const [apply, setApply] = useState({ name: "", email: "", businessName: "", phone: "", why: "" });
   const [login, setLogin] = useState({ username: "", password: "" });
+  // Email verification step
+  const [step, setStep] = useState<"form" | "verify" | "done">("form");
+  const [verifyEmail, setVerifyEmail] = useState("");
+  const [verifyCode, setVerifyCode] = useState("");
+  const [resendLoading, setResendLoading] = useState(false);
 
   async function submitApplication(e: FormEvent) {
     e.preventDefault();
@@ -74,12 +79,52 @@ export default function Reseller() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Application failed");
-      toast({ title: "Application submitted! ✅", description: "We'll review and send your credentials within 24 hours." });
-      setApply({ name: "", email: "", businessName: "", phone: "", why: "" });
+      if (data.requiresVerification) {
+        setVerifyEmail(apply.email);
+        setStep("verify");
+        toast({ title: "Check your email! 📧", description: "We sent a 6-digit code to verify your application." });
+      }
     } catch (err: any) {
       toast({ title: "Could not submit", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function submitVerification(e: FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await fetch("/api/reseller/verify-application", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verifyEmail, code: verifyCode }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Verification failed");
+      setStep("done");
+    } catch (err: any) {
+      toast({ title: "Verification failed", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resendCode() {
+    setResendLoading(true);
+    try {
+      const res = await fetch("/api/reseller/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verifyEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not resend");
+      toast({ title: "Code resent! 📧", description: "Check your inbox for the new code." });
+    } catch (err: any) {
+      toast({ title: "Could not resend", description: err.message, variant: "destructive" });
+    } finally {
+      setResendLoading(false);
     }
   }
 
@@ -157,6 +202,60 @@ export default function Reseller() {
 
           {/* Form */}
           <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-2xl backdrop-blur-sm">
+
+            {/* ── Email verified success state ── */}
+            {step === "done" && (
+              <div className="flex flex-col items-center justify-center py-8 text-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-400">
+                  <CheckCircle className="h-8 w-8 text-emerald-400" />
+                </div>
+                <h3 className="text-xl font-black">Application verified!</h3>
+                <p className="text-sm text-white/55 max-w-xs">
+                  Your email is confirmed. We'll review your application and send login credentials within 24 hours.
+                </p>
+                <Button onClick={() => setMode("login")} className="mt-2 bg-emerald-500 text-gray-950 hover:bg-emerald-400">
+                  <LogIn className="mr-2 h-4 w-4" /> Go to login
+                </Button>
+              </div>
+            )}
+
+            {/* ── OTP verification step ── */}
+            {step === "verify" && (
+              <div className="space-y-5">
+                <div className="flex flex-col items-center text-center gap-2 py-2">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/15 border border-cyan-400/30">
+                    <Mail className="h-5 w-5 text-cyan-300" />
+                  </div>
+                  <h3 className="text-lg font-black">Check your email</h3>
+                  <p className="text-sm text-white/50">
+                    We sent a 6-digit code to <span className="text-white font-semibold">{verifyEmail}</span>
+                  </p>
+                </div>
+                <form onSubmit={submitVerification} className="space-y-3">
+                  <Input
+                    required
+                    maxLength={6}
+                    placeholder="Enter 6-digit code"
+                    value={verifyCode}
+                    onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="text-center text-xl tracking-[0.5em] font-mono"
+                  />
+                  <Button disabled={loading || verifyCode.length !== 6} className="w-full bg-emerald-500 text-gray-950 hover:bg-emerald-400">
+                    {loading ? "Verifying..." : "Verify email"}
+                  </Button>
+                </form>
+                <button
+                  onClick={resendCode}
+                  disabled={resendLoading}
+                  className="flex w-full items-center justify-center gap-2 text-xs text-white/35 hover:text-white/60 transition"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${resendLoading ? "animate-spin" : ""}`} />
+                  {resendLoading ? "Sending..." : "Resend code"}
+                </button>
+              </div>
+            )}
+
+            {step === "form" && (<>
             <div className="mb-5 grid grid-cols-2 rounded-xl bg-black/20 p-1">
               <button
                 onClick={() => setMode("apply")}
@@ -210,6 +309,7 @@ export default function Reseller() {
             >
               <Users className="h-3.5 w-3.5" /> Browse main store instead
             </button>
+            </>)}
           </section>
         </div>
       </div>
