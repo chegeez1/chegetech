@@ -14,6 +14,20 @@ function statusMeta(status: string) {
   }
 }
 
+function botStatusMeta(status: string) {
+  switch (status) {
+    case "deployed":      return { label: "Deployed",    color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/25", Icon: CheckCircle2 };
+    case "paid":           return { label: "Paid",         color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/25",   Icon: Clock };
+    case "pending":        return { label: "Pending",      color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/25",   Icon: Clock };
+    case "configuring":    return { label: "Configuring",  color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/25",   Icon: Clock };
+    case "deploying":      return { label: "Deploying",    color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/25",   Icon: Clock };
+    case "stopped":        return { label: "Stopped",      color: "text-white/50",    bg: "bg-white/5 border-white/15",             Icon: XCircle };
+    case "suspended":      return { label: "Suspended",    color: "text-white/50",    bg: "bg-white/5 border-white/15",             Icon: XCircle };
+    case "deploy_failed":  return { label: "Failed",       color: "text-red-400",     bg: "bg-red-500/10 border-red-500/25",        Icon: XCircle };
+    default:               return { label: status || "Unknown", color: "text-white/50", bg: "bg-white/5 border-white/15", Icon: Clock };
+  }
+}
+
 export default function ResellerCustomerOrders() {
   const [, params] = useRoute("/r/:slug/orders");
   const [, setLocation] = useLocation();
@@ -180,6 +194,51 @@ export default function ResellerCustomerOrders() {
                       </Button>
                     </div>
                   )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!loading && !error && botOrders.length > 0 && (
+          <div className="space-y-4 mt-10">
+            <h2 className="text-lg font-black mb-6">
+              {botOrders.length} bot order{botOrders.length !== 1 ? "s" : ""}
+            </h2>
+            {botOrders.map((order: any) => {
+              const { label, color, bg, Icon } = botStatusMeta(order.status);
+              return (
+                <div
+                  key={order.reference}
+                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/15">
+                        <Bot className="h-4.5 w-4.5 text-emerald-300" />
+                      </div>
+                      <div>
+                        <p className="font-bold leading-tight">{order.bot_name || order.botName || "Bot"}</p>
+                        <p className="mt-0.5 text-xs text-white/40 font-mono">{order.reference}</p>
+                        {order.created_at && (
+                          <p className="mt-1 text-xs text-white/35">
+                            {new Date(order.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                          </p>
+                        )}
+                        {order.expires_at && order.status === "deployed" && (
+                          <p className="mt-1 text-xs text-white/35">
+                            Expires {new Date(order.expires_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className="text-sm font-bold">{money(order.amount || 0)}</span>
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${bg} ${color}`}>
+                        <Icon className="h-3 w-3" /> {label}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               );
             })}
