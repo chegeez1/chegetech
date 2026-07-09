@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import {
-  ArrowLeft, CheckCircle, CheckCircle2, CreditCard, Flame, Lock, LogIn, LogOut,
+  ArrowLeft, CheckCircle, CreditCard, Flame, Lock, LogIn, LogOut,
   Mail, Package, Search, ShoppingBag, Star, Store, User, UserPlus, X, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -349,7 +349,7 @@ export default function ResellerStorefront() {
               {popularPlans.map((plan) => (
                 <button
                   key={plan.planId}
-                  onClick={() => { setSelected(plan); setForm({ email: "", customerName: "" }); }}
+                  onClick={() => { setSelected(plan); setForm({ email: customer?.email || "", customerName: customer?.name || "" }); }}
                   className="min-w-[220px] flex-shrink-0 rounded-xl border border-amber-400/25 bg-amber-400/5 p-4 text-left transition hover:border-amber-400/50 hover:bg-amber-400/10"
                 >
                   <p className="text-xs font-semibold text-amber-300">{plan.category}</p>
@@ -406,7 +406,7 @@ export default function ResellerStorefront() {
               return (
                 <button
                   key={plan.planId}
-                  onClick={() => { setSelected(plan); setForm({ email: "", customerName: "" }); }}
+                  onClick={() => { setSelected(plan); setForm({ email: customer?.email || "", customerName: customer?.name || "" }); }}
                   className="group rounded-2xl border border-white/8 bg-white/[0.03] p-5 text-left transition duration-200 hover:border-emerald-400/30 hover:bg-white/[0.07] hover:shadow-lg hover:shadow-emerald-900/20"
                 >
                   <div className="mb-4 flex items-start justify-between gap-3">

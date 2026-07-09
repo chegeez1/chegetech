@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, CheckCircle2, Clock, Package, ShoppingBag, Store, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Copy, Eye, KeyRound, Package, ShoppingBag, Store, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 function money(v: number) { return `KES ${(v || 0).toLocaleString()}`; }
 
@@ -17,11 +18,36 @@ export default function ResellerCustomerOrders() {
   const [, params] = useRoute("/r/:slug/orders");
   const [, setLocation] = useLocation();
   const slug = params?.slug || "";
+  const { toast } = useToast();
 
   const [orders, setOrders] = useState<any[]>([]);
   const [storeName, setStoreName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // ── Credentials modal ─────────────────────────────────────────────────────
+  const [credModal, setCredModal] = useState<{ reference: string; account: any } | null>(null);
+  const [credsLoading, setCredsLoading] = useState<string | null>(null); // reference being loaded
+
+  async function viewCredentials(reference: string) {
+    setCredsLoading(reference);
+    try {
+      const res = await fetch(`/api/customer/orders/${reference}/credentials`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not load credentials");
+      setCredModal({ reference, account: data.account });
+    } catch (err: any) {
+      toast({ title: "Failed to load credentials", description: err.message, variant: "destructive" });
+    } finally {
+      setCredsLoading(null);
+    }
+  }
+
+  function copyToClipboard(text: string, label: string) {
+    navigator.clipboard.writeText(text).then(() =>
+      toast({ title: `${label} copied!` })
+    ).catch(() => toast({ title: "Copy failed", variant: "destructive" }));
+  }
 
   useEffect(() => {
     if (!slug) return;
@@ -127,12 +153,83 @@ export default function ResellerCustomerOrders() {
                       </span>
                     </div>
                   </div>
+                  {order.status === "success" && (
+                    <div className="mt-4 pt-4 border-t border-white/10">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10 text-xs h-8"
+                        disabled={credsLoading === order.reference}
+                        onClick={() => viewCredentials(order.reference)}
+                      >
+                        {credsLoading === order.reference ? (
+                          <span className="h-3 w-3 mr-1.5 animate-spin rounded-full border border-emerald-400 border-t-transparent inline-block" />
+                        ) : (
+                          <Eye className="h-3 w-3 mr-1.5" />
+                        )}
+                        View credentials
+                      </Button>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </main>
+
+      {/* ── Credentials modal ──────────────────────────────────────────── */}
+      {credModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#111] p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
+                  <KeyRound className="h-4 w-4 text-emerald-300" />
+                </div>
+                <h3 className="font-black text-base">Your credentials</h3>
+              </div>
+              <button
+                onClick={() => setCredModal(null)}
+                className="rounded-lg p-1.5 text-white/40 hover:bg-white/10 hover:text-white transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { label: "Email", value: credModal.account.email },
+                { label: "Password", value: credModal.account.password },
+                { label: "Username", value: credModal.account.username },
+                { label: "Activation code", value: credModal.account.activationCode },
+                { label: "Redeem link", value: credModal.account.redeemLink },
+                { label: "Instructions", value: credModal.account.instructions },
+              ]
+                .filter((f) => f.value)
+                .map(({ label, value }) => (
+                  <div key={label} className="rounded-xl bg-white/[0.04] border border-white/8 px-3 py-2.5">
+                    <p className="text-[10px] font-bold uppercase text-white/35 mb-1">{label}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-mono text-white/90 break-all leading-snug">{value}</p>
+                      <button
+                        onClick={() => copyToClipboard(value, label)}
+                        className="flex-shrink-0 rounded-md p-1.5 text-white/30 hover:bg-white/10 hover:text-white transition"
+                        title={`Copy ${label}`}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            <p className="mt-4 text-center text-xs text-white/25">
+              Keep these credentials safe. Don't share them.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
