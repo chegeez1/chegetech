@@ -6282,7 +6282,7 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
         storefrontCats[catKey] = { ...cat, plans };
       }
       // Include active bots so storefronts can sell them too
-      const bots = await runQuery("SELECT id, name, description, price, image_url, features, active FROM bots WHERE active = 1 OR active = true ORDER BY name ASC", []);
+      const bots = await runQuery("SELECT id, name, description, price, image_url, features, active FROM bots WHERE active = true ORDER BY name ASC", []);
       const botsFormatted = bots.map((b: any) => ({
         id: b.id, name: b.name, description: b.description, price: b.price,
         imageUrl: b.image_url, features: (() => { try { return JSON.parse(b.features || "[]"); } catch { return []; } })(),
@@ -6329,7 +6329,7 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
         return res.status(400).json({ success: false, error: "Missing required fields" });
       }
       const bots = await runQuery(
-        dbType === "pg" ? "SELECT * FROM bots WHERE id = $1 AND (active = true OR active = 1)" : "SELECT * FROM bots WHERE id = ? AND active = 1",
+        dbType === "pg" ? "SELECT * FROM bots WHERE id = $1 AND active = true" : "SELECT * FROM bots WHERE id = ? AND active = 1",
         [parseInt(botId)]
       );
       if (!bots.length) return res.status(404).json({ success: false, error: "Bot not found" });
