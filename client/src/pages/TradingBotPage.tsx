@@ -948,7 +948,7 @@ function BotUI() {
               <div className="flex items-center gap-2 mb-4"><BarChart2 className="w-4 h-4 text-gray-400" /><span className="font-medium">Trade Log</span></div>
               {trades.length === 0 ? <div className="text-center py-12 text-gray-600"><Activity className="w-10 h-10 mx-auto mb-2 opacity-20" /><p>No trades yet</p></div> : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
+                  <div className="overflow-x-auto w-full"><table className="w-full text-xs">
                     <thead><tr className="text-gray-500 border-b border-white/[0.05]">{["#","Contract","Symbol","Type","Stake","P&L","Conf","Status","Time"].map(h => <th key={h} className="text-left pb-2.5 font-medium pr-3">{h}</th>)}</tr></thead>
                     <tbody>
                       {trades.map(t => (
@@ -965,7 +965,7 @@ function BotUI() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></div>
                 </div>
               )}
             </div>

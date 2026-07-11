@@ -131,7 +131,7 @@ export default function Shell({ children, isAuthenticated }: ShellProps) {
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-900/98 backdrop-blur-lg border-t border-white/8"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        <div className="flex items-center justify-around px-1 h-[4.25rem]">
+        <div className="flex items-center overflow-x-auto px-1 h-[4.25rem] gap-0 scrollbar-none" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
@@ -139,7 +139,7 @@ export default function Shell({ children, isAuthenticated }: ShellProps) {
               <button
                 key={item.path}
                 onClick={() => setLocation(item.path)}
-                className="flex flex-col items-center justify-center gap-1 flex-1 py-1.5 mx-0.5 rounded-2xl transition-all duration-150 active:scale-95 min-w-0"
+                className="flex flex-col items-center justify-center gap-1 min-w-[3.8rem] py-1.5 mx-0.5 rounded-2xl transition-all duration-150 active:scale-95 shrink-0"
                 style={{ WebkitTapHighlightColor: "transparent" }}
               >
                 <div className={`flex items-center justify-center w-10 h-7 rounded-xl transition-all duration-150 ${active ? item.activeTextBg : ""}`}>
@@ -153,7 +153,7 @@ export default function Shell({ children, isAuthenticated }: ShellProps) {
           })}
           <button
             onClick={logout}
-            className="flex flex-col items-center justify-center gap-1 flex-1 py-1.5 mx-0.5 rounded-2xl transition-all duration-150 active:scale-95 min-w-0"
+            className="flex flex-col items-center justify-center gap-1 min-w-[3.8rem] py-1.5 mx-0.5 rounded-2xl transition-all duration-150 active:scale-95 shrink-0"
             style={{ WebkitTapHighlightColor: "transparent" }}
           >
             <div className="flex items-center justify-center w-10 h-7 rounded-xl">

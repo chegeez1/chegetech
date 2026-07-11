@@ -1550,7 +1550,7 @@ export default function Dashboard() {
                 </div>
 
                 {spendingStats && (
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="rounded-xl p-3 border border-white/10 text-center" style={{ background: "rgba(255,255,255,.03)" }}>
                       <ShoppingCart className="w-4 h-4 text-indigo-400 mx-auto mb-1" />
                       <p className="text-lg font-bold text-white">{spendingStats.totalOrders ?? 0}</p>
@@ -1623,7 +1623,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
             ) : (
               <>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {[
                     { label: "Total Referrals", value: referralData?.stats?.totalReferrals ?? 0, icon: Link2, color: "text-indigo-400" },
                     { label: "Completed", value: referralData?.stats?.completedReferrals ?? 0, icon: CheckCircle, color: "text-emerald-400" },
@@ -1640,7 +1640,7 @@ export default function Dashboard() {
                 {/* Affiliate Tiers Card */}
                 <div className="rounded-xl p-4 border border-white/10" style={{ background: "rgba(255,255,255,.03)" }}>
                   <h3 className="text-sm font-semibold text-white/70 mb-3 flex items-center gap-2"><Trophy className="w-3.5 h-3.5 text-amber-400" /> Affiliate Tiers</h3>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {[
                       { tier: "Silver", min: 5, multiplier: 1.25, color: "text-slate-300", bg: "rgba(148,163,184,.1)", border: "border-slate-400/20" },
                       { tier: "Gold", min: 15, multiplier: 1.5, color: "text-amber-300", bg: "rgba(245,158,11,.1)", border: "border-amber-500/20" },
@@ -2773,7 +2773,7 @@ export default function Dashboard() {
               </div>
 
               {/* Controls */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button onClick={() => botAction(manageBotId!, "restart")} disabled={!!botBusy} className="px-3 py-2 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5" data-testid="button-bot-restart">
                   {botBusy === "restart" ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCw className="w-3 h-3" />}Restart
                 </button>

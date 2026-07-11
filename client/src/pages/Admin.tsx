@@ -2715,7 +2715,7 @@ function BulkUploadModal({ planOptions, onClose, onSuccess }: { planOptions: any
             <div>
               <p className="text-xs text-white/50 mb-2">{parsed.length} row{parsed.length !== 1 ? "s" : ""} detected — preview:</p>
               <div className="rounded-xl overflow-hidden border border-white/8 max-h-48 overflow-y-auto">
-                <table className="w-full text-xs">
+                <div className="overflow-x-auto w-full"><table className="w-full text-xs">
                   <thead><tr className="bg-white/5 text-white/40"><th className="px-3 py-2 text-left">#</th><th className="px-3 py-2 text-left">Email</th><th className="px-3 py-2 text-left">Password</th><th className="px-3 py-2 text-left">Slots</th></tr></thead>
                   <tbody>
                     {parsed.slice(0, 20).map((r, i) => (
@@ -2728,7 +2728,7 @@ function BulkUploadModal({ planOptions, onClose, onSuccess }: { planOptions: any
                     ))}
                     {parsed.length > 20 && <tr><td colSpan={4} className="px-3 py-2 text-white/30 text-center">... and {parsed.length - 20} more</td></tr>}
                   </tbody>
-                </table>
+                </table></div>
               </div>
             </div>
           )}
@@ -3369,7 +3369,7 @@ function TransactionsTab() {
         <div className="glass-card rounded-2xl overflow-hidden">
           <div className="px-4 py-2 border-b border-white/5 text-xs text-white/30">{filtered.length} transaction{filtered.length !== 1 ? "s" : ""}</div>
           <div className="overflow-x-auto">
-            <Table>
+            <div className="overflow-x-auto w-full"><Table>
               <TableHeader>
                 <TableRow className="border-white/8 hover:bg-transparent">
                   <TableHead className="text-white/40 text-xs">Reference</TableHead>
@@ -3458,7 +3458,7 @@ function TransactionsTab() {
                   );
                 })}
               </TableBody>
-            </Table>
+            </Table></div>
           </div>
         </div>
       )}
@@ -4541,7 +4541,7 @@ function CustomersTab() {
         </div>
       ) : (
         <div className="glass-card rounded-2xl overflow-hidden">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow className="border-white/8">
                 <TableHead className="text-white/40 text-xs">Customer</TableHead>
@@ -4843,7 +4843,7 @@ function CustomersTab() {
                 </React.Fragment>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
       {/* Hidden file input for admin avatar upload */}
@@ -4927,7 +4927,7 @@ function CustomersTab() {
                   {(profileData.orders?.length ?? 0) > 0 && (
                     <div className="rounded-xl border border-white/8 overflow-hidden" style={{ background: "rgba(255,255,255,.03)" }}>
                       <p className="text-white/40 text-xs font-semibold uppercase tracking-widest px-4 pt-3 pb-2">Recent Orders</p>
-                      <table className="w-full text-xs">
+                      <div className="overflow-x-auto w-full"><table className="w-full text-xs">
                         <tbody>
                           {profileData.orders.slice(0, 8).map((o: any) => (
                             <tr key={o.reference || o.id} className="border-t border-white/5">
@@ -4942,7 +4942,7 @@ function CustomersTab() {
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </table></div>
                     </div>
                   )}
 
@@ -5872,7 +5872,7 @@ function SubAdminsTab() {
         </div>
       ) : (
         <div className="glass-card rounded-2xl overflow-hidden">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow className="border-white/8">
                 <TableHead className="text-white/40 text-xs">Sub-Admin</TableHead>
@@ -5936,7 +5936,7 @@ function SubAdminsTab() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
     </>
@@ -6832,7 +6832,7 @@ function VpsSellerTab() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-white/8">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto w-full"><table className="w-full text-sm">
             <thead>
               <tr className="bg-white/3 border-b border-white/8">
                 {["Reference","Customer","Plan","IP / Credentials","Status","Expires","Actions"].map(h => (
@@ -6895,7 +6895,7 @@ function VpsSellerTab() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -7459,7 +7459,7 @@ function DomainsTab() {
             <div className="mt-4 p-4 rounded-xl border border-white/8 bg-white/3">
               <p className="text-xs text-white/50 mb-3 font-medium">DNS record to add at your registrar:</p>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs font-mono">
+                <div className="overflow-x-auto w-full"><table className="w-full text-xs font-mono">
                   <thead>
                     <tr className="text-white/30">
                       <th className="text-left pb-2 pr-4">Type</th>
@@ -7474,7 +7474,7 @@ function DomainsTab() {
                       <td className="py-1 text-indigo-300">{cnameDest}</td>
                     </tr>
                   </tbody>
-                </table>
+                </table></div>
               </div>
             </div>
           )}
@@ -7828,7 +7828,7 @@ function RatingsTab() {
             <p>No ratings yet</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto w-full"><table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/8">
                 <th className="text-left px-4 py-3 text-white/40 font-medium">Customer</th>
@@ -7856,7 +7856,7 @@ function RatingsTab() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </div>
     </div>
@@ -8681,7 +8681,7 @@ function BotStoreAdminTab() {
         <div className="text-center py-10"><Loader2 className="w-6 h-6 animate-spin text-green-400 mx-auto" /></div>
       ) : (
         <div className="bg-white/[0.03] border border-white/5 rounded-2xl overflow-hidden">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow className="border-white/5">
                 <TableHead className="text-gray-400">Bot</TableHead>
@@ -8717,7 +8717,7 @@ function BotStoreAdminTab() {
                 <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-8">No bots yet. Add your first bot above.</TableCell></TableRow>
               )}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
     </div>
@@ -9431,7 +9431,7 @@ const botLogsRef = useRef<HTMLDivElement>(null);
         <div className="text-center py-10"><Loader2 className="w-6 h-6 animate-spin text-green-400 mx-auto" /></div>
       ) : (
         <div className="bg-white/[0.03] border border-white/5 rounded-2xl overflow-hidden">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow className="border-white/5">
                 <TableHead className="text-gray-400">Reference</TableHead>
@@ -9492,7 +9492,7 @@ const botLogsRef = useRef<HTMLDivElement>(null);
                 <TableRow><TableCell colSpan={8} className="text-center text-gray-500 py-8">No orders found.</TableCell></TableRow>
               )}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
     </div>
@@ -9602,7 +9602,7 @@ function SmmOrdersAdminTab() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-white/10">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow className="border-white/10 hover:bg-transparent">
                 {["Reference","Platform","Service","Qty","Link","Amount","Status","Date","Action"].map(h => (
@@ -9648,7 +9648,7 @@ function SmmOrdersAdminTab() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
     </div>
@@ -9745,7 +9745,7 @@ function ProxyPlansAdminTab() {
         <div className="text-center py-12 text-gray-500"><Shield className="w-8 h-8 mx-auto mb-2 opacity-30" /><p>No plans yet. Add your first proxy plan.</p></div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-white/10">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow className="border-white/10 hover:bg-transparent">
                 {["Name","Type","Country","Data","Price (KES)","Speed","Status","Actions"].map(h=>(
@@ -9777,7 +9777,7 @@ function ProxyPlansAdminTab() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
     </div>
@@ -9852,7 +9852,7 @@ function ProxyOrdersAdminTab() {
         <div className="text-center py-12 text-gray-500"><Shield className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No proxy orders yet</p></div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-white/10">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow className="border-white/10 hover:bg-transparent">
                 {["Reference","Plan","Customer","Amount","Status","Date","Actions"].map(h=>(
@@ -9885,7 +9885,7 @@ function ProxyOrdersAdminTab() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
 
@@ -10007,7 +10007,7 @@ function DigitalProductsAdminTab() {
         <div className="text-center py-12 text-gray-500"><Users className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No products yet. Add your first account product.</p></div>
       ):(
         <div className="overflow-x-auto rounded-xl border border-white/10">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Platform","Name","Category","Price (KES)","Stock","Status","Actions"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader>
             <TableBody>
               {products.map((p:any)=>(
@@ -10033,7 +10033,7 @@ function DigitalProductsAdminTab() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
 
@@ -10106,7 +10106,7 @@ function DigitalOrdersAdminTab() {
         <div className="text-center py-12 text-gray-500"><Users className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No orders yet</p></div>
       ):(
         <div className="overflow-x-auto rounded-xl border border-white/10">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Reference","Platform","Product","Customer","Amount","Status","Date","Creds"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader>
             <TableBody>
               {filtered.map((o:any)=>(
@@ -10124,7 +10124,7 @@ function DigitalOrdersAdminTab() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
       {credView && (
@@ -10433,7 +10433,7 @@ function GiftCardsAdminTab() {
       <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white">Gift Cards</h2><p className="text-sm text-gray-400">Manage gift card products and code inventory</p></div><Button size="sm" onClick={()=>{reset();setShowForm(true);}} className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold gap-1.5"><Plus className="w-4 h-4"/>Add Product</Button></div>
       {showForm&&(<div className="bg-white/5 border border-yellow-500/20 rounded-2xl p-5 space-y-3"><h3 className="font-semibold">{editing?"Edit":"New"} Gift Card Product</h3><div className="grid grid-cols-2 sm:grid-cols-3 gap-3"><div><label className="text-xs text-gray-400 mb-1 block">Brand</label><select className={inp} value={form.brand} onChange={e=>setForm(f=>({...f,brand:e.target.value}))}>{BRANDS.map(b=><option key={b} value={b}>{BRAND_EMOJI[b]} {b}</option>)}</select></div><div><label className="text-xs text-gray-400 mb-1 block">Product Name</label><input className={inp} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Google Play $10"/></div><div><label className="text-xs text-gray-400 mb-1 block">Denomination</label><input className={inp} value={form.denomination} onChange={e=>setForm(f=>({...f,denomination:e.target.value}))} placeholder="10"/></div><div><label className="text-xs text-gray-400 mb-1 block">Currency</label><input className={inp} value={form.currency} onChange={e=>setForm(f=>({...f,currency:e.target.value}))} placeholder="USD"/></div><div><label className="text-xs text-gray-400 mb-1 block">Price (KES)</label><input type="number" className={inp} value={form.price_kes} onChange={e=>setForm(f=>({...f,price_kes:e.target.value}))} placeholder="1500"/></div><div><label className="text-xs text-gray-400 mb-1 block">Sort Order</label><input type="number" className={inp} value={form.sort_order} onChange={e=>setForm(f=>({...f,sort_order:e.target.value}))}/></div><div className="col-span-2 sm:col-span-3"><label className="text-xs text-gray-400 mb-1 block">Description (optional)</label><input className={inp} value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Works worldwide, no expiry"/></div><div className="flex items-center gap-2"><input type="checkbox" checked={form.is_active} onChange={e=>setForm(f=>({...f,is_active:e.target.checked}))} className="w-4 h-4"/><label className="text-sm text-gray-300">Active</label></div></div><div className="flex gap-2"><Button onClick={()=>save.mutate()} disabled={save.isPending||!form.name||!form.price_kes} className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold">{save.isPending?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:null}{editing?"Update":"Create"}</Button><Button variant="outline" onClick={reset} className="border-white/10 text-gray-400">Cancel</Button></div></div>)}
       {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:products.length===0?<div className="text-center py-12 text-gray-500"><Gift className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No products yet</p></div>:(
-        <div className="overflow-x-auto rounded-xl border border-white/10"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Brand","Product","Denom","Price KES","Stock","Status","Actions"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{products.map((p:any)=>(
+        <div className="overflow-x-auto rounded-xl border border-white/10"><div className="overflow-x-auto w-full"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Brand","Product","Denom","Price KES","Stock","Status","Actions"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{products.map((p:any)=>(
           <TableRow key={p.id} className="border-white/5 hover:bg-white/3">
             <TableCell className="text-lg">{BRAND_EMOJI[p.brand]||"🎁"} <span className="text-xs text-gray-400">{p.brand}</span></TableCell>
             <TableCell className="text-sm text-white font-medium max-w-32"><p className="truncate">{p.name}</p></TableCell>
@@ -10443,7 +10443,7 @@ function GiftCardsAdminTab() {
             <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border ${p.is_active?"bg-emerald-500/10 text-emerald-400 border-emerald-500/20":"bg-white/5 text-gray-500 border-white/10"}`}>{p.is_active?"Active":"Hidden"}</span></TableCell>
             <TableCell><div className="flex gap-1.5"><Button size="sm" variant="outline" onClick={()=>{setStockModal(p);setStockText("");}} className="border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/10 h-7 px-2 text-xs"><Plus className="w-3 h-3 mr-1"/>Codes</Button><Button size="sm" variant="outline" onClick={()=>startEdit(p)} className="border-white/10 text-gray-400 h-7 px-2 text-xs"><Edit2 className="w-3 h-3"/></Button><Button size="sm" variant="outline" onClick={()=>{if(confirm("Delete?"))del.mutate(p.id);}} className="border-red-500/20 text-red-400 hover:bg-red-500/10 h-7 px-2 text-xs"><Trash2 className="w-3 h-3"/></Button></div></TableCell>
           </TableRow>
-        ))}</TableBody></Table></div>
+        ))}</TableBody></Table></div></div>
       )}
       {stockModal&&(<div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget){setStockModal(null);setStockText("");}}}><div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-lg p-6"><h3 className="font-bold mb-1">Add Gift Card Codes</h3><p className="text-sm text-gray-400 mb-3">{stockModal.name} — Stock: <span className="text-yellow-400 font-bold">{stockModal.stock_count}</span></p><textarea value={stockText} onChange={e=>setStockText(e.target.value)} rows={8} className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-yellow-400 font-mono focus:outline-none focus:border-yellow-500/40 mb-3" placeholder={"XXXX-XXXX-XXXX-XXXX\nYYYY-YYYY-YYYY-YYYY\nZZZZ-ZZZZ-ZZZZ-ZZZZ"}/><p className="text-xs text-gray-500 mb-3">{stockText.split('\n').filter(l=>l.trim()).length} codes ready</p><div className="flex gap-2"><Button onClick={addStock} disabled={stockLoading||!stockText.trim()} className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold flex-1">{stockLoading?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:<Plus className="w-4 h-4 mr-1"/>}Import Codes</Button><Button variant="outline" onClick={()=>{setStockModal(null);setStockText("");}} className="border-white/10 text-gray-400">Cancel</Button></div></div></div>)}
     </div>
@@ -10466,7 +10466,7 @@ function GiftCardOrdersAdminTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[{label:"Total",value:orders.length,c:"text-white"},{label:"Delivered",value:orders.filter((o:any)=>o.status==="delivered").length,c:"text-emerald-400"},{label:"Pending",value:orders.filter((o:any)=>o.status==="pending").length,c:"text-amber-400"},{label:"Revenue",value:`KES ${revenue.toLocaleString()}`,c:"text-yellow-400"}].map(s=>(<div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-4"><p className="text-xs text-gray-400 mb-1">{s.label}</p><p className={`text-xl font-bold ${s.c}`}>{s.value}</p></div>))}</div>
       <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500"/><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search orders..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9"/></div>
       {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:filtered.length===0?<div className="text-center py-10 text-gray-500"><Gift className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No orders</p></div>:(
-        <div className="overflow-x-auto rounded-xl border border-white/10"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Ref","Brand","Product","Customer","Amount","Status","Code"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{filtered.map((o:any)=>(
+        <div className="overflow-x-auto rounded-xl border border-white/10"><div className="overflow-x-auto w-full"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Ref","Brand","Product","Customer","Amount","Status","Code"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{filtered.map((o:any)=>(
           <TableRow key={o.id} className="border-white/5 hover:bg-white/3">
             <TableCell className="font-mono text-xs text-gray-300">{(o.reference||"").slice(0,12)}…</TableCell>
             <TableCell className="text-base">{EMOJI[o.brand]||"🎁"} <span className="text-xs text-gray-400">{o.brand}</span></TableCell>
@@ -10476,7 +10476,7 @@ function GiftCardOrdersAdminTab() {
             <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${sCls(o.status)}`}>{o.status}</span></TableCell>
             <TableCell>{o.code?<Button size="sm" variant="outline" onClick={()=>setCredView(o)} className="border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/10 h-7 px-2 text-xs"><Eye className="w-3 h-3"/></Button>:<span className="text-xs text-gray-600">—</span>}</TableCell>
           </TableRow>
-        ))}</TableBody></Table></div>
+        ))}</TableBody></Table></div></div>
       )}
       {credView&&(<div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget)setCredView(null);}}><div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-sm p-6"><h3 className="font-bold mb-1">Delivered Code</h3><p className="text-sm text-gray-400 mb-4">{credView.customer_email} — {credView.product_name}</p><div className="bg-black/40 border border-white/10 rounded-xl p-4 text-xl font-mono font-bold text-yellow-400 text-center tracking-widest mb-4">{credView.code}</div><div className="flex gap-2"><Button onClick={()=>{navigator.clipboard.writeText(credView.code);setCopied(true);setTimeout(()=>setCopied(false),2000);}} className="flex-1 bg-white/5 border border-white/10 text-white/70 text-sm">{copied?<Check className="w-4 h-4 text-green-400 mr-1"/>:<Copy className="w-4 h-4 mr-1"/>}Copy</Button><Button onClick={()=>setCredView(null)} className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-sm">Close</Button></div></div></div>)}
     </div>
@@ -10500,7 +10500,7 @@ function SmsPlansAdminTab() {
       <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white">Bulk SMS Plans</h2><p className="text-sm text-gray-400">Manage SMS credit packages for customers</p></div><Button size="sm" onClick={()=>{reset();setShowForm(true);}} className="bg-green-600 hover:bg-green-700 gap-1.5"><Plus className="w-4 h-4"/>Add Plan</Button></div>
       {showForm&&(<div className="bg-white/5 border border-green-500/20 rounded-2xl p-5 space-y-3"><h3 className="font-semibold">{editing?"Edit":"New"} SMS Plan</h3><div className="grid grid-cols-2 sm:grid-cols-3 gap-3"><div><label className="text-xs text-gray-400 mb-1 block">Plan Name</label><input className={inp} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Starter 1000"/></div><div><label className="text-xs text-gray-400 mb-1 block">SMS Count</label><input type="number" className={inp} value={form.sms_count} onChange={e=>setForm(f=>({...f,sms_count:e.target.value}))} placeholder="1000"/></div><div><label className="text-xs text-gray-400 mb-1 block">Price (KES)</label><input type="number" className={inp} value={form.price_kes} onChange={e=>setForm(f=>({...f,price_kes:e.target.value}))} placeholder="500"/></div><div><label className="text-xs text-gray-400 mb-1 block">Validity (days)</label><input type="number" className={inp} value={form.validity_days} onChange={e=>setForm(f=>({...f,validity_days:e.target.value}))}/></div><div><label className="text-xs text-gray-400 mb-1 block">Sort Order</label><input type="number" className={inp} value={form.sort_order} onChange={e=>setForm(f=>({...f,sort_order:e.target.value}))}/></div><div className="flex items-center gap-2 self-end pb-2"><input type="checkbox" checked={form.is_active} onChange={e=>setForm(f=>({...f,is_active:e.target.checked}))} className="w-4 h-4"/><label className="text-sm text-gray-300">Active</label></div><div className="col-span-2 sm:col-span-3"><label className="text-xs text-gray-400 mb-1 block">Description</label><input className={inp} value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Great for small businesses"/></div><div className="col-span-2 sm:col-span-3"><label className="text-xs text-gray-400 mb-1 block">Features (one per line)</label><textarea className={inp} rows={3} value={form.features} onChange={e=>setForm(f=>({...f,features:e.target.value}))} placeholder={"Custom sender ID\nDelivery reports\nAPI access"}/></div></div><div className="flex gap-2"><Button onClick={()=>save.mutate()} disabled={save.isPending||!form.name||!form.sms_count||!form.price_kes} className="bg-green-600 hover:bg-green-700">{save.isPending?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:null}{editing?"Update":"Create"}</Button><Button variant="outline" onClick={reset} className="border-white/10 text-gray-400">Cancel</Button></div></div>)}
       {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:plans.length===0?<div className="text-center py-12 text-gray-500"><MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No SMS plans yet</p></div>:(
-        <div className="overflow-x-auto rounded-xl border border-white/10"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Name","SMS Count","Price KES","Per SMS","Validity","Status","Actions"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{plans.map((p:any)=>(
+        <div className="overflow-x-auto rounded-xl border border-white/10"><div className="overflow-x-auto w-full"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Name","SMS Count","Price KES","Per SMS","Validity","Status","Actions"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{plans.map((p:any)=>(
           <TableRow key={p.id} className="border-white/5 hover:bg-white/3">
             <TableCell className="text-sm text-white font-medium">{p.name}</TableCell>
             <TableCell className="text-lg font-bold text-green-400">{(p.sms_count||0).toLocaleString()}</TableCell>
@@ -10510,7 +10510,7 @@ function SmsPlansAdminTab() {
             <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border ${p.is_active?"bg-emerald-500/10 text-emerald-400 border-emerald-500/20":"bg-white/5 text-gray-500 border-white/10"}`}>{p.is_active?"Active":"Hidden"}</span></TableCell>
             <TableCell><div className="flex gap-1.5"><Button size="sm" variant="outline" onClick={()=>startEdit(p)} className="border-white/10 text-gray-400 h-7 px-2 text-xs"><Edit2 className="w-3 h-3"/></Button><Button size="sm" variant="outline" onClick={()=>{if(confirm("Delete?"))del.mutate(p.id);}} className="border-red-500/20 text-red-400 hover:bg-red-500/10 h-7 px-2 text-xs"><Trash2 className="w-3 h-3"/></Button></div></TableCell>
           </TableRow>
-        ))}</TableBody></Table></div>
+        ))}</TableBody></Table></div></div>
       )}
     </div>
   );
@@ -10742,7 +10742,7 @@ function SmsOrdersAdminTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[{label:"Total",value:orders.length,c:"text-white"},{label:"Fulfilled",value:orders.filter((o:any)=>o.status==="fulfilled").length,c:"text-emerald-400"},{label:"Pending",value:orders.filter((o:any)=>o.status==="pending").length,c:"text-amber-400"},{label:"Revenue",value:`KES ${revenue.toLocaleString()}`,c:"text-green-400"}].map(s=>(<div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-4"><p className="text-xs text-gray-400 mb-1">{s.label}</p><p className={`text-xl font-bold ${s.c}`}>{s.value}</p></div>))}</div>
       <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500"/><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." className="pl-8 bg-white/5 border-white/10 text-white text-sm h-9"/></div>
       {isLoading?<div className="text-center py-8 text-gray-500">Loading...</div>:filtered.length===0?<div className="text-center py-10 text-gray-500"><MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30"/><p>No orders</p></div>:(
-        <div className="overflow-x-auto rounded-xl border border-white/10"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Reference","Plan","SMS","Customer","Sender ID","Amount","Status","Action"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{filtered.map((o:any)=>(
+        <div className="overflow-x-auto rounded-xl border border-white/10"><div className="overflow-x-auto w-full"><Table><TableHeader><TableRow className="border-white/10 hover:bg-transparent">{["Reference","Plan","SMS","Customer","Sender ID","Amount","Status","Action"].map(h=><TableHead key={h} className="text-gray-400 text-xs">{h}</TableHead>)}</TableRow></TableHeader><TableBody>{filtered.map((o:any)=>(
           <TableRow key={o.id} className="border-white/5 hover:bg-white/3">
             <TableCell className="font-mono text-xs text-gray-300">{(o.reference||"").slice(0,12)}…</TableCell>
             <TableCell className="text-sm text-white font-medium">{o.plan_name}</TableCell>
@@ -10753,7 +10753,7 @@ function SmsOrdersAdminTab() {
             <TableCell><span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${sCls(o.status)}`}>{o.status}</span></TableCell>
             <TableCell>{o.status!=="fulfilled"&&<Button size="sm" onClick={()=>{setFulfillModal(o);setNotes(o.notes||"");}} className="bg-green-600 hover:bg-green-700 h-7 px-2 text-xs">Fulfill</Button>}</TableCell>
           </TableRow>
-        ))}</TableBody></Table></div>
+        ))}</TableBody></Table></div></div>
       )}
       {fulfillModal&&(<div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e=>{if(e.target===e.currentTarget){setFulfillModal(null);setNotes("");}}}><div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-md p-6"><h3 className="font-bold mb-1">Fulfill SMS Order</h3><p className="text-sm text-gray-400 mb-4">{fulfillModal.customer_email} — {fulfillModal.sms_count?.toLocaleString()} SMS</p>{fulfillModal.sender_note&&<p className="text-xs text-white/50 mb-3">Requested sender ID: <span className="text-green-400 font-medium">{fulfillModal.sender_note}</span></p>}<textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={4} className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500/40 mb-4" placeholder="Add notes (API credentials, login details, etc.)"/><div className="flex gap-2"><Button onClick={fulfill} disabled={fulfilling} className="flex-1 bg-green-600 hover:bg-green-700">{fulfilling?<Loader2 className="w-4 h-4 animate-spin mr-1"/>:null}Mark Fulfilled</Button><Button variant="outline" onClick={()=>{setFulfillModal(null);setNotes("");}} className="flex-1 border-white/10 text-gray-400">Cancel</Button></div></div></div>)}
     </div>
@@ -11058,7 +11058,7 @@ function ChegeBotSubsAdminTab() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto w-full"><table className="w-full text-sm">
               <thead className="border-b border-white/[0.06]">
                 <tr className="text-gray-500 text-xs">
                   {["ID","Customer","Plan","Amount","Status","Started","Expires","Reference","Actions"].map(h => (
@@ -11111,7 +11111,7 @@ function ChegeBotSubsAdminTab() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
       </div>
@@ -11645,7 +11645,7 @@ function ResellersTab() {
         ) : applications.length === 0 ? (
           <p className="text-sm text-white/40 italic">No applications yet.</p>
         ) : (
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Applicant</TableHead>
@@ -11717,7 +11717,7 @@ function ResellersTab() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         )}
       </section>
 
@@ -11740,7 +11740,7 @@ function ResellersTab() {
         ) : pendingWithdrawals.length === 0 ? (
           <p className="text-sm text-white/40 italic">No pending withdrawals.</p>
         ) : (
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Reseller</TableHead>
@@ -11773,7 +11773,7 @@ function ResellersTab() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         )}
       </section>
     </div>

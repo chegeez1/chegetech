@@ -164,7 +164,7 @@ export default function AdminResellers() {
               </div>
             </div>
             <div className="overflow-auto">
-              <Table>
+              <div className="overflow-x-auto w-full"><Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Applicant</TableHead>
@@ -242,7 +242,7 @@ export default function AdminResellers() {
                     <TableRow><TableCell colSpan={6} className="text-center text-white/35 py-8">No applications found</TableCell></TableRow>
                   )}
                 </TableBody>
-              </Table>
+              </Table></div>
             </div>
           </section>
         )}
@@ -263,7 +263,7 @@ export default function AdminResellers() {
               </div>
             </div>
             <div className="overflow-auto">
-              <Table>
+              <div className="overflow-x-auto w-full"><Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Reseller</TableHead>
@@ -313,7 +313,7 @@ export default function AdminResellers() {
                     <TableRow><TableCell colSpan={5} className="text-center text-white/35 py-8">No resellers found</TableCell></TableRow>
                   )}
                 </TableBody>
-              </Table>
+              </Table></div>
             </div>
           </section>
         )}
@@ -326,7 +326,7 @@ export default function AdminResellers() {
               <p className="text-sm text-white/45">Approve after confirming M-Pesa payment. Add a note per request.</p>
             </div>
             <div className="overflow-auto">
-              <Table>
+              <div className="overflow-x-auto w-full"><Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Reseller</TableHead>
@@ -379,7 +379,7 @@ export default function AdminResellers() {
                     <TableRow><TableCell colSpan={7} className="text-center text-white/35 py-8">No withdrawal requests</TableCell></TableRow>
                   )}
                 </TableBody>
-              </Table>
+              </Table></div>
             </div>
           </section>
         )}

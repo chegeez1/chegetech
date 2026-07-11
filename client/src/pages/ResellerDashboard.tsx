@@ -531,7 +531,7 @@ function Pricing({ plans, prices, onSaved }: { plans: any; prices: any[]; onSave
       </div>
 
       <div className="overflow-auto">
-        <Table>
+        <div className="overflow-x-auto w-full"><Table>
           <TableHeader>
             <TableRow>
               <TableHead>Plan</TableHead>
@@ -584,7 +584,7 @@ function Pricing({ plans, prices, onSaved }: { plans: any; prices: any[]; onSave
               );
             })}
           </TableBody>
-        </Table>
+        </Table></div>
       </div>
     </div>
   );
@@ -633,7 +633,7 @@ function Orders({ orders }: { orders: any[] }) {
         </div>
       ) : (
         <div className="overflow-auto">
-          <Table>
+          <div className="overflow-x-auto w-full"><Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Reference</TableHead>
@@ -656,7 +656,7 @@ function Orders({ orders }: { orders: any[] }) {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
     </div>
@@ -727,7 +727,7 @@ function BotOrdersTab({ orders, loading }: { orders: any[]; loading: boolean }) 
           </div>
         ) : (
           <div className="overflow-auto">
-            <Table>
+            <div className="overflow-x-auto w-full"><Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Reference</TableHead>
@@ -758,7 +758,7 @@ function BotOrdersTab({ orders, loading }: { orders: any[]; loading: boolean }) 
                   );
                 })}
               </TableBody>
-            </Table>
+            </Table></div>
           </div>
         )}
       </div>
@@ -820,7 +820,7 @@ function CustomersTab({ customers, loading }: { customers: any[]; loading: boole
           </div>
         ) : (
           <div className="overflow-auto">
-            <Table>
+            <div className="overflow-x-auto w-full"><Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Customer</TableHead>
@@ -844,7 +844,7 @@ function CustomersTab({ customers, loading }: { customers: any[]; loading: boole
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </Table></div>
           </div>
         )}
       </div>

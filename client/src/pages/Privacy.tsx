@@ -77,7 +77,7 @@ export default function Privacy() {
               <p className="text-sm text-white/50 leading-relaxed">{content}</p>
               {table && (
                 <div className="mt-4 overflow-x-auto">
-                  <table className="w-full text-xs">
+                  <div className="overflow-x-auto w-full"><table className="w-full text-xs">
                     <thead>
                       <tr style={{ borderBottom: "1px solid rgba(255,255,255,.07)" }}>
                         {["Name", "Type", "Purpose"].map(h => (
@@ -102,7 +102,7 @@ export default function Privacy() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></div>
                 </div>
               )}
             </div>

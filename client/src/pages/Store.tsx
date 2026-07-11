@@ -290,7 +290,7 @@ export default function Store() {
               </button>
             )}
           </div>
-          <div className="flex-1 max-w-sm relative">
+          <div className="flex-1 w-full sm:max-w-sm relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               data-testid="input-search"
@@ -414,7 +414,7 @@ export default function Store() {
             onClick={() => setCartOpen(false)}
           />
           <div
-            className="fixed right-0 top-0 h-full w-full max-w-sm z-50 flex flex-col border-l border-white/10"
+            className="fixed right-0 top-0 h-full w-full sm:max-w-sm z-50 flex flex-col border-l border-white/10"
             style={{ background: "linear-gradient(180deg, rgba(13,7,36,.97), rgba(11,16,32,.97))", backdropFilter: "blur(20px)" }}
             data-testid="panel-cart"
           >
@@ -746,7 +746,7 @@ export default function Store() {
       {/* Waitlist Modal */}
       {waitlistOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)", backdropFilter: "blur(8px)" }}>
-          <div className="w-full max-w-sm rounded-2xl border border-white/12 p-6 space-y-4" style={{ background: "rgba(15,15,25,.97)" }}>
+          <div className="w-full sm:max-w-sm rounded-2xl border border-white/12 p-6 space-y-4" style={{ background: "rgba(15,15,25,.97)" }}>
             <div className="flex items-start justify-between gap-2">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2"><Bell className="w-4 h-4 text-indigo-400" /> Join Waitlist</h3>
