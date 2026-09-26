@@ -7,7 +7,7 @@ function getSiteUrl(): string {
   const cfg = getAppConfig();
   if (cfg.customDomain) return `https://${cfg.customDomain}`;
   if (cfg.appDomain) return `https://${cfg.appDomain}`;
-  return "https://streamvault-premium.site";
+  return "https://jchege.tech";
 }
 
 function siteButton(label = "Visit Our Store"): string {
@@ -138,7 +138,7 @@ export async function sendSuspensionEmail(
     <div style="background:#f8faff;padding:20px 16px;text-align:center;border-top:1px solid #eee;">
       <a href="${process.env.TELEGRAM_SUPPORT || 'https://t.me/chegetech_support'}" style="display:inline-block;margin-bottom:12px;background:#229ED9;color:#fff;text-decoration:none;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;">💬 Chat Support on Telegram</a>
       <p style="font-size:12px;color:#aaa;margin:0 0 4px;">&copy; ${new Date().getFullYear()} Chege Tech. All rights reserved.</p>
-      <p style="font-size:12px;margin:0;"><a href="${getSiteUrl()}" style="color:#4169E1;text-decoration:none;">streamvault-premium.site</a> &nbsp;·&nbsp; <a href="${getSiteUrl()}/faq" style="color:#4169E1;text-decoration:none;">Help & FAQ</a></p>
+      <p style="font-size:12px;margin:0;"><a href="${getSiteUrl()}" style="color:#4169E1;text-decoration:none;">jchege.tech</a> &nbsp;·&nbsp; <a href="${getSiteUrl()}/faq" style="color:#4169E1;text-decoration:none;">Help & FAQ</a></p>
     </div>
   </div>
 </body>
@@ -299,7 +299,7 @@ export async function sendPasswordResetLinkEmail(
   const resend = getResend();
   if (!resend) return { success: false, error: "Email service not configured" };
 
-  const siteUrl = process.env.SITE_URL || "https://streamvault-premium.site";
+  const siteUrl = process.env.SITE_URL || "https://jchege.tech";
   const resetUrl = `${siteUrl}/reset-password?token=${token}&email=${encodeURIComponent(customerEmail)}`;
   const displayName = name || "Customer";
 
@@ -326,7 +326,7 @@ export async function sendPasswordResetLinkEmail(
 </html>`;
 
   try {
-    const senderEmail = process.env.SENDER_EMAIL || process.env.RESEND_FROM || "noreply@streamvault-premium.site";
+    const senderEmail = process.env.SENDER_EMAIL || process.env.RESEND_FROM || "no-reply@jchege.tech";
     const result = await resend.emails.send({ from: senderEmail, to: customerEmail, subject: "Reset your StreamVault password", html });
     if (result.error) return { success: false, error: result.error.message };
     return { success: true };
