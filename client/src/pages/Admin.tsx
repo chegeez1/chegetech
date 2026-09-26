@@ -5195,6 +5195,15 @@ function WhatsAppWebPanel({ inputCls }: { inputCls: string }) {
         </div>
       </div>
 
+      {blockError && (
+        <div className="flex gap-2.5 p-3 rounded-xl" style={{ background: "rgba(239,68,68,.07)", border: "1px solid rgba(239,68,68,.18)" }}>
+          <div>
+            <p className="text-xs font-semibold text-red-400 mb-0.5">WhatsApp connection error</p>
+            <p className="text-[11px] text-white/50 leading-relaxed break-words">{blockError}</p>
+          </div>
+        </div>
+      )}
+
       {/* Connected state */}
       {status === "connected" && (
         <div className="space-y-3">
