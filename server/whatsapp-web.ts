@@ -1,4 +1,4 @@
-import pkg from "gifted-baileys";
+import pkg from "@whiskeysockets/baileys";
 const {
   default: makeWASocket,
   useMultiFileAuthState,
