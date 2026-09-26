@@ -2,7 +2,7 @@
 
 A full-featured e-commerce platform for selling shared premium subscription accounts. Built with Express + React, featuring instant email delivery, a customer wallet system, affiliate tiers, flash sales, subscription gifting, and a powerful admin panel.
 
-**Live domain:** `streamvault-premium.site`
+**Live domain:** `jchege.tech`
 
 ---
 
@@ -226,8 +226,9 @@ PAYSTACK_PK=pk_live_...
 
 # Email (Resend)
 RESEND_API_KEY=re_...
-RESEND_FROM=Chege Tech <no-reply@streamvault-premium.site>
-RESEND_OTP_FROM=Chege Tech OTP <otp@streamvault-premium.site>
+RESEND_FROM=no-reply@jchege.tech
+RESEND_OTP_FROM=otp@jchege.tech
+RESEND_SUPPORT_FROM=support@jchege.tech
 
 # Admin
 ADMIN_EMAIL=admin@example.com
@@ -312,4 +313,4 @@ Key tables: `customers`, `transactions`, `wallets`, `wallet_transactions`, `refe
 
 ## License
 
-Private — all rights reserved. Built for [Chege Tech](https://streamvault-premium.site).
+Private — all rights reserved. Built for [Chege Tech](https://jchege.tech).
