@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
-// Load .env in development — Render injects env vars natively in production
-if (process.env.NODE_ENV !== "production") dotenv.config();
+// Load the VPS .env file in every environment. Production hosts must load it too.
+dotenv.config();
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
