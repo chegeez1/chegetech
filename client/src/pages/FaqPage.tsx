@@ -8,7 +8,7 @@ const FAQS = [
     items: [
       { q: "How fast do I get my account after payment?", a: "Delivery is instant — within seconds of payment confirmation. Your credentials are sent to your email and also available in your dashboard under My Products." },
       { q: "What if I don't receive my account?", a: "Check your spam/junk folder first. If it's not there, log into your dashboard and check My Products. Still nothing? Contact us on Telegram and we'll resolve it immediately." },
-      { q: "Can I track my order?", a: "Yes! Visit streamvault-premium.site/track and enter your order reference number. You'll see live status updates." },
+      { q: "Can I track my order?", a: "Yes! Visit jchege.tech/track and enter your order reference number. You'll see live status updates." },
     ]
   },
   {
