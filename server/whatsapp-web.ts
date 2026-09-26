@@ -103,8 +103,12 @@ export async function connectWhatsApp(phoneNumber?: string): Promise<void> {
         }
       })
       .catch((err: any) => {
-        console.error("[WA] Pairing code request failed:", err?.message);
-        connectionStatus = "qr_ready"; // fall back to QR flow
+        const message = err?.message || "Pairing code request failed";
+        console.error("[WA] Pairing code request failed:", message);
+        if (localSock === sock) {
+          connectionError = message;
+          connectionStatus = "qr_ready"; // allow retry while exposing the real error
+        }
       });
   }
 
