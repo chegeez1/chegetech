@@ -101,7 +101,7 @@ function getReqIp(req: any): string {
 function buildVerificationLink(email: string, token: string, resellerSlug?: string): string {
   const base = (getAppConfig().customDomain && `https://${getAppConfig().customDomain}`)
     || (getAppConfig().appDomain && `https://${getAppConfig().appDomain}`)
-    || "https://streamvault-premium.site";
+    || "https://jchege.tech";
   const slug = resellerSlug ? `&resellerSlug=${encodeURIComponent(resellerSlug)}` : "";
   return `${base}/api/auth/verify-link?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}${slug}`;
 }
@@ -4446,7 +4446,7 @@ echo "    Check logs: pm2 logs chege-deploy-agent"
 
       const cfHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-      // Extract root domain (e.g. store.streamvault-premium.site → streamvault-premium.site)
+      // Extract root domain (e.g. store.jchege.tech → jchege.tech)
       const parts = domain.domain.split(".");
       const rootDomain = parts.length > 2 ? parts.slice(-2).join(".") : domain.domain;
       const subdomain = parts.length > 2 ? parts.slice(0, -2).join(".") : "@";
